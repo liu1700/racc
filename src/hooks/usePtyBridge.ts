@@ -12,6 +12,7 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
 
   // Connect PTY output to xterm
   useEffect(() => {
+    console.log("[usePtyBridge] output effect:", { sessionId, hasTerminal: !!terminal });
     if (sessionId === null || !terminal) return;
 
     // On session switch: clear terminal and replay buffer

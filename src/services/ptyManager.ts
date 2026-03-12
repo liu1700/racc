@@ -27,12 +27,14 @@ export function spawnPty(
 ): void {
   if (entries.has(sessionId)) return;
 
+  console.log("[ptyManager] spawnPty called:", { sessionId, cwd, cols, rows, agentCmd });
   const pty = spawn(DEFAULT_SHELL, [], {
     cols,
     rows,
     cwd,
     env: { TERM: "xterm-256color" },
   });
+  console.log("[ptyManager] PTY spawned, pid:", pty.pid);
 
   const entry: PtyEntry = {
     pty,
@@ -45,6 +47,7 @@ export function spawnPty(
   };
 
   const dataDisposable = pty.onData((data: Uint8Array) => {
+    console.log("[ptyManager] onData for session", sessionId, "bytes:", data.length, "listeners:", entry.listeners.size);
     // Accumulate in buffer
     entry.buffer.push(data);
     entry.bufferSize += data.length;
@@ -62,6 +65,7 @@ export function spawnPty(
   });
 
   const exitDisposable = pty.onExit(({ exitCode }) => {
+    console.log("[ptyManager] onExit for session", sessionId, "exitCode:", exitCode);
     entry.exited = true;
     entry.exitCode = exitCode;
     const msg = new TextEncoder().encode(`\r\n[Process exited with code ${exitCode}]\r\n`);
@@ -106,8 +110,10 @@ export function subscribe(
   listener: (data: Uint8Array) => void,
 ): (() => void) | null {
   const entry = entries.get(sessionId);
+  console.log("[ptyManager] subscribe called for session", sessionId, "entry exists:", !!entry);
   if (!entry) return null;
   entry.listeners.add(listener);
+  console.log("[ptyManager] listener added, total listeners:", entry.listeners.size);
   return () => entry.listeners.delete(listener);
 }
 

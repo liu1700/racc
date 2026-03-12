@@ -11,6 +11,7 @@ export function Terminal() {
 
   // Initialize xterm.js instance
   useEffect(() => {
+    console.log("[Terminal] init effect, ref exists:", !!terminalRef.current, "sessionId:", sessionId);
     if (!terminalRef.current) return;
 
     const el = terminalRef.current;
@@ -47,6 +48,7 @@ export function Terminal() {
       resizeObserver.observe(el);
 
       setTerm(xterm);
+      console.log("[Terminal] xterm initialized, cols:", xterm.cols, "rows:", xterm.rows);
 
       return () => {
         resizeObserver.disconnect();
