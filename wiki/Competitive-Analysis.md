@@ -1,6 +1,6 @@
 # Competitive Analysis
 
-[< Home](./Home.md) | [< Session Lifecycle](./Session-Lifecycle.md)
+[< Home](Home) | [< Session Lifecycle](Session-Lifecycle)
 
 ## Landscape
 
@@ -54,4 +54,4 @@ This is a deliberate non-compete strategy. We complement existing tools rather t
 | Open-source CLI tools become "good enough" | Medium | Visual UX and cross-machine management are hard to replicate in CLI |
 | New entrant builds same product | Medium | Ship fast, build community, iterate on UX |
 
-[Next: Roadmap >](./Roadmap.md)
+[Next: Roadmap >](Roadmap)

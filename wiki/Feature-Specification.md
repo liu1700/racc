@@ -1,6 +1,6 @@
 # Feature Specification
 
-[< Home](./Home.md) | [< Product Vision](./Product-Vision.md)
+[< Home](Home) | [< Product Vision](Product-Vision)
 
 ## P0: Must-Have (MVP)
 
@@ -93,4 +93,4 @@ Lower priority — depends on ecosystem maturity.
 | **Spec-Driven Development** | Built-in requirements.md / tasks.md editor tied to agent execution | Workflow design needed |
 | **Global Knowledge Base** | Cross-session CLAUDE.md management and sync | Multi-session maturity |
 
-[Next: UI Design >](./UI-Design.md)
+[Next: UI Design >](UI-Design)

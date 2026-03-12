@@ -1,6 +1,6 @@
 # Technical Architecture
 
-[< Home](./Home.md) | [< UI Design](./UI-Design.md)
+[< Home](Home) | [< UI Design](UI-Design)
 
 ## System Overview
 
@@ -124,4 +124,4 @@ Unified via an **Environment Provider** abstraction layer.
 - **Cross-machine preview:** Use `Tailscale Serve` to expose Portless local addresses to the tailnet
 - Result: `feature-auth.vps.tailnet` reaches the correct worktree's service from any machine
 
-[Next: Session Lifecycle >](./Session-Lifecycle.md)
+[Next: Session Lifecycle >](Session-Lifecycle)
