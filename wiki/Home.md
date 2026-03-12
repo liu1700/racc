@@ -1,11 +1,11 @@
-# OTTE — Agentic IDE
+# Racc — Agentic IDE
 
 > A desktop control plane for orchestrating multiple AI coding agents.
 > Not an editor. Not an IDE. A **session orchestrator**.
 
-## What is OTTE?
+## What is Racc?
 
-OTTE is a standalone desktop application (Tauri) for individual developers who use terminal-based AI coding agents (Claude Code, Aider, Codex CLI, etc.). It provides visual management for multiple concurrent agent sessions — something the terminal alone cannot offer.
+Racc is a standalone desktop application (Tauri) for individual developers who use terminal-based AI coding agents (Claude Code, Aider, Codex CLI, etc.). It provides visual management for multiple concurrent agent sessions — something the terminal alone cannot offer.
 
 **Three design principles — the "Three Nots":**
 
@@ -22,7 +22,7 @@ OTTE is a standalone desktop application (Tauri) for individual developers who u
 | [UI Design](UI-Design.md) | Layout, panels, and interaction patterns |
 | [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
 | [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
-| [Competitive Analysis](Competitive-Analysis.md) | How OTTE differs from Cursor, Windsurf, Claude Squad |
+| [Competitive Analysis](Competitive-Analysis.md) | How Racc differs from Cursor, Windsurf, Claude Squad |
 | [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
 ## Key Technical Bets
@@ -32,8 +32,8 @@ OTTE is a standalone desktop application (Tauri) for individual developers who u
 - **Agent-agnostic communication** — All agents interact via standard PTY read/write
 - **Git worktrees** — Code isolation per session, zero overhead
 - **Zustand** — Lightweight state management for frontend
-- **SQLite** — Session and repo persistence at `~/.otte/otte.db`
+- **SQLite** — Session and repo persistence at `~/.racc/racc.db`
 
 ## One-Line Summary
 
-> OTTE is "the next step for terminal agent users" — keep the full power of their favorite agents, add the orchestration, review, and visibility they've always lacked.
+> Racc is "the next step for terminal agent users" — keep the full power of their favorite agents, add the orchestration, review, and visibility they've always lacked.

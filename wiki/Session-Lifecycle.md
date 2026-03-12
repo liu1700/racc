@@ -17,7 +17,7 @@ User clicks "Import Repo"
     - Rejects if already imported (duplicate check)
         |
         v
-[3] Repo inserted into SQLite (~/.otte/otte.db)
+[3] Repo inserted into SQLite (~/.racc/racc.db)
     - Stores: id, path, name (derived from path), added_at
         |
         v
@@ -39,7 +39,7 @@ User clicks [+] on a repo
         |
         v
 [2] Environment Preparation
-    - (If worktree) git worktree add at ~/otte-worktrees/{repo}/{branch}
+    - (If worktree) git worktree add at ~/racc-worktrees/{repo}/{branch}
         |
         v
 [3] Session Persistence

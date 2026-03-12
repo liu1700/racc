@@ -4,11 +4,11 @@
 
 ## Landscape
 
-OTTE occupies a unique position: it is **not** a coding AI, **not** a code editor, but an **orchestration layer** for existing coding agents.
+Racc occupies a unique position: it is **not** a coding AI, **not** a code editor, but an **orchestration layer** for existing coding agents.
 
 ## Comparison Matrix
 
-| Dimension | OTTE | CLI Tools (Claude Squad, Codeman) | IDE Agents (Cursor, Windsurf) |
+| Dimension | Racc | CLI Tools (Claude Squad, Codeman) | IDE Agents (Cursor, Windsurf) |
 |-----------|------|-----------------------------------|-------------------------------|
 | **Multi-session** | Native visual dashboard | CLI or simple WebUI | Single-session sidebar |
 | **Agent choice** | Any terminal agent | Usually tied to one agent | Locked to vendor model |
@@ -21,11 +21,11 @@ OTTE occupies a unique position: it is **not** a coding AI, **not** a code edito
 
 ### 1. Pluggable Agents (strongest differentiator)
 
-Cursor locks users into their models. Windsurf locks into Codeium. OTTE lets users **choose which agent to use per task**.
+Cursor locks users into their models. Windsurf locks into Codeium. Racc lets users **choose which agent to use per task**.
 
 Why this matters now: AI model capabilities are evolving rapidly. A new model drops every few weeks. Users want to try Claude Code today, switch to Aider tomorrow, test Codex next week. Vendor lock-in is the #1 risk in the agentic coding space.
 
-OTTE's agent-agnostic design means users never have to choose between their IDE and the best available agent.
+Racc's agent-agnostic design means users never have to choose between their IDE and the best available agent.
 
 ### 2. Session Resilience (secondary moat)
 

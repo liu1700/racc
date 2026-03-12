@@ -145,7 +145,7 @@ In `src-tauri/capabilities/default.json`, add `"pty:default"` to permissions:
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for OTTE",
+  "description": "Default permissions for Racc",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -512,7 +512,7 @@ pub async fn create_session(
             .map(std::path::PathBuf::from)
             .ok_or("Could not find home directory")?;
         let wt_dir = home
-            .join("otte-worktrees")
+            .join("racc-worktrees")
             .join(&repo_name)
             .join(&branch);
 

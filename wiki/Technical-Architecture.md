@@ -4,7 +4,7 @@
 
 ## System Overview
 
-OTTE uses a **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
+Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
 
 ```
 +----------------------------------------------------------------------+
@@ -42,7 +42,7 @@ OTTE uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 | **IPC** | Tauri `invoke()` | Frontend ↔ Rust communication via `#[tauri::command]` |
 | **Backend** | Rust (Tauri commands) | Session CRUD, git worktrees, cost tracking |
 | **Terminal I/O** | `tauri-plugin-pty` | Spawn/kill PTY processes, stream data to xterm.js |
-| **Persistence** | SQLite | Repos and sessions stored in `~/.otte/otte.db` |
+| **Persistence** | SQLite | Repos and sessions stored in `~/.racc/racc.db` |
 | **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
 | **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
 | **Agent Runtime** | Claude Code / Aider / Codex | Pluggable — IDE does not bind to a specific agent |
@@ -67,7 +67,7 @@ OTTE uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 
 ### Session Persistence: SQLite + PTY
 
-Repos and sessions are persisted in SQLite (`~/.otte/otte.db`). PTY processes provide runtime agent execution.
+Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes provide runtime agent execution.
 
 **Design:**
 - Repos are first-class objects — imported via native folder picker (`tauri-plugin-dialog`), validated as git repos
@@ -108,7 +108,7 @@ Frontend (ptyManager.ts)  --[spawn]--> tauri-plugin-pty --> Shell + Agent
 | **Bare Git Worktree** (default) | Lightweight projects, no env isolation needed | **Implemented** |
 | **Docker Sandbox** (opt-in) | Need isolation, want `--dangerously-skip-permissions` | Planned v0.2 |
 
-Worktrees are created at `~/otte-worktrees/{repo}/{branch}` via `git worktree add`.
+Worktrees are created at `~/racc-worktrees/{repo}/{branch}` via `git worktree add`.
 
 **Not recommended for MVP:**
 - Nix Flakes — learning curve too steep, narrows target audience

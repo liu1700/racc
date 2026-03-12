@@ -40,7 +40,7 @@ export function Sidebar() {
     <aside className="flex w-56 flex-col overflow-y-auto border-r border-surface-3 bg-surface-1">
       <div className="border-b border-surface-3 px-3 py-2">
         <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-500">
-          OTTE
+          Racc
         </h1>
       </div>
 

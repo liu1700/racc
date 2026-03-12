@@ -224,7 +224,7 @@ pub async fn create_session(
             .map(std::path::PathBuf::from)
             .ok_or("Could not find home directory")?;
         let wt_dir = home
-            .join("otte-worktrees")
+            .join("racc-worktrees")
             .join(&repo_name)
             .join(&branch);
 

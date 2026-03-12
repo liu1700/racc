@@ -4,7 +4,7 @@
 
 **Goal:** Replace ephemeral tmux-only session management with SQLite-backed persistence, first-class repo objects, and native folder picker for importing repos.
 
-**Architecture:** SQLite database at `~/.otte/otte.db` stores repos and sessions. Rust backend performs all CRUD through SQLite + tmux operations. React frontend uses Zustand store with `getActiveSession()` selector for Terminal/CostTracker integration. Native Finder dialog (tauri-plugin-dialog) for repo import.
+**Architecture:** SQLite database at `~/.racc/racc.db` stores repos and sessions. Rust backend performs all CRUD through SQLite + tmux operations. React frontend uses Zustand store with `getActiveSession()` selector for Terminal/CostTracker integration. Native Finder dialog (tauri-plugin-dialog) for repo import.
 
 **Tech Stack:** Rust (rusqlite, serde, tauri-plugin-dialog), Tauri 2.x IPC, React 19, TypeScript, Zustand
 
@@ -82,14 +82,14 @@ use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
 
-/// Returns the path to the OTTE database: ~/.otte/otte.db
+/// Returns the path to the Racc database: ~/.racc/racc.db
 fn db_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or("Could not find home directory")?;
-    let dir = home.join(".otte");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.otte: {e}"))?;
-    Ok(dir.join("otte.db"))
+    let dir = home.join(".racc");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.racc: {e}"))?;
+    Ok(dir.join("racc.db"))
 }
 
 /// Initialize the database, run migrations, return the connection.
@@ -412,7 +412,7 @@ pub async fn create_session(
             .map(std::path::PathBuf::from)
             .ok_or("Could not find home directory")?;
         let wt_dir = home
-            .join("otte-worktrees")
+            .join("racc-worktrees")
             .join(&repo_name)
             .join(&branch);
 
@@ -451,7 +451,7 @@ pub async fn create_session(
         (repo_path.clone(), None, branch)
     };
 
-    let tmux_name = format!("otte::{}::{}", repo_name, branch_name);
+    let tmux_name = format!("racc::{}::{}", repo_name, branch_name);
 
     // Check if tmux session already exists
     if tmux_session_exists(&tmux_name) {
@@ -1129,7 +1129,7 @@ export function Sidebar() {
     <aside className="flex w-56 flex-col overflow-y-auto border-r border-surface-3 bg-surface-1">
       <div className="border-b border-surface-3 px-3 py-2">
         <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-500">
-          OTTE
+          Racc
         </h1>
       </div>
 
@@ -1419,7 +1419,7 @@ Verify:
 4. Select a non-git folder → shows error
 5. Click [+] on repo → Launch Agent dialog appears with radio choice
 6. Launch with "Run in repo" → tmux session created, terminal connects
-7. Launch with "Create worktree" → worktree created at ~/otte-worktrees, terminal connects
+7. Launch with "Create worktree" → worktree created at ~/racc-worktrees, terminal connects
 8. Stop session → status changes to Completed
 9. Remove session → disappears from sidebar
 10. Restart app → repos and session history persist, dead sessions marked Disconnected

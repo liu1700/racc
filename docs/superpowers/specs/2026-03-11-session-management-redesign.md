@@ -80,8 +80,8 @@ On app start, `reconcile_sessions()`:
    - If "Create worktree" selected: branch name text input appears
    - Submit button: "Launch"
 3. Backend:
-   - If worktree: `git worktree add` at `~/otte-worktrees/<repo-name>/<branch>`
-   - Create tmux session named `otte::<repo-name>::<branch>` (worktree) or `otte::<repo-name>::<current-branch>` (direct, detected via `git rev-parse --abbrev-ref HEAD`)
+   - If worktree: `git worktree add` at `~/racc-worktrees/<repo-name>/<branch>`
+   - Create tmux session named `racc::<repo-name>::<branch>` (worktree) or `racc::<repo-name>::<current-branch>` (direct, detected via `git rev-parse --abbrev-ref HEAD`)
    - Send keys to start `claude` in the session
    - Insert session record into SQLite
 4. Session appears nested under repo in sidebar
@@ -102,7 +102,7 @@ Database initialization and migrations using `rusqlite`.
 pub fn init_db() -> Result<Connection, String>
 ```
 
-- Opens/creates `~/.otte/otte.db`
+- Opens/creates `~/.racc/racc.db`
 - Sets `PRAGMA foreign_keys = ON` (required for `ON DELETE CASCADE`)
 - Runs schema migrations using `PRAGMA user_version` to track schema version:
   - Version 0 → 1: CREATE TABLE repos + sessions

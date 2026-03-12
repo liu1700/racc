@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wire xterm.js to real tmux sessions so users can create, interact with, and stop agent sessions from the OTTE UI.
+**Goal:** Wire xterm.js to real tmux sessions so users can create, interact with, and stop agent sessions from the Racc UI.
 
 **Architecture:** Frontend polls Rust backend for tmux output via `capture_pane` on a 150ms interval. User keystrokes go through `send_keys`. A "New Session" dialog triggers `create_session` which creates a worktree + tmux session + launches the agent. Session state is managed in a Zustand store.
 
@@ -31,7 +31,7 @@
 The current `create_session` has issues: hardcoded relative worktree path, always creates a new branch (fails if branch exists), `send_keys` always appends "Enter", session names use `-` delimiter which conflicts with hyphenated project/branch names, and git commands lack `current_dir`. Fix these before wiring the frontend.
 
 **Key design decisions:**
-- Session naming uses `::` delimiter: `otte::project::branch` (avoids conflict with `-` in names)
+- Session naming uses `::` delimiter: `racc::project::branch` (avoids conflict with `-` in names)
 - `create_session` takes a `repo_path` param so git commands run in the correct directory
 - `send_keys` split into literal text (`-l` flag) and special keys (Enter, C-c, etc.)
 
@@ -52,7 +52,7 @@ pub async fn create_session(
     branch: String,
     agent: String,
 ) -> Result<Session, String> {
-    let session_name = format!("otte::{}::{}", project, branch);
+    let session_name = format!("racc::{}::{}", project, branch);
 
     // Check if tmux session already exists
     let check = Command::new("tmux")
@@ -66,7 +66,7 @@ pub async fn create_session(
 
     // Resolve absolute worktree path relative to home directory
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    let worktree_path = format!("{}/otte-worktrees/{}/{}", home, project, branch);
+    let worktree_path = format!("{}/racc-worktrees/{}/{}", home, project, branch);
 
     // Create parent directory (but not the worktree dir itself — git needs it absent)
     let parent = std::path::Path::new(&worktree_path)
@@ -159,10 +159,10 @@ pub async fn list_sessions() -> Result<Vec<Session>, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let sessions: Vec<Session> = stdout
         .lines()
-        .filter(|line| line.starts_with("otte::"))
+        .filter(|line| line.starts_with("racc::"))
         .filter_map(|name| {
-            // Format: otte::project::branch
-            let rest = name.strip_prefix("otte::")?;
+            // Format: racc::project::branch
+            let rest = name.strip_prefix("racc::")?;
             let (project, branch) = rest.split_once("::")?;
             Some(Session {
                 id: name.to_string(),
