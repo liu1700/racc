@@ -7,14 +7,11 @@ import { StatusBar } from "./components/Dashboard/StatusBar";
 import { useSessionStore } from "./stores/sessionStore";
 
 function App() {
-  const fetchSessions = useSessionStore((s) => s.fetchSessions);
+  const initialize = useSessionStore((s) => s.initialize);
 
-  // Fetch existing sessions on mount and periodically refresh
   useEffect(() => {
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 5000);
-    return () => clearInterval(interval);
-  }, [fetchSessions]);
+    initialize();
+  }, [initialize]);
 
   return (
     <div className="flex h-screen flex-col bg-surface-0">

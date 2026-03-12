@@ -13,11 +13,8 @@ function formatTokens(n: number): string {
 
 export function CostTracker() {
   const [costs, setCosts] = useState<ProjectCosts | null>(null);
-  const activeSessionId = useSessionStore((s) => s.activeSessionId);
-  const sessions = useSessionStore((s) => s.sessions);
-
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const worktreePath = activeSession?.worktree_path;
+  const active = useSessionStore((s) => s.getActiveSession());
+  const worktreePath = active?.session.worktree_path ?? active?.repo.path;
 
   useEffect(() => {
     if (!worktreePath) {

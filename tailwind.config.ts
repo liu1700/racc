@@ -17,8 +17,6 @@ export default {
         },
         status: {
           running: "#22c55e",
-          waiting: "#f59e0b",
-          paused: "#6b7280",
           error: "#ef4444",
           disconnected: "#f97316",
           completed: "#3b82f6",

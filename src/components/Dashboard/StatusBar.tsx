@@ -1,9 +1,9 @@
 import { useSessionStore } from "../../stores/sessionStore";
 
 export function StatusBar() {
-  const sessions = useSessionStore((s) => s.sessions);
-  const activeSessions = sessions.filter(
-    (s) => s.status === "Running" || s.status === "Waiting",
+  const repos = useSessionStore((s) => s.repos);
+  const activeSessions = repos.flatMap((r) =>
+    r.sessions.filter((s) => s.status === "Running"),
   ).length;
 
   return (

@@ -6,7 +6,8 @@ import type { Terminal as XTermType } from "@xterm/xterm";
 export function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [term, setTerm] = useState<XTermType | null>(null);
-  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const activeSession = useSessionStore((s) => s.getActiveSession());
+  const sessionId = activeSession?.session.tmux_session_name ?? null;
 
   // Initialize xterm.js instance
   useEffect(() => {
@@ -67,15 +68,15 @@ export function Terminal() {
   // Reset terminal content when switching sessions
   const prevSessionRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeSessionId !== prevSessionRef.current && term) {
+    if (sessionId !== prevSessionRef.current && term) {
       term.reset();
-      prevSessionRef.current = activeSessionId;
+      prevSessionRef.current = sessionId;
     }
-  }, [activeSessionId, term]);
+  }, [sessionId, term]);
 
   // Wire up the tmux bridge
   useTmuxBridge({
-    sessionId: activeSessionId,
+    sessionId,
     terminal: term,
   });
 
@@ -84,7 +85,7 @@ export function Terminal() {
     term?.focus();
   }, [term]);
 
-  if (!activeSessionId) {
+  if (!sessionId) {
     return (
       <div className="flex flex-1 items-center justify-center text-zinc-500">
         <div className="text-center">
