@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { subscribe, getBuffer, writePty, resizePty } from "@/services/ptyManager";
+import { subscribe, getBuffer, writePty, resizePty } from "../services/ptyManager";
 
 interface UsePtyBridgeOptions {
   sessionId: number | null;
