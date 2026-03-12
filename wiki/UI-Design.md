@@ -80,8 +80,10 @@ Status uses a **single preattentive channel** (color hue) so problems pop out au
 
 - Expandable repo list with nested sessions underneath each repo
 - Each repo shows: name, path, expand/collapse toggle
-- Each session shows: agent type, branch name, status color dot, micro-summary
-- **Status grouping:** Within each repo, sessions are ordered by status priority: error/blocked first, then running, then completed — so "needs attention" items always appear at the top
+- Each session shows: agent type, branch name, status color dot, elapsed time (e.g., "12m", "2h 15m")
+- **Status sorting (implemented):** Within each repo, sessions are sorted by status priority: error (0) → disconnected (1) → running (2) → completed (3) — so "needs attention" items always appear at the top
+- **Running status pulse (implemented):** Running session dots use a subtle opacity animation (2s cycle) for ambient activity indication without distraction
+- **Hover transitions (implemented):** All interactive elements use `transition-colors duration-150` for smooth visual feedback
 - Quick actions per repo: [+] Launch new session, [×] Remove repo
 - Quick actions per session: Stop (if running), Remove (if not running)
 - Import Repo button opens native folder picker
@@ -106,7 +108,7 @@ Currently terminal-only mode:
 
 ### Terminal Mode (default — Deep Work)
 - Full xterm.js 5.5 terminal rendering the active agent session
-- Dark theme: background `#111113`, cursor `#6366f1` (indigo accent)
+- Dark theme: background `#1a1a1f`, foreground `#d4d4d8`, cursor `#6366f1` (indigo accent)
 - FitAddon for responsive sizing with ResizeObserver
 - Input goes directly to the agent via PTY write
 - Buffer replay on session switch (up to 1MB per session)
@@ -140,10 +142,9 @@ Currently terminal-only mode:
 ## Global Status Bar (implemented)
 
 Fixed bottom bar showing:
-- Number of active sessions
+- **Categorical session summary (implemented):** Color-coded counts by status category (e.g., "2 running · 1 error · 1 completed") with status-colored numbers — only non-zero categories shown. Enables the developer to hold system state as categorical chunks rather than N individual items.
 - Connection status indicator (green dot)
 - Placeholder cost displays (to be connected to real-time aggregation)
-- **Categorical session summary:** Shows count by status category (e.g., "3 running · 1 needs review · 2 completed") — enabling the developer to hold the system state as 3 categorical chunks rather than N individual items
 
 ## Notification Architecture
 
@@ -173,8 +174,8 @@ A five-tier alert system designed to prevent alarm fatigue (healthcare data show
 ## Dark Mode Design
 
 - **Default: dark mode** — matches 70% developer preference, produces lower perceived workload in eye-tracking studies
-- Background: dark gray range **#1E1E1E–#282C34** (never pure `#000000` — causes halation/eye strain)
-- Text: muted white **#D4D4D4–#E0E0E0** (not pure `#FFFFFF`)
+- **Background (implemented):** Dark gray palette — `surface-0: #121215`, `surface-1: #1a1a1f`, `surface-2: #232329`, `surface-3: #2e2e35` (never pure `#000000` — causes halation/eye strain)
+- **Text (implemented):** Muted white `#d4d4d8` (not pure `#FFFFFF` — reduces glare in extended sessions)
 - **Light mode toggle required** — approximately 50% of the population has astigmatism, where light-on-dark text causes visual artifacts. Also needed for bright ambient conditions and users with dyslexia.
 - Light mode uses positive polarity (dark text on light background) for better visual acuity and proofreading accuracy
 
