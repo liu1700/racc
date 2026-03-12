@@ -4,39 +4,47 @@
 
 ## System Overview
 
-OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a lightweight, stateless renderer. A daemon process on each machine manages all state.
+OTTE uses a **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
 
 ```
-+---------------------------+          +---------------------------+
-|     Tauri Client          |          |     Daemon (per machine)  |
-|  +---------------------+ |  WebSocket  +---------------------+ |
-|  | React + xterm.js    |<|----------|>| Session Manager       | |
-|  | (WebView)           | |          |  | Cost Tracker          | |
-|  +---------------------+ |          |  | Git/Worktree Manager  | |
-|  | Rust Core            | |          |  | TMux Controller       | |
-|  | (IPC bridge)         | |          |  | Docker Manager        | |
-|  +---------------------+ |          |  +---------------------+ |
-+---------------------------+          |  | PTY / send-keys      | |
-                                       |  +----------+-----------+ |
-           Tailscale Mesh              |             |             |
-        (cross-machine)               |  +----------v-----------+ |
-                                       |  | Agent Runtime         | |
-                                       |  | (Claude Code / Aider) | |
-                                       |  +---------------------+ |
-                                       +---------------------------+
++----------------------------------------------------------------------+
+|                        Tauri 2.x Application                         |
+|                                                                      |
+|  +---------------------------+     +-------------------------------+ |
+|  |    React 19 Frontend      |     |     Rust Backend              | |
+|  |  +---------------------+  | IPC |  +-------------------------+ | |
+|  |  | Zustand Store       |  |<--->|  | Session Commands        | | |
+|  |  | (sessionStore.ts)   |  |     |  | (session.rs)            | | |
+|  |  +---------------------+  |     |  +-------------------------+ | |
+|  |  | xterm.js Terminal   |  |     |  | Git Commands            | | |
+|  |  | (Terminal.tsx)       |  |     |  | (git.rs)                | | |
+|  |  +---------------------+  |     |  +-------------------------+ | |
+|  |  | PTY Manager         |  |     |  | Cost Tracker            | | |
+|  |  | (ptyManager.ts)     |  |     |  | (cost.rs)               | | |
+|  |  +---------------------+  |     |  +-------------------------+ | |
+|  |  | UI Components       |  |     |  | SQLite DB               | | |
+|  |  | Sidebar / CostTracker|  |     |  | (db.rs)                 | | |
+|  |  +---------------------+  |     |  +-------------------------+ | |
+|  +---------------------------+     +-------------------------------+ |
+|                                                                      |
+|  +------------------------------------------------------------------+|
+|  |  tauri-plugin-pty: Native PTY processes (one per session)        ||
+|  |  Agent runs inside PTY → xterm.js renders output in real-time   ||
+|  +------------------------------------------------------------------+|
++----------------------------------------------------------------------+
 ```
 
 ## Layer Breakdown
 
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
-| **Client** | Tauri (WebView + Rust) | Render UI, forward user actions, xterm.js terminal |
-| **Network** | Tailscale Mesh | Connect local/remote machines, MagicDNS naming |
-| **Daemon** | Rust daemon (per machine) | Manage tmux, worktrees, docker, cost tracking |
-| **Persistence** | SQLite + tmux | Repos and sessions stored in `~/.otte/otte.db`, tmux provides runtime persistence |
-| **Communication** | PTY / tmux send-keys | Bridge between IDE and interactive agents |
-| **Isolation** | Git Worktree + Docker | Code isolation + environment isolation |
-| **Naming** | Portless | Each worktree gets a named URL |
+| **Frontend** | React 19 + xterm.js + Zustand | Render UI, terminal display, state management |
+| **IPC** | Tauri `invoke()` | Frontend ↔ Rust communication via `#[tauri::command]` |
+| **Backend** | Rust (Tauri commands) | Session CRUD, git worktrees, cost tracking |
+| **Terminal I/O** | `tauri-plugin-pty` | Spawn/kill PTY processes, stream data to xterm.js |
+| **Persistence** | SQLite | Repos and sessions stored in `~/.otte/otte.db` |
+| **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
+| **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
 | **Agent Runtime** | Claude Code / Aider / Codex | Pluggable — IDE does not bind to a specific agent |
 
 ## Tech Stack
@@ -45,84 +53,97 @@ OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a
 
 **Why Tauri over Electron:**
 - Memory efficiency matters: users may have 5-10 terminal renderers + diff views open simultaneously
-- Tauri's Rust backend handles all system interactions (tmux, pty, git, docker) natively
+- Tauri's Rust backend handles all system interactions (PTY, git, SQLite) natively
+- Single-process model simplifies deployment and state management
 
 **Risk:** WebView cross-platform inconsistency (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux). Requires extra cross-platform testing investment.
 
-**Frontend:** React + xterm.js
+**Frontend stack:**
+- React 19 + TypeScript 5.8
+- xterm.js 5.5 with FitAddon for responsive terminal sizing
+- Zustand 5 for state management
+- Tailwind CSS 3.4 with custom design tokens
+- Vite 6.3 for dev server and builds
 
-### Session Persistence: SQLite + tmux
+### Session Persistence: SQLite + PTY
 
-Repos and sessions are persisted in SQLite (`~/.otte/otte.db`). tmux provides runtime session persistence.
+Repos and sessions are persisted in SQLite (`~/.otte/otte.db`). PTY processes provide runtime agent execution.
 
 **Design:**
-- Repos are first-class objects — imported via native folder picker, validated as git repos
-- Each agent session = one tmux session + one SQLite record
-- Naming convention: `otte::{repo-name}::{branch}`
+- Repos are first-class objects — imported via native folder picker (`tauri-plugin-dialog`), validated as git repos
+- Each agent session = one native PTY process + one SQLite record
 - Sessions can run directly in the repo or in an isolated git worktree
-- On app startup, `reconcile_sessions()` checks live tmux state against SQLite, marks dead sessions as `Disconnected`
-- Cost tracking reads Claude Code JSONL files using session's `worktree_path` or repo `path`
+- On app startup, `reconcile_sessions()` marks all previously `Running` sessions as `Disconnected` (since PTY state is in-memory and lost on restart)
+- On app close, `killAll()` cleans up all active PTY processes
+- Cost tracking reads Claude Code JSONL files from `~/.claude/projects/{encoded_path}/*.jsonl`
 
-### Agent Communication: Three-Phase Strategy
+**Schema (v2):**
+- `repos` table: id, path, name, added_at
+- `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
+- Migration from v1 dropped deprecated `tmux_session_name` column
 
-This is the **highest technical complexity** in the architecture. A layered approach:
+### Agent Communication: Native PTY
 
-#### Phase 1 — MVP: tmux send-keys + capture-pane
-
-```
-IDE  --[tmux send-keys]--> tmux session --> Agent
-IDE  <--[tmux capture-pane]-- tmux session
-```
-
-- Inject prompts: `tmux send-keys -t session-name "prompt" Enter`
-- Read output: `tmux capture-pane -t session-name -p`
-- **Pro:** Works with ANY terminal-based agent. Zero agent-specific code.
-- **Con:** Output requires ANSI escape sequence parsing. No structured data.
-
-#### Phase 2 — Mid-term: Direct PTY Bridging
+**Current implementation (Phase 2 — Direct PTY Bridging):**
 
 ```
-IDE  --[pty master read/write]--> PTY --> Agent
-IDE  --[xterm.js render]-->  User
+Frontend (ptyManager.ts)  --[spawn]--> tauri-plugin-pty --> Shell + Agent
+         xterm.js         <--[data]--- tauri-plugin-pty <-- Agent output
+         xterm.js         --[input]--> tauri-plugin-pty --> Agent stdin
 ```
 
-- Use Rust `portable-pty` or Node `node-pty` for pseudo-terminal allocation
-- Agent runs inside PTY, believes it has a real terminal
-- IDE reads/writes via PTY master, renders via xterm.js
-- **Pro:** Real-time bidirectional communication, high fidelity rendering
-- **Con:** Must handle ANSI parsing, flow control, terminal resize sync
+- `tauri-plugin-pty` spawns native PTY processes with configurable cols/rows
+- Agent commands (e.g., `claude`) are sent to the shell after a brief startup delay
+- Real-time bidirectional streaming: PTY output → xterm.js rendering, keyboard input → PTY stdin
+- Terminal resize events are synced from xterm.js FitAddon to PTY
+- Output buffer (up to 1MB per session) enables replay when switching between sessions
+- `usePtyBridge.ts` React hook manages three effects: output subscription, input forwarding, resize sync
 
-#### Phase 3 — Long-term: Agent SDK Integration
-
-```
-IDE  --[SDK API calls]--> Agent SDK --> Structured responses
-```
-
-- Use Claude Code Agent SDK to build custom interaction loops
-- Get structured output, tool approval callbacks, native message objects
-- Full control over agent behavior
-- **Con:** High development cost, each agent needs separate adapter
-
-**Key decision:** All three phases coexist via an **Agent Adapter** abstraction. Start with Phase 1 for universality, add Phase 2 for performance, add Phase 3 for the most popular agents.
+**Architectural note:** The original Phase 1 (tmux send-keys) was skipped in favor of direct PTY bridging, which provides real-time rendering and eliminates the need for output polling. Phase 3 (Agent SDK integration) remains planned for v0.3.
 
 ### Environment Isolation
 
-| Strategy | When to Use | When NOT to Use |
-|----------|-------------|-----------------|
-| **Bare Git Worktree** (default) | Lightweight projects, no env isolation needed | Multi-service, port conflicts, system-level deps |
-| **Docker Sandbox** (opt-in) | Need isolation, want `--dangerously-skip-permissions` | Resource-constrained machines, no Docker installed |
+| Strategy | When to Use | Status |
+|----------|-------------|--------|
+| **Bare Git Worktree** (default) | Lightweight projects, no env isolation needed | **Implemented** |
+| **Docker Sandbox** (opt-in) | Need isolation, want `--dangerously-skip-permissions` | Planned v0.2 |
+
+Worktrees are created at `~/otte-worktrees/{repo}/{branch}` via `git worktree add`.
 
 **Not recommended for MVP:**
 - Nix Flakes — learning curve too steep, narrows target audience
 - Firecracker — overkill for individual developers
 
-Unified via an **Environment Provider** abstraction layer.
-
-### Networking: Tailscale + Portless
+### Networking: Tailscale + Portless *(planned v0.2)*
 
 - Tailscale provides the mesh network between local and remote machines
 - Portless assigns named URLs to worktree services
 - **Cross-machine preview:** Use `Tailscale Serve` to expose Portless local addresses to the tailnet
 - Result: `feature-auth.vps.tailnet` reaches the correct worktree's service from any machine
+
+### Rust Command Modules
+
+All Tauri commands are registered in `lib.rs` and organized into modules:
+
+| Module | Commands | Purpose |
+|--------|----------|---------|
+| `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reconcile_sessions` | Session and repo lifecycle management |
+| `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
+| `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, calculate costs with model-specific pricing |
+| `db.rs` | (internal) | SQLite initialization, schema migrations |
+
+### Frontend Component Architecture
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `App.tsx` | Root layout | Three-panel layout orchestrator, calls `initialize()` on mount |
+| `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
+| `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
+| `NewAgentDialog.tsx` | Modal | Agent selector, worktree toggle, branch input |
+| `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
+| `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token/cost breakdown |
+| `ActivityLog.tsx` | Right panel | Placeholder (P1 feature) |
+| `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
+| `StatusBar.tsx` | Bottom bar | Active session count, connection status |
 
 [Next: Session Lifecycle >](Session-Lifecycle.md)
