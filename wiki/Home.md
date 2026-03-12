@@ -11,7 +11,7 @@ OTTE is a standalone desktop application (Tauri) for individual developers who u
 
 1. **Don't rebuild a code editor** — users already have one they love
 2. **Don't lock into a specific agent** — Claude Code, Aider, Codex should all work
-3. **Don't replace existing tools** — integrate with git, tmux, docker instead
+3. **Don't replace existing tools** — integrate with git, docker, native OS primitives instead
 
 ## Quick Navigation
 
@@ -21,17 +21,18 @@ OTTE is a standalone desktop application (Tauri) for individual developers who u
 | [Feature Specification](Feature-Specification.md) | P0 (MVP), P1, and P2 features in detail |
 | [UI Design](UI-Design.md) | Layout, panels, and interaction patterns |
 | [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
-| [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconnection |
+| [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
 | [Competitive Analysis](Competitive-Analysis.md) | How OTTE differs from Cursor, Windsurf, Claude Squad |
 | [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
 ## Key Technical Bets
 
-- **Tauri 2.x** — Rust backend + React frontend + xterm.js terminals
-- **tmux** — Session persistence layer (agents survive disconnects)
-- **PTY bridging** — Agent-agnostic communication via terminal I/O
+- **Tauri 2.x** — Rust backend + React 19 frontend + xterm.js terminals, single-process architecture
+- **Native PTY** — `tauri-plugin-pty` for real-time terminal I/O (replaced tmux)
+- **Agent-agnostic communication** — All agents interact via standard PTY read/write
 - **Git worktrees** — Code isolation per session, zero overhead
-- **Tailscale** — Cross-machine mesh networking for remote sessions
+- **Zustand** — Lightweight state management for frontend
+- **SQLite** — Session and repo persistence at `~/.otte/otte.db`
 
 ## One-Line Summary
 

@@ -27,15 +27,14 @@ Why this matters now: AI model capabilities are evolving rapidly. A new model dr
 
 OTTE's agent-agnostic design means users never have to choose between their IDE and the best available agent.
 
-### 2. Session Immortality (secondary moat)
+### 2. Session Resilience (secondary moat)
 
-tmux + Tailscale enables true fire-and-forget workflows:
-- Start a task at work
-- Close laptop
-- Agent keeps working on VPS
-- Review results at home
+Native PTY management with SQLite persistence provides:
+- Graceful cleanup on app close
+- Session reconciliation on restart (orphaned sessions marked Disconnected)
+- Output buffer replay when switching between sessions
 
-No competing product offers this level of session resilience for agentic coding.
+Planned for v0.2: Tailscale + remote execution for true fire-and-forget workflows (start at work, agent keeps running on VPS, review at home).
 
 ## What We Do NOT Compete On
 

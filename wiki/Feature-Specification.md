@@ -18,9 +18,9 @@ The main interface showing all active agent sessions as status cards.
 - Associated git branch and worktree path
 
 **Key actions:**
-- One-click new session creation (auto-creates worktree + tmux session + starts agent)
-- Pause / resume / terminate sessions
-- Quick switch between sessions
+- One-click new session creation (auto-creates worktree + spawns PTY + starts agent)
+- Stop / terminate sessions
+- Quick switch between sessions (with PTY output buffer replay)
 
 ### 2. Real-Time Cost Tracking
 
@@ -38,7 +38,7 @@ This is the **#1 user pain point** — the community has independently built 7+ 
 
 **MVP approach:** Read Claude Code's local usage data files. Support for other agents' cost data in later versions.
 
-### 3. Visual Diff Review
+### 3. Visual Diff Review *(not yet implemented)*
 
 When an agent completes a round of work, provide a proper review experience.
 
@@ -50,7 +50,9 @@ When an agent completes a round of work, provide a proper review experience.
 
 **Why this matters:** "Blindly accepting changes" is a real danger. Users need a review gate between agent output and their codebase.
 
-### 4. Agent Activity Transparency Log
+**Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
+
+### 4. Agent Activity Transparency Log *(not yet implemented)*
 
 Structured view of every agent operation.
 
@@ -67,6 +69,8 @@ Structured view of every agent operation.
 - Timestamp-ordered timeline
 
 **Why this matters:** Current agents show "Read 3 files" — but which 3? This solves the transparency problem.
+
+**Current status:** UI placeholder exists in `ActivityLog.tsx`. Structured event parsing is planned for P1.
 
 ---
 
