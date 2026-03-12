@@ -8,14 +8,17 @@ These four features define the minimum viable product. Without any one of them, 
 
 ### 1. Multi-Session Dashboard
 
-The main interface showing all active agent sessions as status cards.
+The main interface showing all active agent sessions as status cards. Designed around Cowan's working memory limit of 4±1 chunks — see [Cognitive Design Research](Cognitive-Design-Research.md).
 
-**Each card displays:**
-- Current task description
-- Runtime duration
+**Each card = one cognitive chunk:**
+- Status color dot (preattentive pop-out for instant triage)
+- Current task description / micro-summary
+- Runtime duration and progress indicator
 - Token consumption & estimated cost
 - Current operation (reading file / executing command / waiting for approval)
 - Associated git branch and worktree path
+
+**Categorical grouping:** Sessions are ordered by status priority (error/blocked → running → completed) so "needs attention" items always surface first. When 10 agents are grouped into 3 status categories, the developer holds 3 chunks rather than 10.
 
 **Key actions:**
 - One-click new session creation (auto-creates worktree + spawns PTY + starts agent)
@@ -40,7 +43,7 @@ This is the **#1 user pain point** — the community has independently built 7+ 
 
 ### 3. Visual Diff Review *(not yet implemented)*
 
-When an agent completes a round of work, provide a proper review experience.
+When an agent completes a round of work, provide a proper review experience. Designed around the cognitive research finding that review effectiveness drops after 60–90 minutes and 200–400 LOC — see [Cognitive Design Research](Cognitive-Design-Research.md).
 
 **Features:**
 - Side-by-side diff view (GitHub PR review style)
@@ -48,7 +51,9 @@ When an agent completes a round of work, provide a proper review experience.
 - Checkpoint timeline — roll back to any historical point
 - File change list with status indicators (added / modified / deleted)
 
-**Why this matters:** "Blindly accepting changes" is a real danger. Users need a review gate between agent output and their codebase.
+**Batched review model:** Completed agent work queues for review. The developer enters review mode on their own schedule rather than being interrupted mid-flow. This resolves the flow-monitoring paradox: agents run in the background (deep work mode) → results accumulate → developer surfaces for active evaluation (monitoring mode).
+
+**Why this matters:** "Blindly accepting changes" is a real danger — Parasuraman's research shows complacency risk increases with automation reliability. Users need a review gate between agent output and their codebase, and the review experience must support active comprehension, not rubber-stamping.
 
 **Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
 
@@ -81,6 +86,7 @@ These features significantly enhance the product but are not required for initia
 | Feature | Description | Dependency |
 |---------|-------------|------------|
 | **Task Queue & Background Execution** | Queue multiple tasks for sequential execution, or fan out N agents in parallel | Stable session management |
+| **Tiered Notification System** | Five-tier alerts (ambient → critical) with anti-fatigue design: deduplication, notification budgets, user thresholds. Audio channel for Tier 3+ per Wickens' Multiple Resource Theory | Session status tracking |
 | **Cross-Machine Session Management** | Connect to remote agent sessions via Tailscale, manage from one dashboard | Tailscale integration |
 | **Portless Integration** | Auto-assign named URLs per worktree, embed preview window in IDE | Portless setup |
 | **Multi-Agent Conflict Detection** | Warn when multiple agents modify the same file | File change tracking |

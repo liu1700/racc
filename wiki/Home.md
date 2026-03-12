@@ -20,6 +20,7 @@ Racc is a standalone desktop application (Tauri) for individual developers who u
 | [Product Vision](Product-Vision.md) | Core positioning, target users, design principles |
 | [Feature Specification](Feature-Specification.md) | P0 (MVP), P1, and P2 features in detail |
 | [UI Design](UI-Design.md) | Layout, panels, and interaction patterns |
+| [Cognitive Design Research](Cognitive-Design-Research.md) | Neuroscience and human factors research informing UI decisions |
 | [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
 | [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
 | [Competitive Analysis](Competitive-Analysis.md) | How Racc differs from Cursor, Windsurf, Claude Squad |

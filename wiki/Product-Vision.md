@@ -50,7 +50,19 @@ Users must be able to see exactly what their agents are doing:
 
 No black boxes. Every agent action is logged, searchable, and filterable.
 
-### 4. Integration Over Reinvention
+### 4. Design for Human Cognition
+
+The multi-agent supervision problem is fundamentally a human factors challenge. Working memory holds only 4±1 items, vigilance degrades after 15 minutes, and creative flow requires the opposite brain network from monitoring. Racc's UI is designed around these biological constraints:
+
+- **Categorical chunking** — group sessions by status so developers track 3 categories, not N individual agents
+- **Mode separation** — distinct monitoring mode (periodic check-ins) and deep work mode (uninterrupted focus)
+- **Preattentive encoding** — status communicated via color hue alone for sub-200ms detection
+- **Batched review** — completed work queues for evaluation windows rather than interrupting flow
+- **Tiered alerts** — five levels from ambient (color dots) to critical (modal), preventing alarm fatigue
+
+See [Cognitive Design Research](Cognitive-Design-Research.md) for the full scientific foundation.
+
+### 5. Integration Over Reinvention
 
 Build on battle-tested tools:
 - **git worktrees** for code isolation (not custom sandboxing)
