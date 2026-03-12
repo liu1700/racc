@@ -21,13 +21,14 @@ CREATE TABLE repos (
 
 CREATE TABLE sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     tmux_session_name TEXT NOT NULL UNIQUE,
     agent TEXT NOT NULL DEFAULT 'claude-code',
     worktree_path TEXT,          -- null if running directly in repo
     branch TEXT,                 -- branch name if worktree was created
     status TEXT NOT NULL DEFAULT 'Running',  -- Running | Completed | Disconnected | Error
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
@@ -80,7 +81,7 @@ On app start, `reconcile_sessions()`:
    - Submit button: "Launch"
 3. Backend:
    - If worktree: `git worktree add` at `~/otte-worktrees/<repo-name>/<branch>`
-   - Create tmux session named `otte::<repo-name>::<branch-or-main>`
+   - Create tmux session named `otte::<repo-name>::<branch>` (worktree) or `otte::<repo-name>::<current-branch>` (direct, detected via `git rev-parse --abbrev-ref HEAD`)
    - Send keys to start `claude` in the session
    - Insert session record into SQLite
 4. Session appears nested under repo in sidebar
@@ -89,7 +90,7 @@ On app start, `reconcile_sessions()`:
 
 - **Stop session:** kills tmux session, updates SQLite status to `Completed`, worktree is kept
 - **Remove disconnected/completed session:** deletes SQLite record, optionally cleans up worktree
-- **Remove repo:** only allowed if no `Running` sessions. Deletes repo + all session records from SQLite. Does NOT delete the repo from disk or any worktrees.
+- **Remove repo:** only allowed if no `Running` sessions. Disconnected/Completed/Error sessions are silently deleted via `ON DELETE CASCADE`. Does NOT delete the repo from disk or any worktrees.
 
 ## Backend Architecture
 
@@ -102,10 +103,13 @@ pub fn init_db() -> Result<Connection, String>
 ```
 
 - Opens/creates `~/.otte/otte.db`
-- Runs CREATE TABLE IF NOT EXISTS migrations
+- Sets `PRAGMA foreign_keys = ON` (required for `ON DELETE CASCADE`)
+- Runs schema migrations using `PRAGMA user_version` to track schema version:
+  - Version 0 → 1: CREATE TABLE repos + sessions
+  - Future migrations increment `user_version` and apply ALTER TABLE statements
 - Returns connection
 
-The `Connection` should be managed as Tauri app state (`tauri::State<Mutex<Connection>>`) so all commands share one connection.
+The `Connection` should be managed as Tauri app state (`tauri::State<std::sync::Mutex<Connection>>`). The `std::sync::Mutex` is appropriate here because rusqlite operations are fast (sub-millisecond for typical queries) and the lock is held only briefly. All Tauri commands acquire the lock, perform the DB operation, and release it before any async work (tmux commands).
 
 ### Rewritten: `src-tauri/src/commands/session.rs`
 
@@ -126,6 +130,14 @@ All session operations now go through SQLite + tmux.
 ### Rust Types
 
 ```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SessionStatus {
+    Running,
+    Completed,
+    Disconnected,
+    Error,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Repo {
     pub id: i64,
@@ -142,8 +154,9 @@ pub struct Session {
     pub agent: String,
     pub worktree_path: Option<String>,
     pub branch: Option<String>,
-    pub status: String,
+    pub status: SessionStatus,
     pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,14 +166,17 @@ pub struct RepoWithSessions {
 }
 ```
 
+`SessionStatus` is stored as TEXT in SQLite (e.g., `"Running"`). The old 7-variant enum (`Creating`, `Waiting`, `Paused` etc.) is reduced to 4 variants because the removed states were never used in practice. The Tailwind status colors for removed states (`status-waiting`, `status-paused`) should be cleaned up in `tailwind.config.ts`.
+
 ### Dependencies
 
 Add to `src-tauri/Cargo.toml`:
 - `rusqlite = { version = "0.31", features = ["bundled"] }` — SQLite with bundled library
 - `tauri-plugin-dialog = "2"` — native file/folder picker
 
-Add to `src-tauri/capabilities/default.json`:
+Create `src-tauri/capabilities/default.json` if it doesn't exist, and add:
 - `"dialog:default"` — permission for dialog plugin
+- Include existing permissions (shell, etc.)
 
 Register dialog plugin in `lib.rs`:
 - `.plugin(tauri_plugin_dialog::init())`
@@ -209,6 +225,9 @@ interface SessionState {
   loading: boolean;
   error: string | null;
 
+  // Derived selector — used by Terminal (needs tmux_session_name) and CostTracker (needs worktree_path + repo.path)
+  getActiveSession: () => { session: Session; repo: Repo } | null;
+
   initialize: () => Promise<void>;       // reconcile_sessions on mount
   importRepo: (path: string) => Promise<void>;
   removeRepo: (repoId: number) => Promise<void>;
@@ -216,8 +235,15 @@ interface SessionState {
   stopSession: (sessionId: number) => Promise<void>;
   removeSession: (sessionId: number) => Promise<void>;
   setActiveSession: (id: number) => void;
+  clearError: () => void;
 }
 ```
+
+**Terminal integration:** `Terminal.tsx` / `useTmuxBridge` uses `getActiveSession()?.session.tmux_session_name` instead of `activeSessionId` directly.
+
+**CostTracker integration:** uses `getActiveSession()` and passes `session.worktree_path ?? repo.path` to `get_project_costs`.
+
+**Error handling convention:** all async actions catch errors and set `error: string | null` in the store. Components read `error` to display. `clearError()` resets it.
 
 ### Components
 
@@ -247,7 +273,13 @@ interface SessionState {
 
 ## Cost Tracker Integration
 
-The `get_project_costs(worktree_path)` command still works. For sessions running directly in the repo (no worktree), pass the repo's `path` instead. The `CostTracker` component reads the active session's `worktree_path ?? repo.path` to fetch costs.
+The `get_project_costs(worktree_path)` command still works unchanged. `CostTracker` uses the `getActiveSession()` selector from the store:
+
+```typescript
+const active = useSessionStore((s) => s.getActiveSession());
+const costPath = active?.session.worktree_path ?? active?.repo.path;
+// pass costPath to invoke("get_project_costs", { worktreePath: costPath })
+```
 
 ## What's NOT in Scope
 
