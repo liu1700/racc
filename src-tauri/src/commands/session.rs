@@ -14,15 +14,6 @@ pub enum SessionStatus {
 }
 
 impl SessionStatus {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Running => "Running",
-            Self::Completed => "Completed",
-            Self::Disconnected => "Disconnected",
-            Self::Error => "Error",
-        }
-    }
-
     fn from_str(s: &str) -> Self {
         match s {
             "Running" => Self::Running,
