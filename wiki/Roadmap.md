@@ -15,8 +15,8 @@
 | Multi-session dashboard | Create / stop / switch between sessions | Done (basic) |
 | Auto worktree + tmux | One-click session creation with auto-provisioning | Done |
 | tmux send-keys injection | Send prompts to agents via tmux | Done |
-| Basic cost tracking | Read Claude Code's local usage data | **Next** |
-| Git diff viewer | View changes made by agents | Planned |
+| Basic cost tracking | Read Claude Code's local usage data | Done (#5) |
+| Git diff viewer | View changes made by agents | **Next** |
 
 **Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see cost per session, and review diffs before accepting changes.
 
