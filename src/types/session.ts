@@ -10,7 +10,6 @@ export type SessionStatus = "Running" | "Completed" | "Disconnected" | "Error";
 export interface Session {
   id: number;
   repo_id: number;
-  tmux_session_name: string;
   agent: string;
   worktree_path: string | null;
   branch: string | null;
