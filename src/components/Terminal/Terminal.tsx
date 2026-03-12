@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useShallow } from "zustand/react/shallow";
 import { usePtyBridge } from "../../hooks/usePtyBridge";
 import type { Terminal as XTermType } from "@xterm/xterm";
 
 export function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [term, setTerm] = useState<XTermType | null>(null);
-  const activeSession = useSessionStore((s) => s.getActiveSession());
+  const activeSession = useSessionStore(useShallow((s) => s.getActiveSession()));
   const sessionId = activeSession?.session.id ?? null;
 
   // Initialize xterm.js instance
