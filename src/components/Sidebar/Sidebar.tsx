@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
+import { NewSessionDialog } from "./NewSessionDialog";
 import type { SessionStatus } from "../../types/session";
 
 const statusColor: Record<SessionStatus, string> = {
@@ -14,6 +16,7 @@ const statusColor: Record<SessionStatus, string> = {
 export function Sidebar() {
   const { sessions, activeSessionId, setActiveSession, stopSession } =
     useSessionStore();
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
     <aside className="flex w-56 flex-col bg-surface-1">
@@ -22,7 +25,10 @@ export function Sidebar() {
         <h1 className="text-sm font-semibold tracking-wide text-zinc-200">
           OTTE
         </h1>
-        <button className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover">
+        <button
+          onClick={() => setDialogOpen(true)}
+          className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+        >
           + New
         </button>
       </div>
@@ -72,6 +78,8 @@ export function Sidebar() {
           </ul>
         )}
       </div>
+
+      <NewSessionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </aside>
   );
 }

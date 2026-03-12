@@ -10,11 +10,12 @@
 
 | Feature | Detail | Status |
 |---------|--------|--------|
-| Multi-session dashboard | Create / stop / switch between sessions | Planned |
-| Auto worktree + tmux | One-click session creation with auto-provisioning | Planned |
-| PTY terminal rendering | xterm.js rendering of agent sessions | Planned |
-| tmux send-keys injection | Send prompts to agents via tmux | Planned |
-| Basic cost tracking | Read Claude Code's local usage data | Planned |
+| Project scaffold | Tauri 2.x + React + TypeScript + Bun | Done (#2) |
+| Multi-session dashboard | Create / stop / switch between sessions | Scaffolded |
+| Auto worktree + tmux | One-click session creation with auto-provisioning | Scaffolded |
+| PTY terminal rendering | xterm.js rendering of agent sessions | **Next** |
+| tmux send-keys injection | Send prompts to agents via tmux | Scaffolded |
+| Basic cost tracking | Read Claude Code's local usage data | Scaffolded |
 | Git diff viewer | View changes made by agents | Planned |
 
 **Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see cost per session, and review diffs before accepting changes.
