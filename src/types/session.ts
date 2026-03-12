@@ -1,18 +1,25 @@
-export type SessionStatus =
-  | "Creating"
-  | "Running"
-  | "Waiting"
-  | "Paused"
-  | "Disconnected"
-  | "Completed"
-  | "Error";
+export interface Repo {
+  id: number;
+  path: string;
+  name: string;
+  added_at: string;
+}
+
+export type SessionStatus = "Running" | "Completed" | "Disconnected" | "Error";
 
 export interface Session {
-  id: string;
-  name: string;
-  project: string;
-  branch: string;
+  id: number;
+  repo_id: number;
+  tmux_session_name: string;
   agent: string;
+  worktree_path: string | null;
+  branch: string | null;
   status: SessionStatus;
-  worktree_path: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepoWithSessions {
+  repo: Repo;
+  sessions: Session[];
 }
