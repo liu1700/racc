@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-OTTE is an Agentic IDE — a Tauri 2.x desktop app that orchestrates multiple AI coding agent sessions (Claude Code, Aider, Codex). It is not a code editor; it's a control plane for terminal-based agents built on tmux, git worktrees, and xterm.js.
+OTTE is an Agentic IDE — a Tauri 2.x desktop app that orchestrates multiple AI coding agent sessions (Claude Code, Aider, Codex). It is not a code editor; it's a control plane for terminal-based agents built on native PTY, git worktrees, and xterm.js.
 
 ## Commands
 
@@ -31,10 +31,11 @@ No test framework is configured yet.
 **IPC pattern:** Frontend calls Rust via `invoke()` from `@tauri-apps/api/core`. Rust commands use `#[tauri::command]` macro and return `Result<T, String>`. All commands are registered in `src-tauri/src/lib.rs`.
 
 **Rust command modules** (`src-tauri/src/commands/`):
-- `session.rs` — Create/list/stop sessions (wraps tmux + git worktree)
-- `tmux.rs` — send-keys and capture-pane
+- `session.rs` — Create/list/stop sessions (DB + git worktree)
 - `git.rs` — Worktree create/delete, diff
 - `cost.rs` — Read Claude Code usage data from `~/.claude/usage/`
+
+**Terminal I/O:** Managed entirely from the frontend via `tauri-plugin-pty`. The `ptyManager.ts` singleton spawns/kills PTY processes; `usePtyBridge.ts` hook streams output to xterm.js in real-time.
 
 **Frontend state:** Zustand store in `src/stores/sessionStore.ts` manages session list and active session, calls Tauri commands.
 
@@ -42,10 +43,10 @@ No test framework is configured yet.
 
 ## Key Conventions
 
-- **Session = tmux session + git worktree.** Naming: `otte-{project}-{branch}`
-- **Agent-agnostic:** Communication via tmux send-keys/capture-pane (works with any terminal agent)
+- **Session = PTY process + git worktree.** Each session spawns a native PTY via `tauri-plugin-pty`.
+- **Agent-agnostic:** Communication via native PTY read/write (works with any terminal agent)
 - **Tailwind custom tokens:** `surface-{0,1,2,3}` for backgrounds, `accent` for interactive elements, `status-{running,waiting,paused,error,disconnected,completed}` for session states — defined in `tailwind.config.ts`
-- **Path alias:** `@/*` maps to `src/*` in TypeScript
+- **Path alias:** `@/*` maps to `src/*` in TypeScript (tsconfig only, not Vite — use relative imports)
 
 ## Wiki
 
