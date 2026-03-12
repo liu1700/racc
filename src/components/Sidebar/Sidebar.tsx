@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { ImportRepoDialog } from "./ImportRepoDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
-import type { SessionStatus } from "../../types/session";
+import type { Session, SessionStatus } from "../../types/session";
 
 const statusColor: Record<SessionStatus, string> = {
   Running: "bg-status-running",
@@ -10,6 +10,31 @@ const statusColor: Record<SessionStatus, string> = {
   Disconnected: "bg-status-disconnected",
   Error: "bg-status-error",
 };
+
+// Sort priority: errors/blocked first, then running, then completed/disconnected
+const statusPriority: Record<SessionStatus, number> = {
+  Error: 0,
+  Disconnected: 1,
+  Running: 2,
+  Completed: 3,
+};
+
+function formatElapsed(createdAt: string): string {
+  const elapsed = Date.now() - new Date(createdAt).getTime();
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+}
+
+function sortByStatus(sessions: Session[]): Session[] {
+  return [...sessions].sort(
+    (a, b) => statusPriority[a.status] - statusPriority[b.status],
+  );
+}
 
 export function Sidebar() {
   const repos = useSessionStore((s) => s.repos);
@@ -55,7 +80,7 @@ export function Sidebar() {
 
         {repos.map(({ repo, sessions }) => (
           <div key={repo.id} className="mb-1">
-            <div className="group flex items-center rounded px-2 py-1.5 hover:bg-surface-2">
+            <div className="group flex items-center rounded px-2 py-1.5 transition-colors duration-150 hover:bg-surface-2">
               <button
                 onClick={() => toggleRepo(repo.id)}
                 className="mr-1 text-xs text-zinc-500"
@@ -63,7 +88,7 @@ export function Sidebar() {
                 {isExpanded(repo.id) ? "▼" : "▶"}
               </button>
               <span
-                className="flex-1 truncate text-xs font-medium text-zinc-300 cursor-pointer"
+                className="flex-1 cursor-pointer truncate text-xs font-medium text-zinc-300"
                 onClick={() => toggleRepo(repo.id)}
                 title={repo.path}
               >
@@ -71,14 +96,14 @@ export function Sidebar() {
               </span>
               <button
                 onClick={() => setAgentDialogRepoId(repo.id)}
-                className="ml-1 hidden rounded px-1 text-xs text-zinc-500 hover:text-accent group-hover:block"
+                className="ml-1 hidden rounded px-1 text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
                 title="Launch agent"
               >
                 +
               </button>
               <button
                 onClick={() => removeRepo(repo.id)}
-                className="ml-1 hidden rounded px-1 text-xs text-zinc-500 hover:text-red-400 group-hover:block"
+                className="ml-1 hidden rounded px-1 text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
                 title="Remove repo"
               >
                 ×
@@ -86,7 +111,7 @@ export function Sidebar() {
             </div>
 
             {isExpanded(repo.id) &&
-              sessions.map((session) => (
+              sortByStatus(sessions).map((session) => (
                 <div
                   key={session.id}
                   onClick={() => {
@@ -94,17 +119,22 @@ export function Sidebar() {
                       setActiveSession(session.id);
                     }
                   }}
-                  className={`group ml-4 flex cursor-pointer items-center gap-2 rounded px-2 py-1 ${
+                  className={`group ml-4 flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors duration-150 ${
                     session.id === activeSessionId
                       ? "bg-surface-3"
                       : "hover:bg-surface-2"
                   }`}
                 >
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${statusColor[session.status]}`}
+                    className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusColor[session.status]} ${
+                      session.status === "Running" ? "animate-status-pulse" : ""
+                    }`}
                   />
                   <span className="flex-1 truncate text-xs text-zinc-400">
                     {session.branch ?? "main"}
+                  </span>
+                  <span className="text-[10px] tabular-nums text-zinc-600">
+                    {formatElapsed(session.created_at)}
                   </span>
                   {session.status === "Running" ? (
                     <button
@@ -112,7 +142,7 @@ export function Sidebar() {
                         e.stopPropagation();
                         stopSession(session.id);
                       }}
-                      className="hidden text-xs text-zinc-500 hover:text-red-400 group-hover:block"
+                      className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
                       title="Stop session"
                     >
                       ■
@@ -123,7 +153,7 @@ export function Sidebar() {
                         e.stopPropagation();
                         removeSession(session.id);
                       }}
-                      className="hidden text-xs text-zinc-500 hover:text-red-400 group-hover:block"
+                      className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
                       title="Remove session"
                     >
                       ×

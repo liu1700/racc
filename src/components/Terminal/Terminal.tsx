@@ -30,8 +30,8 @@ export function Terminal() {
         fontSize: 13,
         fontFamily: '"JetBrains Mono", "Fira Code", monospace',
         theme: {
-          background: "#111113",
-          foreground: "#e4e4e7",
+          background: "#1a1a1f",
+          foreground: "#d4d4d8",
           cursor: "#6366f1",
           selectionBackground: "#6366f140",
         },

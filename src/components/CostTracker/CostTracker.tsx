@@ -52,13 +52,13 @@ export function CostTracker() {
       <div className="mt-2 grid grid-cols-2 gap-3">
         <div>
           <p className="text-xs text-zinc-500">Total cost</p>
-          <p className="text-lg font-semibold text-white">
+          <p className="text-lg font-semibold text-zinc-100">
             ${costs?.total_estimated_cost_usd.toFixed(2) ?? "0.00"}
           </p>
         </div>
         <div>
           <p className="text-xs text-zinc-500">Sessions</p>
-          <p className="text-lg font-semibold text-white">
+          <p className="text-lg font-semibold text-zinc-100">
             {costs?.sessions.length ?? 0}
           </p>
         </div>
