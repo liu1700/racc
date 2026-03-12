@@ -12,6 +12,9 @@ src-tauri/target/
 *.swo
 .DS_Store
 
+# Build cache
+tsconfig.tsbuildinfo
+
 # Environment
 .env
 .env.local
