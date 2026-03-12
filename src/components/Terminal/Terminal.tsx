@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useTmuxBridge } from "../../hooks/useTmuxBridge";
+import { usePtyBridge } from "../../hooks/usePtyBridge";
 import type { Terminal as XTermType } from "@xterm/xterm";
 
 export function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
   const [term, setTerm] = useState<XTermType | null>(null);
   const activeSession = useSessionStore((s) => s.getActiveSession());
-  const sessionId = activeSession?.session.tmux_session_name ?? null;
+  const sessionId = activeSession?.session.id ?? null;
 
   // Initialize xterm.js instance
   useEffect(() => {
@@ -65,17 +65,8 @@ export function Terminal() {
     };
   }, []);
 
-  // Reset terminal content when switching sessions
-  const prevSessionRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (sessionId !== prevSessionRef.current && term) {
-      term.reset();
-      prevSessionRef.current = sessionId;
-    }
-  }, [sessionId, term]);
-
-  // Wire up the tmux bridge
-  useTmuxBridge({
+  // Wire up the PTY bridge
+  usePtyBridge({
     sessionId,
     terminal: term,
   });
