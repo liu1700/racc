@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useShallow } from "zustand/react/shallow";
 import type { ProjectCosts } from "../../types/cost";
 
 const COST_POLL_INTERVAL_MS = 10_000;
@@ -13,7 +14,7 @@ function formatTokens(n: number): string {
 
 export function CostTracker() {
   const [costs, setCosts] = useState<ProjectCosts | null>(null);
-  const active = useSessionStore((s) => s.getActiveSession());
+  const active = useSessionStore(useShallow((s) => s.getActiveSession()));
   const worktreePath = active?.session.worktree_path ?? active?.repo.path;
 
   useEffect(() => {
