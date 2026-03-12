@@ -46,11 +46,16 @@ Claude Code stores API usage in per-session JSONL files:
 
 **Rewrite** the existing `cost.rs` module. Remove the current `get_usage()` that reads from non-existent `~/.claude/usage/`.
 
+**Path resolution:** OTTE launches Claude Code inside the worktree directory, so Claude Code registers the worktree path as its project. Therefore `worktree_path` correctly maps to the `~/.claude/projects/` encoded path.
+
+**Session mapping (MVP):** There is no 1:1 mapping between OTTE sessions and Claude Code JSONL session files. For MVP, we aggregate ALL JSONL files under the project's encoded directory. The `SessionCost.session_id` is Claude Code's internal UUID, not the OTTE session name. This is sufficient because each worktree directory typically corresponds to one OTTE session.
+
 **New types:**
 
 ```rust
+#[derive(Debug, Serialize)]
 struct SessionCost {
-    session_id: String,        // JSONL filename (UUID)
+    session_id: String,        // Claude Code JSONL filename (UUID), not OTTE session ID
     input_tokens: u64,
     output_tokens: u64,
     cache_creation_tokens: u64,
@@ -58,6 +63,7 @@ struct SessionCost {
     estimated_cost_usd: f64,
 }
 
+#[derive(Debug, Serialize)]
 struct ProjectCosts {
     sessions: Vec<SessionCost>,
     total_input_tokens: u64,
@@ -68,14 +74,41 @@ struct ProjectCosts {
 }
 ```
 
-**New commands:**
+**JSONL deserialization helpers** (for `serde_json::from_str` on each line):
+
+```rust
+#[derive(Deserialize)]
+struct JsnlLine {
+    message: Option<MessagePayload>,
+}
+
+#[derive(Deserialize)]
+struct MessagePayload {
+    model: Option<String>,
+    usage: Option<UsageFields>,
+}
+
+#[derive(Deserialize)]
+struct UsageFields {
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+}
+```
+
+Malformed JSONL lines (truncated writes, concurrent access) should be silently skipped — log a warning but don't fail.
+
+**New command:**
 
 1. `get_project_costs(worktree_path: String) -> Result<ProjectCosts, String>`
-   - Convert `worktree_path` to encoded path format
+   - Convert `worktree_path` to encoded path format (replace `/` with `-`)
    - Scan `~/.claude/projects/<encoded-path>/` for `*.jsonl` files
-   - For each JSONL file: read line-by-line, parse JSON, extract `message.usage` and `message.model`
+   - For each JSONL file: read line-by-line, parse JSON via `JsnlLine`, extract usage + model
    - Aggregate tokens, apply model-specific pricing
    - Return `ProjectCosts` with per-session breakdown
+
+**Command registration:** Update `src-tauri/src/lib.rs` — replace `commands::cost::get_usage` with `commands::cost::get_project_costs` in `generate_handler![]`.
 
 **Pricing constants (per 1M tokens):**
 
@@ -86,6 +119,8 @@ struct ProjectCosts {
 | `haiku` | $0.80 | $4.00 | $1.00 | $0.08 |
 
 Model matching: check if `message.model` string contains "opus", "sonnet", or "haiku". Default to Sonnet pricing if unknown.
+
+**Pricing is hardcoded** in a single `const` block (`MODEL_PRICING` or similar) for easy updating when Anthropic changes rates. Not user-configurable for MVP.
 
 **Performance:** JSONL files can grow large. For MVP, parse the full file each time. If this becomes a bottleneck, we can add byte-offset caching later.
 
@@ -116,9 +151,10 @@ Model matching: check if `message.model` string contains "opus", "sonnet", or "h
 
 2. `useEffect` with `setInterval` (10s) to call `invoke("get_project_costs", { worktreePath })`.
 3. Get `worktreePath` from the active session in the Zustand store.
-4. Display:
+4. Define `COST_POLL_INTERVAL_MS = 10_000` as a named constant.
+5. Display:
    - Total estimated cost (prominent, large text)
-   - Token breakdown: input / output / cache
+   - Four token categories: input tokens, output tokens, cache write tokens, cache read tokens
    - Per-session cost list (if multiple Claude Code sessions exist for the project)
 
 ### Agent Dropdown — `src/components/Sidebar/NewSessionDialog.tsx`
