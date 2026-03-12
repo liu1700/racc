@@ -1,10 +1,21 @@
+import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
 import { ActivityLog } from "./components/ActivityLog/ActivityLog";
 import { CostTracker } from "./components/CostTracker/CostTracker";
 import { StatusBar } from "./components/Dashboard/StatusBar";
+import { useSessionStore } from "./stores/sessionStore";
 
 function App() {
+  const fetchSessions = useSessionStore((s) => s.fetchSessions);
+
+  // Fetch existing sessions on mount and periodically refresh
+  useEffect(() => {
+    fetchSessions();
+    const interval = setInterval(fetchSessions, 5000);
+    return () => clearInterval(interval);
+  }, [fetchSessions]);
+
   return (
     <div className="flex h-screen flex-col bg-surface-0">
       {/* Main Content */}
