@@ -1,0 +1,6 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="200" fill="#111113"/>
+  <rect x="80" y="80" width="864" height="864" rx="160" fill="#18181b"/>
+  <text x="512" y="580" font-family="system-ui, -apple-system, sans-serif" font-size="420" font-weight="800" fill="#6366f1" text-anchor="middle">O</text>
+  <circle cx="512" cy="760" r="40" fill="#22c55e"/>
+</svg>
