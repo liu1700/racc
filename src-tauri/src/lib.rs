@@ -9,6 +9,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_pty::init())
         .manage(Mutex::new(db))
         .invoke_handler(tauri::generate_handler![
             commands::session::import_repo,
@@ -18,10 +19,6 @@ pub fn run() {
             commands::session::stop_session,
             commands::session::remove_session,
             commands::session::reconcile_sessions,
-            commands::tmux::send_keys,
-            commands::tmux::send_special_key,
-            commands::tmux::capture_pane,
-            commands::tmux::resize_pane,
             commands::git::create_worktree,
             commands::git::delete_worktree,
             commands::git::get_diff,
