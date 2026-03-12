@@ -1,6 +1,6 @@
 # UI Design
 
-[< Home](Home) | [< Feature Specification](Feature-Specification)
+[< Home](Home.md) | [< Feature Specification](Feature-Specification.md)
 
 ## Layout Overview
 
@@ -86,4 +86,4 @@ Fixed bottom bar showing:
 - Number of active sessions
 - Network status (connected/disconnected per machine)
 
-[Next: Technical Architecture >](Technical-Architecture)
+[Next: Technical Architecture >](Technical-Architecture.md)

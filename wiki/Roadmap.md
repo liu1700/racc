@@ -1,6 +1,6 @@
 # Roadmap
 
-[< Home](Home) | [< Competitive Analysis](Competitive-Analysis)
+[< Home](Home.md) | [< Competitive Analysis](Competitive-Analysis.md)
 
 ## Version Plan
 

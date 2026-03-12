@@ -17,13 +17,13 @@ OTTE is a standalone desktop application (Tauri) for individual developers who u
 
 | Page | Description |
 |------|-------------|
-| [Product Vision](Product-Vision) | Core positioning, target users, design principles |
-| [Feature Specification](Feature-Specification) | P0 (MVP), P1, and P2 features in detail |
-| [UI Design](UI-Design) | Layout, panels, and interaction patterns |
-| [Technical Architecture](Technical-Architecture) | System architecture, tech stack, and tradeoffs |
-| [Session Lifecycle](Session-Lifecycle) | State machine, creation flow, reconnection |
-| [Competitive Analysis](Competitive-Analysis) | How OTTE differs from Cursor, Windsurf, Claude Squad |
-| [Roadmap](Roadmap) | MVP scope and versioned milestones |
+| [Product Vision](Product-Vision.md) | Core positioning, target users, design principles |
+| [Feature Specification](Feature-Specification.md) | P0 (MVP), P1, and P2 features in detail |
+| [UI Design](UI-Design.md) | Layout, panels, and interaction patterns |
+| [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
+| [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconnection |
+| [Competitive Analysis](Competitive-Analysis.md) | How OTTE differs from Cursor, Windsurf, Claude Squad |
+| [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
 ## Key Technical Bets
 

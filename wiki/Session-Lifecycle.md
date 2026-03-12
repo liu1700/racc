@@ -1,6 +1,6 @@
 # Session Lifecycle
 
-[< Home](Home) | [< Technical Architecture](Technical-Architecture)
+[< Home](Home.md) | [< Technical Architecture](Technical-Architecture.md)
 
 ## Session Creation Flow
 
@@ -108,4 +108,4 @@ When a session reaches **Completed** or is terminated:
 3. Archive session metadata (cost, activity log, duration) for historical tracking
 4. Remove from active dashboard, add to session history
 
-[Next: Competitive Analysis >](Competitive-Analysis)
+[Next: Competitive Analysis >](Competitive-Analysis.md)

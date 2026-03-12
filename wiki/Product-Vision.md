@@ -1,6 +1,6 @@
 # Product Vision
 
-[< Home](Home)
+[< Home](Home.md)
 
 ## Core Positioning
 
@@ -59,4 +59,4 @@ Build on battle-tested tools:
 - **docker** for environment isolation (not Nix or Firecracker)
 - **Tailscale** for networking (not custom VPN)
 
-[Next: Feature Specification >](Feature-Specification)
+[Next: Feature Specification >](Feature-Specification.md)
