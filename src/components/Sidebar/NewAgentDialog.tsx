@@ -51,28 +51,25 @@ export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
           Launch Agent
         </h2>
 
-        <fieldset className="mb-4 space-y-2">
-          <label className="flex items-center gap-2 text-xs text-zinc-300">
-            <input
-              type="radio"
-              name="mode"
-              checked={!useWorktree}
-              onChange={() => setUseWorktree(false)}
-              className="accent-accent"
-            />
-            Run in repo
-          </label>
-          <label className="flex items-center gap-2 text-xs text-zinc-300">
-            <input
-              type="radio"
-              name="mode"
-              checked={useWorktree}
-              onChange={() => setUseWorktree(true)}
-              className="accent-accent"
-            />
-            Create worktree
-          </label>
-        </fieldset>
+        <label className="mb-3 block">
+          <span className="mb-1 block text-xs text-zinc-400">Agent</span>
+          <select
+            className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent"
+            defaultValue="claude-code"
+          >
+            <option value="claude-code">Claude Code</option>
+          </select>
+        </label>
+
+        <label className="mb-4 flex items-center gap-2 text-xs text-zinc-300">
+          <input
+            type="checkbox"
+            checked={useWorktree}
+            onChange={(e) => setUseWorktree(e.target.checked)}
+            className="accent-accent"
+          />
+          Create a new worktree
+        </label>
 
         {useWorktree && (
           <label className="mb-4 block">
