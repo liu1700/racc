@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Display estimated costs per OTTE session by parsing Claude Code's local JSONL session files.
+**Goal:** Display estimated costs per Racc session by parsing Claude Code's local JSONL session files.
 
 **Architecture:** Rust backend parses `~/.claude/projects/<encoded-path>/*.jsonl` files, extracts `message.usage` token counts, applies model-specific pricing, and returns structured cost data via Tauri IPC. React frontend polls this data every 10s and displays it in the CostTracker panel.
 

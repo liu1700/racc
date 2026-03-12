@@ -30,7 +30,7 @@ Three-panel layout, left to right:
 
 **The agent terminal occupies the center main area** — not a sidebar.
 
-This is a deliberate departure from Cursor/Windsurf, which squeeze agents into side panels. OTTE's users are migrating from full-screen terminal agent workflows. The terminal must remain the primary interaction surface.
+This is a deliberate departure from Cursor/Windsurf, which squeeze agents into side panels. Racc's users are migrating from full-screen terminal agent workflows. The terminal must remain the primary interaction surface.
 
 ## Left Sidebar — Session List
 

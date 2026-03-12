@@ -4,7 +4,7 @@
 
 ## System Overview
 
-OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a lightweight, stateless renderer. A daemon process on each machine manages all state.
+Racc uses a **Remote-First Client/Server** architecture. The client (Tauri) is a lightweight, stateless renderer. A daemon process on each machine manages all state.
 
 ```
 +---------------------------+          +---------------------------+
@@ -33,7 +33,7 @@ OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a
 | **Client** | Tauri (WebView + Rust) | Render UI, forward user actions, xterm.js terminal |
 | **Network** | Tailscale Mesh | Connect local/remote machines, MagicDNS naming |
 | **Daemon** | Rust daemon (per machine) | Manage tmux, worktrees, docker, cost tracking |
-| **Persistence** | SQLite + tmux | Repos and sessions stored in `~/.otte/otte.db`, tmux provides runtime persistence |
+| **Persistence** | SQLite + tmux | Repos and sessions stored in `~/.racc/racc.db`, tmux provides runtime persistence |
 | **Communication** | PTY / tmux send-keys | Bridge between IDE and interactive agents |
 | **Isolation** | Git Worktree + Docker | Code isolation + environment isolation |
 | **Naming** | Portless | Each worktree gets a named URL |
@@ -53,12 +53,12 @@ OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a
 
 ### Session Persistence: SQLite + tmux
 
-Repos and sessions are persisted in SQLite (`~/.otte/otte.db`). tmux provides runtime session persistence.
+Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). tmux provides runtime session persistence.
 
 **Design:**
 - Repos are first-class objects — imported via native folder picker, validated as git repos
 - Each agent session = one tmux session + one SQLite record
-- Naming convention: `otte::{repo-name}::{branch}`
+- Naming convention: `racc::{repo-name}::{branch}`
 - Sessions can run directly in the repo or in an isolated git worktree
 - On app startup, `reconcile_sessions()` checks live tmux state against SQLite, marks dead sessions as `Disconnected`
 - Cost tracking reads Claude Code JSONL files using session's `worktree_path` or repo `path`

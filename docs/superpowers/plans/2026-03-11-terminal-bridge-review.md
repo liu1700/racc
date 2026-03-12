@@ -50,7 +50,7 @@ All import paths within the planned code are correct relative to the file struct
 ### Critical
 
 **(C1) `list_sessions` parsing is broken for the session name format.**
-The existing `list_sessions` uses `splitn(3, '-')` on names like `otte-myproject-feat/new-feature`. This splits into `["otte", "myproject", "feat/new-feature"]` and maps index 1 to project, index 2 to branch. However, if the project name contains a hyphen (e.g., `my-app`), the split produces `["otte", "my", "app-branchname"]` -- corrupting both fields. The plan does not fix this function. A delimiter change (e.g., `__` instead of `-`) or a metadata file approach would be more robust.
+The existing `list_sessions` uses `splitn(3, '-')` on names like `racc-myproject-feat/new-feature`. This splits into `["racc", "myproject", "feat/new-feature"]` and maps index 1 to project, index 2 to branch. However, if the project name contains a hyphen (e.g., `my-app`), the split produces `["racc", "my", "app-branchname"]` -- corrupting both fields. The plan does not fix this function. A delimiter change (e.g., `__` instead of `-`) or a metadata file approach would be more robust.
 
 **(C2) `capture_pane` polling with `terminal.reset()` causes severe flickering.**
 The plan's `useTmuxBridge` calls `terminal.reset()` then `terminal.write(content)` every 150ms whenever content changes. `reset()` clears the entire screen, causing visible flicker. A better approach:
@@ -73,7 +73,7 @@ The plan instructs to add `import { useState } from "react"` but the current fil
 tmux `send-keys -l` sends literal characters, but pasting multi-character strings rapidly can cause ordering issues. For the MVP polling approach this is acceptable, but worth noting for future improvement.
 
 **(I5) No cleanup of git worktrees on `stop_session`.**
-When a session is stopped, the tmux session is killed but the git worktree at `~/otte-worktrees/<project>/<branch>` remains on disk. Over time this accumulates stale worktrees. The plan should add worktree cleanup to `stop_session` or document this as a known limitation.
+When a session is stopped, the tmux session is killed but the git worktree at `~/racc-worktrees/<project>/<branch>` remains on disk. Over time this accumulates stale worktrees. The plan should add worktree cleanup to `stop_session` or document this as a known limitation.
 
 ### Suggestions
 

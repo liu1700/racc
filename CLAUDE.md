@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-OTTE is an Agentic IDE — a Tauri 2.x desktop app that orchestrates multiple AI coding agent sessions (Claude Code, Aider, Codex). It is not a code editor; it's a control plane for terminal-based agents built on native PTY, git worktrees, and xterm.js.
+Racc is an Agentic IDE — a Tauri 2.x desktop app that orchestrates multiple AI coding agent sessions (Claude Code, Aider, Codex). It is not a code editor; it's a control plane for terminal-based agents built on native PTY, git worktrees, and xterm.js.
 
 ## Commands
 

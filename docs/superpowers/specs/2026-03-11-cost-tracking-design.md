@@ -6,7 +6,7 @@
 
 ## Goal
 
-Display estimated cost per OTTE session and aggregate totals by parsing Claude Code's local session JSONL files. Also simplify the agent dropdown to Claude Code only (MVP scope).
+Display estimated cost per Racc session and aggregate totals by parsing Claude Code's local session JSONL files. Also simplify the agent dropdown to Claude Code only (MVP scope).
 
 ## Data Source
 
@@ -46,16 +46,16 @@ Claude Code stores API usage in per-session JSONL files:
 
 **Rewrite** the existing `cost.rs` module. Remove the current `get_usage()` that reads from non-existent `~/.claude/usage/`.
 
-**Path resolution:** OTTE launches Claude Code inside the worktree directory, so Claude Code registers the worktree path as its project. Therefore `worktree_path` correctly maps to the `~/.claude/projects/` encoded path.
+**Path resolution:** Racc launches Claude Code inside the worktree directory, so Claude Code registers the worktree path as its project. Therefore `worktree_path` correctly maps to the `~/.claude/projects/` encoded path.
 
-**Session mapping (MVP):** There is no 1:1 mapping between OTTE sessions and Claude Code JSONL session files. For MVP, we aggregate ALL JSONL files under the project's encoded directory. The `SessionCost.session_id` is Claude Code's internal UUID, not the OTTE session name. This is sufficient because each worktree directory typically corresponds to one OTTE session.
+**Session mapping (MVP):** There is no 1:1 mapping between Racc sessions and Claude Code JSONL session files. For MVP, we aggregate ALL JSONL files under the project's encoded directory. The `SessionCost.session_id` is Claude Code's internal UUID, not the Racc session name. This is sufficient because each worktree directory typically corresponds to one Racc session.
 
 **New types:**
 
 ```rust
 #[derive(Debug, Serialize)]
 struct SessionCost {
-    session_id: String,        // Claude Code JSONL filename (UUID), not OTTE session ID
+    session_id: String,        // Claude Code JSONL filename (UUID), not Racc session ID
     input_tokens: u64,
     output_tokens: u64,
     cache_creation_tokens: u64,

@@ -6,9 +6,9 @@ fn db_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or("Could not find home directory")?;
-    let dir = home.join(".otte");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.otte: {e}"))?;
-    Ok(dir.join("otte.db"))
+    let dir = home.join(".racc");
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.racc: {e}"))?;
+    Ok(dir.join("racc.db"))
 }
 
 pub fn init_db() -> Result<Connection, String> {

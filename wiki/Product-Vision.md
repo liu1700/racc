@@ -4,7 +4,7 @@
 
 ## Core Positioning
 
-OTTE is a **control plane for AI coding agents** — a desktop app that manages multiple agentic coding sessions with visibility, cost tracking, and change review.
+Racc is a **control plane for AI coding agents** — a desktop app that manages multiple agentic coding sessions with visibility, cost tracking, and change review.
 
 It is explicitly **not**:
 - A code editor (VS Code, Neovim already exist)

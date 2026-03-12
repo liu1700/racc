@@ -16,7 +16,7 @@ User clicks "Import Repo"
 [2] Backend validates .git directory exists
         |
         v
-[3] Repo inserted into SQLite (~/.otte/otte.db)
+[3] Repo inserted into SQLite (~/.racc/racc.db)
         |
         v
 [4] Repo appears in sidebar, ready for agent sessions
@@ -35,12 +35,12 @@ User clicks [+] on a repo
         |
         v
 [2] Environment Preparation
-    - (If worktree) git worktree add at ~/otte-worktrees/{repo}/{branch}
+    - (If worktree) git worktree add at ~/racc-worktrees/{repo}/{branch}
     - (If direct) detect current branch via git rev-parse
         |
         v
 [3] Session Persistence
-    - Create named tmux session: otte::{repo-name}::{branch}
+    - Create named tmux session: racc::{repo-name}::{branch}
     - Set working directory to worktree or repo path
     - Insert session record into SQLite
         |

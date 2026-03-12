@@ -1,12 +1,12 @@
 [package]
-name = "otte"
+name = "racc"
 version = "0.1.0"
 description = "Agentic IDE - A control plane for AI coding agents"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "otte_lib"
+name = "racc_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
