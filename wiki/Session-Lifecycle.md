@@ -2,110 +2,106 @@
 
 [< Home](Home.md) | [< Technical Architecture](Technical-Architecture.md)
 
-## Session Creation Flow
+## Repo Import Flow
 
-When a user clicks "New Session", they specify: **target machine**, **project**, **branch**, and **agent type**. Everything else is automated:
+Repos are first-class objects. Before creating sessions, the user imports a local git repo:
 
 ```
-User clicks "New Session"
+User clicks "Import Repo"
         |
         v
-[1] Environment Preparation
-    - Create git worktree on target machine
-    - (Optional) Spin up Docker Sandbox
+[1] Native Finder dialog opens (tauri-plugin-dialog)
         |
         v
-[2] Session Persistence
-    - Create named tmux session: otte-{project}-{branch}
-    - Set working directory to worktree path
+[2] Backend validates .git directory exists
         |
         v
-[3] Agent Startup
-    - Launch specified coding agent inside tmux session
+[3] Repo inserted into SQLite (~/.otte/otte.db)
         |
         v
-[4] Network Configuration
-    - Register Portless naming
-    - (If remote) Configure Tailscale Serve
+[4] Repo appears in sidebar, ready for agent sessions
+```
+
+## Session Creation Flow
+
+Within an imported repo, users launch agent sessions:
+
+```
+User clicks [+] on a repo
+        |
+        v
+[1] Choose mode: "Run in repo" or "Create worktree"
+    - If worktree: provide branch name
+        |
+        v
+[2] Environment Preparation
+    - (If worktree) git worktree add at ~/otte-worktrees/{repo}/{branch}
+    - (If direct) detect current branch via git rev-parse
+        |
+        v
+[3] Session Persistence
+    - Create named tmux session: otte::{repo-name}::{branch}
+    - Set working directory to worktree or repo path
+    - Insert session record into SQLite
+        |
+        v
+[4] Agent Startup
+    - Launch Claude Code inside tmux session via send-keys
         |
         v
 [5] Communication Channel
-    - Establish IDE <-> tmux PTY/send-keys channel
+    - Establish IDE <-> tmux send-keys/capture-pane channel
         |
         v
 [6] State Registration
-    - Register session in dashboard
-    - Begin monitoring (cost, activity, status)
+    - Session appears nested under repo in sidebar
+    - Begin cost monitoring via Claude Code JSONL parsing
 ```
 
 ## State Machine
 
 ```
-                    +----------+
-  User clicks  ---->| Creating |
-  "New Session"     +----+-----+
-                         |
-                    success / failure
-                    /              \
                +---v---+      +---v---+
                |Running|      | Error |
                +---+---+      +-------+
                    |
           +--------+--------+
-          |        |        |
-     agent asks  user     network
-     for input   pauses   drops
-          |        |        |
-     +----v---+ +--v---+ +-v-----------+
-     |Waiting | |Paused| |Disconnected |
-     +----+---+ +--+---+ +------+------+
-          |        |             |
-     user responds | user       IDE reconnects
-          |        | resumes    |
-          +---+----+      +-----+
-              |            |
-          +---v---+   +---v---+
-          |Running|   |Running|
-          +---+---+   +-------+
-              |
-         agent exits
-              |
-         +----v-----+
-         |Completed  |
-         +----------+
+          |                  |
+     user stops          app closes /
+     session             tmux dies
+          |                  |
+     +----v-----+    +------v------+
+     |Completed |    |Disconnected |
+     +----------+    +------+------+
+                            |
+                     app restarts,
+                     reconcile_sessions()
+                     detects dead tmux
 ```
 
 ### State Definitions
 
 | State | Meaning | Entry Trigger | User Can... |
 |-------|---------|---------------|-------------|
-| **Creating** | Setting up worktree, sandbox, tmux | User clicks "New Session" | Wait or cancel |
-| **Running** | Agent is actively executing | Creation completes / resume / input provided | View terminal, pause, stop |
-| **Waiting** | Agent needs user input or approval | Agent asks a question / permission request | Respond, approve/reject |
-| **Paused** | User-initiated pause | User clicks "Pause" | Resume, stop, review changes |
-| **Disconnected** | IDE lost connection, agent still running | SSH/network interruption | Reconnect (auto or manual) |
-| **Completed** | Agent finished its task | Agent process exits cleanly | Review changes, start new task |
-| **Error** | Agent crashed or exited abnormally | Process crash / non-zero exit | View logs, retry, stop |
+| **Running** | Agent is actively executing in tmux | Session created successfully | View terminal, stop |
+| **Completed** | Session stopped by user | User clicks stop | Remove session record |
+| **Disconnected** | tmux session no longer exists | App restart detects dead tmux via reconciliation | Remove session record |
+| **Error** | Session creation or operation failed | Process crash / non-zero exit | Remove, retry |
 
-### Key Design: "Session Immortality"
+### Key Design: Reconciliation on Startup
 
-The **Disconnected** state is the cornerstone of OTTE's session model.
+On app startup, `reconcile_sessions()` checks all `Running` sessions against live tmux state:
+1. Query SQLite for sessions with status `Running`
+2. For each, run `tmux has-session -t <name>`
+3. If tmux session is gone → update status to `Disconnected` in SQLite
+4. Return full repo + session list to frontend
 
-**Scenario:** Developer closes laptop at the office. Agent continues working on the remote VPS inside tmux. Developer opens laptop at home. IDE auto-discovers the tmux session, reattaches, and the dashboard updates — as if nothing happened.
-
-This is possible because:
-1. The agent runs inside tmux, not inside the IDE
-2. tmux sessions persist across any client disconnection
-3. The daemon on each machine continuously tracks session state
-4. The IDE client is stateless — it queries the daemon on connect
+This ensures the UI always reflects reality, even after crashes or restarts.
 
 ### Session Cleanup
 
-When a session reaches **Completed** or is terminated:
-
-1. Prompt user: keep or delete the worktree?
-2. If delete: remove git worktree, destroy tmux session, tear down Docker container (if any)
-3. Archive session metadata (cost, activity log, duration) for historical tracking
-4. Remove from active dashboard, add to session history
+- **Stop session:** kills tmux, updates SQLite status to `Completed`, worktree is kept
+- **Remove session:** deletes SQLite record (only if not `Running`)
+- **Remove repo:** only allowed if no `Running` sessions; cascades to delete all session records
 
 [Next: Competitive Analysis >](Competitive-Analysis.md)

@@ -15,6 +15,7 @@
 | Multi-session dashboard | Create / stop / switch between sessions | Done (basic) |
 | Auto worktree + tmux | One-click session creation with auto-provisioning | Done |
 | tmux send-keys injection | Send prompts to agents via tmux | Done |
+| Repo-centric session management | SQLite persistence, native folder picker, repo import | Done |
 | Basic cost tracking | Read Claude Code's local usage data | Done (#5) |
 | Git diff viewer | View changes made by agents | **Next** |
 

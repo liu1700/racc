@@ -33,7 +33,7 @@ OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a
 | **Client** | Tauri (WebView + Rust) | Render UI, forward user actions, xterm.js terminal |
 | **Network** | Tailscale Mesh | Connect local/remote machines, MagicDNS naming |
 | **Daemon** | Rust daemon (per machine) | Manage tmux, worktrees, docker, cost tracking |
-| **Persistence** | tmux | Sessions survive disconnects, auto-reattach on reconnect |
+| **Persistence** | SQLite + tmux | Repos and sessions stored in `~/.otte/otte.db`, tmux provides runtime persistence |
 | **Communication** | PTY / tmux send-keys | Bridge between IDE and interactive agents |
 | **Isolation** | Git Worktree + Docker | Code isolation + environment isolation |
 | **Naming** | Portless | Each worktree gets a named URL |
@@ -51,16 +51,17 @@ OTTE uses a **Remote-First Client/Server** architecture. The client (Tauri) is a
 
 **Frontend:** React + xterm.js
 
-### Session Persistence: tmux
+### Session Persistence: SQLite + tmux
 
-The most reliable approach, confirmed by both community practice and our research.
+Repos and sessions are persisted in SQLite (`~/.otte/otte.db`). tmux provides runtime session persistence.
 
 **Design:**
-- Each agent session = one tmux session
-- Naming convention: `otte-{project}-{branch}`
-- Daemon auto-creates/destroys tmux sessions, tied to worktree lifecycle
-- Remote daemons connect via Tailscale SSH (passwordless)
-- Client reconnects auto-reattach — seamless recovery
+- Repos are first-class objects — imported via native folder picker, validated as git repos
+- Each agent session = one tmux session + one SQLite record
+- Naming convention: `otte::{repo-name}::{branch}`
+- Sessions can run directly in the repo or in an isolated git worktree
+- On app startup, `reconcile_sessions()` checks live tmux state against SQLite, marks dead sessions as `Disconnected`
+- Cost tracking reads Claude Code JSONL files using session's `worktree_path` or repo `path`
 
 ### Agent Communication: Three-Phase Strategy
 
