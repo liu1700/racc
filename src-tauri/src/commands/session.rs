@@ -36,7 +36,6 @@ pub struct Repo {
 pub struct Session {
     pub id: i64,
     pub repo_id: i64,
-    pub tmux_session_name: String,
     pub agent: String,
     pub worktree_path: Option<String>,
     pub branch: Option<String>,
@@ -73,7 +72,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
 
     let mut session_stmt = conn
         .prepare(
-            "SELECT id, repo_id, tmux_session_name, agent, worktree_path, branch, status, created_at, updated_at
+            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
              FROM sessions WHERE repo_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -82,17 +81,16 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
     for repo in repos {
         let sessions: Vec<Session> = session_stmt
             .query_map([repo.id], |row| {
-                let status_str: String = row.get(6)?;
+                let status_str: String = row.get(5)?;
                 Ok(Session {
                     id: row.get(0)?,
                     repo_id: row.get(1)?,
-                    tmux_session_name: row.get(2)?,
-                    agent: row.get(3)?,
-                    worktree_path: row.get(4)?,
-                    branch: row.get(5)?,
+                    agent: row.get(2)?,
+                    worktree_path: row.get(3)?,
+                    branch: row.get(4)?,
                     status: SessionStatus::from_str(&status_str),
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -103,16 +101,6 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
     }
 
     Ok(result)
-}
-
-// --- Helper: check tmux session exists ---
-
-fn tmux_session_exists(name: &str) -> bool {
-    Command::new("tmux")
-        .args(["has-session", "-t", name])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 // --- Helper: get current git branch ---
@@ -230,7 +218,7 @@ pub async fn create_session(
         row
     };
 
-    let (working_dir, worktree_path, branch_name) = if use_worktree {
+    let (worktree_path, branch_name) = if use_worktree {
         let branch = branch.ok_or("Branch name required for worktree")?;
         let home = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
@@ -268,42 +256,17 @@ pub async fn create_session(
             }
         }
 
-        (wt_path.clone(), Some(wt_path), branch)
+        (Some(wt_path), branch)
     } else {
         let branch = get_current_branch(&repo_path)?;
-        (repo_path.clone(), None, branch)
+        (None, branch)
     };
-
-    let tmux_name = format!("otte::{}::{}", repo_name, branch_name);
-
-    if tmux_session_exists(&tmux_name) {
-        return Err(format!("Session '{}' already exists", tmux_name));
-    }
-
-    let output = Command::new("tmux")
-        .args([
-            "new-session", "-d", "-s", &tmux_name,
-            "-x", "200", "-y", "50", "-c", &working_dir,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to create tmux session: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "tmux new-session failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let _ = Command::new("tmux")
-        .args(["send-keys", "-t", &tmux_name, "claude", "Enter"])
-        .output();
 
     let conn = db.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO sessions (repo_id, tmux_session_name, agent, worktree_path, branch, status)
-         VALUES (?1, ?2, 'claude-code', ?3, ?4, 'Running')",
-        rusqlite::params![repo_id, tmux_name, worktree_path, branch_name],
+        "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status)
+         VALUES (?1, 'claude-code', ?2, ?3, 'Running')",
+        rusqlite::params![repo_id, worktree_path, branch_name],
     )
     .map_err(|e| e.to_string())?;
 
@@ -319,7 +282,6 @@ pub async fn create_session(
     Ok(Session {
         id,
         repo_id,
-        tmux_session_name: tmux_name,
         agent: "claude-code".to_string(),
         worktree_path,
         branch: Some(branch_name),
@@ -334,22 +296,6 @@ pub async fn stop_session(
     db: tauri::State<'_, Mutex<Connection>>,
     session_id: i64,
 ) -> Result<(), String> {
-    let tmux_name = {
-        let conn = db.lock().map_err(|e| e.to_string())?;
-        let name: String = conn
-            .query_row(
-                "SELECT tmux_session_name FROM sessions WHERE id = ?1",
-                [session_id],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("Session not found: {e}"))?;
-        name
-    };
-
-    let _ = Command::new("tmux")
-        .args(["kill-session", "-t", &tmux_name])
-        .output();
-
     let conn = db.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
@@ -391,25 +337,14 @@ pub async fn reconcile_sessions(
 ) -> Result<Vec<RepoWithSessions>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
 
-    let mut stmt = conn
-        .prepare("SELECT id, tmux_session_name FROM sessions WHERE status = 'Running'")
-        .map_err(|e| e.to_string())?;
-
-    let running: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    for (id, name) in &running {
-        if !tmux_session_exists(name) {
-            conn.execute(
-                "UPDATE sessions SET status = 'Disconnected', updated_at = datetime('now') WHERE id = ?1",
-                [id],
-            )
-            .map_err(|e| e.to_string())?;
-        }
-    }
+    // With native PTY, there's no external process to check.
+    // On app startup, all previously "Running" sessions are stale
+    // because PTY state is in-memory and lost on restart.
+    conn.execute(
+        "UPDATE sessions SET status = 'Disconnected', updated_at = datetime('now') WHERE status = 'Running'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
     query_repos_with_sessions(&conn)
 }
