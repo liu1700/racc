@@ -8,9 +8,6 @@ interface Props {
 
 const AGENTS = [
   { id: "claude-code", label: "Claude Code" },
-  { id: "aider", label: "Aider" },
-  { id: "codex", label: "Codex" },
-  { id: "shell", label: "Shell (bash)" },
 ];
 
 export function NewSessionDialog({ open, onClose }: Props) {
