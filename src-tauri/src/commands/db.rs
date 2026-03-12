@@ -50,5 +50,36 @@ pub fn init_db() -> Result<Connection, String> {
         .map_err(|e| format!("Migration v1 failed: {e}"))?;
     }
 
+    if version < 2 {
+        conn.execute_batch(
+            "
+            BEGIN;
+
+            CREATE TABLE sessions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+                agent TEXT NOT NULL DEFAULT 'claude-code',
+                worktree_path TEXT,
+                branch TEXT,
+                status TEXT NOT NULL DEFAULT 'Running',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            INSERT INTO sessions_new (id, repo_id, agent, worktree_path, branch, status, created_at, updated_at)
+                SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
+                FROM sessions;
+
+            DROP TABLE sessions;
+            ALTER TABLE sessions_new RENAME TO sessions;
+
+            PRAGMA user_version = 2;
+
+            COMMIT;
+            ",
+        )
+        .map_err(|e| format!("Migration v2 failed: {e}"))?;
+    }
+
     Ok(conn)
 }
