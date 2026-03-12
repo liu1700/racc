@@ -76,25 +76,24 @@ export function Terminal() {
     term?.focus();
   }, [term]);
 
-  if (!sessionId) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-zinc-500">
-        <div className="text-center">
-          <p className="text-lg font-medium">No active session</p>
-          <p className="mt-1 text-sm">
-            Create a new session from the sidebar to get started.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={terminalRef}
-      onClick={handleClick}
-      className="flex-1 bg-surface-1 p-1"
-      style={{ minHeight: 0 }}
-    />
+    <div className="relative flex-1" style={{ minHeight: 0 }}>
+      {!sessionId && (
+        <div className="absolute inset-0 flex items-center justify-center text-zinc-500 z-10">
+          <div className="text-center">
+            <p className="text-lg font-medium">No active session</p>
+            <p className="mt-1 text-sm">
+              Create a new session from the sidebar to get started.
+            </p>
+          </div>
+        </div>
+      )}
+      <div
+        ref={terminalRef}
+        onClick={handleClick}
+        className="h-full bg-surface-1 p-1"
+        style={{ visibility: sessionId ? "visible" : "hidden" }}
+      />
+    </div>
   );
 }
