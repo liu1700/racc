@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
+import { spawnPty, killPty, killAll } from "../services/ptyManager";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -48,6 +49,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch (e) {
       set({ repos: [], loading: false, error: String(e) });
     }
+
+    // Kill all PTYs on app close to avoid orphaned processes
+    window.addEventListener("beforeunload", () => killAll());
   },
 
   importRepo: async (path) => {
@@ -92,8 +96,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         useWorktree,
         branch: branch || null,
       });
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
-      set({ repos, activeSessionId: session.id });
+
+      // Resolve working directory: worktree path, or fall back to repo path
+      const { repos } = get();
+      const repo = repos.find((r) => r.repo.id === repoId)?.repo;
+      const cwd = session.worktree_path || repo?.path || ".";
+
+      // Spawn PTY in the session's working directory
+      spawnPty(session.id, cwd, 80, 24, "claude");
+
+      const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
+      set({ repos: updatedRepos, activeSessionId: session.id });
     } catch (e) {
       set({ error: String(e) });
       throw e;
@@ -102,6 +115,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   stopSession: async (sessionId) => {
     try {
+      killPty(sessionId);
       await invoke("stop_session", { sessionId });
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
@@ -117,6 +131,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   removeSession: async (sessionId) => {
     try {
+      killPty(sessionId);
       await invoke("remove_session", { sessionId });
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
