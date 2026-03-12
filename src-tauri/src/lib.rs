@@ -15,7 +15,7 @@ pub fn run() {
             commands::git::create_worktree,
             commands::git::delete_worktree,
             commands::git::get_diff,
-            commands::cost::get_usage,
+            commands::cost::get_project_costs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
