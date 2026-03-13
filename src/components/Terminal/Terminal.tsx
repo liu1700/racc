@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { useShallow } from "zustand/react/shallow";
 import { usePtyBridge } from "../../hooks/usePtyBridge";
 import type { Terminal as XTermType } from "@xterm/xterm";
@@ -42,6 +43,53 @@ export function Terminal() {
       xterm.loadAddon(fitAddon);
       xterm.open(el);
       fitAddon.fit();
+
+      // File path link provider for Cmd+Click / Ctrl+Click
+      xterm.registerLinkProvider({
+        provideLinks(bufferLineNumber, callback) {
+          const line = xterm!.buffer.active.getLine(bufferLineNumber);
+          if (!line) return callback(undefined);
+
+          const text = line.translateToString();
+          // Match common file paths (relative paths with extensions, optionally with :lineNumber)
+          const pathRegex = /(?:^|\s)((?:[\w.-]+\/)*[\w.-]+\.\w+)(?::(\d+))?/g;
+          const links: Array<{
+            range: { start: { x: number; y: number }; end: { x: number; y: number } };
+            text: string;
+            activate: (e: MouseEvent, text: string) => void;
+          }> = [];
+
+          let match;
+          while ((match = pathRegex.exec(text)) !== null) {
+            const fullMatch = match[0].trimStart();
+            const filePath = match[1];
+            const lineNum = match[2] ? parseInt(match[2], 10) : undefined;
+            const startX = text.indexOf(fullMatch, match.index) + 1; // 1-based
+
+            links.push({
+              range: {
+                start: { x: startX, y: bufferLineNumber + 1 },
+                end: { x: startX + fullMatch.length, y: bufferLineNumber + 1 },
+              },
+              text: fullMatch,
+              activate: (_e: MouseEvent) => {
+                const { openFile } = useFileViewerStore.getState();
+                const activeSession = useSessionStore.getState().getActiveSession();
+                if (activeSession) {
+                  openFile({
+                    sessionId: activeSession.session.id,
+                    repoId: activeSession.repo.id,
+                    filePath,
+                    scrollToLine: lineNum,
+                  });
+                }
+              },
+            });
+          }
+
+          callback(links.length > 0 ? links : undefined);
+        },
+      });
 
       const resizeObserver = new ResizeObserver(() => {
         if (!disposed) fitAddon.fit();
