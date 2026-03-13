@@ -63,7 +63,7 @@ function emitActivity(sessionId: number, action: string, detail: string | null):
   });
 }
 
-function parseClaudeCodeOutput(lines: string[], latestChunk: string): { action: string; detail: string | null } | null {
+function parseClaudeCodeOutput(_lines: string[], latestChunk: string): { action: string; detail: string | null } | null {
   // Check latest chunk first for most recent activity
 
   // Permission prompt
