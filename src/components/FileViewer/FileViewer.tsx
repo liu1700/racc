@@ -385,10 +385,23 @@ export function FileViewer() {
           <span>{activeSession.session.branch || "main"}</span>
           <span className="mx-1">·</span>
           <span>{activeSession.session.status}</span>
+          <span className="mx-1">·</span>
+          <span>{formatElapsed(activeSession.session.created_at)}</span>
         </div>
       )}
     </div>
   );
+}
+
+function formatElapsed(createdAt: string): string {
+  const elapsed = Date.now() - new Date(createdAt).getTime();
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
 }
 
 function escapeHtml(text: string): string {
