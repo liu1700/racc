@@ -23,8 +23,12 @@ Three-panel layout, left to right:
 |  [Stop]        |                                    |                      |
 |                |                                    |                      |
 +----------------+------------------------------------+----------------------+
+|  Activity Panel (collapsible, auto-show/hide)                              |
+|  ● claude-code (feat/auth)          Reading src/auth/login.ts              |
+|  ● claude-code (fix/nav)            Running command: npm test              |
++----------------------------------------------------------------------------+
 |                        Global Status Bar                                   |
-|  Total Tokens: XX.Xk | This Week: XX.Xk | Active Sessions: N               |
+|  ▲ Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk          |
 +----------------------------------------------------------------------------+
 ```
 
@@ -184,9 +188,48 @@ A global AI assistant ("butler") that lives below the usage tracker. Powered by 
 
 This replaces the previously planned Activity Log. The assistant provides higher-value intelligence (risk triage, change summarization) over raw event lists. Structured event tracking is deferred.
 
+## Activity Panel (implemented)
+
+A collapsible panel between the main content area and the StatusBar that shows one compact horizontal bar per active session, displaying a real-time action summary parsed from PTY output. Operates at Tier 1–2 (ambient/informational) in the notification architecture — provides peripheral awareness without demanding attention.
+
+**Cognitive design grounding:**
+- **Single cognitive chunk per session:** Each bar compresses a session into status color + identifier + action text, staying within Cowan's 4±1 limit
+- **Information scent for foraging:** Action summary (e.g., "Reading src/auth/login.ts") provides enough scent to decide whether to investigate without switching
+- **Preattentive pop-out:** Status color is the sole preattentive channel — amber (waiting for approval) or red (error) pops out among green (running) peers
+- **Mode separation:** Auto-shows during monitoring mode (sessions running), auto-hides when empty
+
+**Each session bar (28px height):**
+- Left: Status color dot (6px, `status-*` colors, `animate-status-pulse` for running) + agent name + branch
+- Right: Current action + detail (file path, command), truncated with ellipsis
+- Click: Switches to that session (same as sidebar click)
+- Active session: Subtle left border accent (`border-l-2 border-accent`)
+
+**Action-to-color mapping:**
+
+| Action | Dot color | Token |
+|--------|-----------|-------|
+| Reading, Editing, Writing, Running command, Searching, Thinking | Green | `status-running` |
+| Waiting for approval | Amber | `status-waiting` |
+| Idle (>10s no output) | Dimmed green | `status-running/50` |
+| Completed (exit 0) | Blue | `status-completed` |
+| Completed (non-zero exit) | Red | `status-error` |
+
+**PTY output parsing:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and matches Claude Code output patterns (tool use, permission prompts, exit codes, thinking indicators). Agent-specific — uses a parser registry (`Record<string, AgentParser>`) for future extensibility to Aider/Codex.
+
+**Auto-open/close behavior:**
+- Panel auto-opens when a session starts (unless user manually dismissed it)
+- User dismissal via header ▾ button sets `activityPanelDismissed = true`, suppressing auto-open
+- Dismissed state resets when going from zero to one running session
+- StatusBar ▲/▼ chevron provides a simple toggle without dismissal semantics
+
+**Completed session fade-out:** Bars hold visible for 4 seconds then fade over 1 second (`animate-fade-out` CSS animation), then are removed from the panel. Panel auto-collapses when the last activity fades out.
+
+**Implementation:** `ActivityPanel.tsx` component, `ptyOutputParser.ts` service, activity state in `sessionStore.ts`. Lifecycle hooks wire `startTracking` after `spawnPty` and `stopTracking` before `killPty`.
+
 ## Global Status Bar (implemented)
 
 Fixed bottom bar showing:
+- **Activity panel toggle (implemented):** ▲/▼ chevron button, shown when activities exist, toggles the Activity Panel visibility
 - **Categorical session summary (implemented):** Color-coded counts by status category (e.g., "2 running · 1 error · 1 completed") with status-colored numbers — only non-zero categories shown. Enables the developer to hold system state as categorical chunks rather than N individual items.
 - **Token usage (implemented):** Total Tokens and This Week counts, polled from `get_project_costs` every 10s
 - Connection status indicator (green dot)
@@ -197,8 +240,8 @@ A five-tier alert system designed to prevent alarm fatigue (healthcare data show
 
 | Tier | Type | Implementation | Interruption |
 |------|------|----------------|--------------|
-| **1 — Ambient** | Status indicators | Color dot per session in sidebar | None — preattentive |
-| **2 — Informational** | Progress updates | Subtle border pulse on session card | None — peripheral |
+| **1 — Ambient** | Status indicators | Color dot per session in sidebar + Activity Panel | None — preattentive |
+| **2 — Informational** | Progress updates | Activity Panel action summaries (e.g., "Reading src/App.tsx") | None — peripheral |
 | **3 — Advisory** | Task complete | Non-blocking toast with soft chime | Low |
 | **4 — Warning** | Error/blocked | Persistent amber banner + distinctive tone | Medium |
 | **5 — Critical** | Security/data loss | Modal overlay + urgent sound | High |

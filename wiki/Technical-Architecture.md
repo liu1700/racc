@@ -22,8 +22,11 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  | PTY Manager         |  |     |  | Cost Tracker            | | |
 |  |  | (ptyManager.ts)     |  |     |  | (cost.rs)               | | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
-|  |  | UI Components       |  |     |  | SQLite DB               | | |
-|  |  | Sidebar / CostTracker|  |     |  | (db.rs)                 | | |
+|  |  | PTY Output Parser   |  |     |  | SQLite DB               | | |
+|  |  | (ptyOutputParser.ts)|  |     |  | (db.rs)                 | | |
+|  |  +---------------------+  |     |  +-------------------------+ | |
+|  |  | UI Components       |  |     |                               | |
+|  |  | Sidebar/ActivityPanel|  |     |                               | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  +---------------------------+     +-------------------------------+ |
 |                                                                      |
