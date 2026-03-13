@@ -168,8 +168,10 @@ pub async fn search_files(
     repo_id: Option<i64>,
     query: String,
 ) -> Result<Vec<FileMatch>, String> {
-    let conn = db.lock().map_err(|e| e.to_string())?;
-    let base = resolve_base_path(&conn, session_id, repo_id)?;
+    let base = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        resolve_base_path(&conn, session_id, repo_id)?
+    }; // DB lock released before filesystem walk
 
     // Collect file paths respecting .gitignore
     let mut paths: Vec<String> = Vec::new();
