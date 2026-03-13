@@ -69,6 +69,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 - React 19 + TypeScript 5.8
 - xterm.js 5.5 with FitAddon for responsive terminal sizing
 - Zustand 5 for state management
+- Shiki for syntax highlighting (VS Code-compatible TextMate grammars, `github-dark-default` theme)
 - Tailwind CSS 3.4 with custom design tokens
 - Vite 6.3 for dev server and builds
 
@@ -140,7 +141,8 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reattach_session`, `reconcile_sessions` | Session and repo lifecycle management |
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, aggregate token counts (total + weekly) |
-| `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, sidecar process management |
+| `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `read_file_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, file reading relay, sidecar process management |
+| `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `db.rs` | (internal) | SQLite initialization, schema migrations |
 
 ### Frontend Component Architecture
@@ -158,6 +160,9 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `AssistantSetup.tsx` | Right panel | OpenRouter API key input and model selection |
 | `AssistantChat.tsx` | Right panel | Message list, streaming display, quick actions, text input |
 | `AssistantMessage.tsx` | Right panel | Single message bubble with markdown rendering (`react-markdown`) |
+| `FileViewer.tsx` | Center panel (overlay) | Full file viewer with Shiki syntax highlighting, Cmd+F search, Ctrl+G jump-to-line |
+| `CommandPalette.tsx` | Global overlay | Fuzzy file search (Cmd+P), keyboard navigation, debounced search |
+| `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
 | `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
 | `StatusBar.tsx` | Bottom bar | Session counts, total/weekly token usage, connection status |
 

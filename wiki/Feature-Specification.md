@@ -67,11 +67,33 @@ A global AI assistant ("butler") that helps developers understand and review wha
 
 **Architecture:** Runs as a Tauri sidecar binary (TypeScript compiled with `bun build --compile`), powered by `@mariozechner/pi-ai` (OpenRouter provider) and `@mariozechner/pi-agent-core` (agent runtime with tool calling). Communicates with Rust backend via stdin/stdout JSON lines protocol.
 
-**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session). Tool calls are relayed to Rust for git/SQLite operations.
+**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session), `read_file` (read source files with 200-line preview limit). Tool calls are relayed to Rust for git/SQLite operations.
 
 **Why this replaces the Activity Log:** The original Activity Log aimed to show which files agents read, which commands they ran. The AI assistant provides higher-value intelligence — it doesn't just list changes, it triages them by risk and summarizes what matters. Structured event tracking is deferred; the assistant provides more value than raw event lists.
 
 **Current status:** Fully implemented. Components: `AssistantPanel.tsx`, `AssistantSetup.tsx`, `AssistantChat.tsx`, `AssistantMessage.tsx`. State: `assistantStore.ts`. Backend: `assistant.rs`. Sidecar: `sidecar/` project.
+
+### 5. File Viewer & Command Palette (implemented)
+
+A zero-footprint file viewer designed around cognitive science principles — no persistent file tree, no extra tabs. Files are viewed on demand and the UI disappears completely when closed.
+
+**Three trigger mechanisms (all funnel through a single `openFile()` action):**
+1. **Cmd+P command palette** — fuzzy file search powered by `nucleo-matcher`, respects `.gitignore` via `ignore` crate
+2. **Terminal path click** — Cmd+Click on file paths detected in xterm.js terminal output (regex-based link provider)
+3. **Pi Agent `read_file` tool** — assistant can read files on the user's behalf, showing a lightweight inline preview (≤30 lines) with an "Open Full File" button
+
+**Full overlay viewer:**
+- Shiki syntax highlighting (`github-dark-default` theme, VS Code-compatible TextMate grammars)
+- Cmd+F in-file search with match count, navigation (Enter/Shift+Enter), and current match highlighting
+- Ctrl+G jump-to-line
+- Layered Esc dismiss (search → viewer → close)
+- Click-to-highlight line
+- 95% opacity overlay to avoid figure-ground interference while keeping the sidebar visible for preattentive status monitoring
+- Bottom status strip showing branch, session status, and elapsed time
+
+**Cognitive design rationale:** Progressive disclosure (Information Foraging Theory) — the developer sees only what they need, when they need it. The command palette provides "information scent" through fuzzy matching scores. The dual-mode design (inline preview vs. full overlay) respects Cowan's 4±1 working memory limit by not overwhelming with content.
+
+**Current status:** Fully implemented. Components: `FileViewer.tsx`, `CommandPalette.tsx`. State: `fileViewerStore.ts`. Backend: `file.rs` (`read_file`, `search_files` commands).
 
 ---
 

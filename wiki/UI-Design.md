@@ -118,6 +118,39 @@ Currently terminal-only mode:
 - Placeholder message when no active session selected
 - **Chinese IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
 
+### File Viewer Mode (implemented)
+
+A zero-footprint overlay for viewing source code and documentation — appears on demand, disappears completely when closed. Designed around progressive disclosure (Information Foraging Theory) so developers see only what they need before deciding what instructions to give agents.
+
+**Triggers:**
+- **Cmd+P** — Opens the command palette for fuzzy file search (global shortcut)
+- **Cmd+Click on terminal paths** — xterm.js link provider detects file path patterns and opens the file with optional line scroll
+- **Pi Agent `read_file` tool** — Assistant reads files inline (≤30 lines) with an "Open Full File" button to launch the overlay
+
+**Overlay design:**
+- Positioned as `absolute inset-0 z-30` within the center `<main>` panel (sidebar remains visible for preattentive status monitoring)
+- 95% opacity (`bg-surface-0/95`) to avoid figure-ground interference
+- 150ms fade transition for smooth appearance/disappearance
+- Shiki syntax highlighting with `github-dark-default` theme and CSS counter-based line numbers
+- Top bar: file path, line count, language, encoding, truncation indicator
+- Bottom status strip: branch, session status, elapsed time
+
+**Keyboard shortcuts:**
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+P` | Open command palette (fuzzy file search) |
+| `Cmd+F` | Open in-file search (when overlay is open) |
+| `Ctrl+G` | Jump to line number |
+| `Enter` / `Shift+Enter` | Navigate to next/previous search match |
+| `Esc` | Layered dismiss: search bar → viewer → close |
+
+**Command palette:**
+- Fixed overlay (`fixed inset-0 z-40`) covering the entire viewport
+- Fuzzy matching via `nucleo-matcher` with 100ms debounced search
+- Keyboard navigation: Arrow keys to select, Enter to open, Esc to close
+- Respects `.gitignore` via the `ignore` crate
+
 ### Diff Review Mode *(planned)*
 - Placeholder component exists (`DiffViewer.tsx`)
 - Backend `get_diff` command returns `git diff HEAD` output
