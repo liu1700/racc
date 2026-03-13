@@ -3,7 +3,7 @@ import { parseInbound, sendMessage } from "./protocol.js";
 import { createAgentState, hydrateHistory, createLoopConfig } from "./agent.js";
 import { resolveToolCall } from "./tools.js";
 import { agentLoop } from "@mariozechner/pi-agent-core";
-import { findModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mariozechner/pi-ai";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 
 const state = createAgentState();
@@ -29,7 +29,7 @@ rl.on("line", async (line: string) => {
       apiKey = msg.api_key;
       currentModel = msg.model;
       try {
-        const model = findModel(msg.model);
+        const model = getModel("openrouter", msg.model);
         if (model) {
           state.model = model;
         }

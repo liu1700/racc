@@ -1,6 +1,11 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::process::Stdio;
 use std::sync::Mutex;
+use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
+use tauri::Manager;
 
 // --- Types ---
 
@@ -32,6 +37,92 @@ pub struct SessionInfo {
     pub worktree_path: Option<String>,
     pub elapsed_minutes: i64,
     pub created_at: String,
+}
+
+// --- Sidecar State ---
+
+pub struct SidecarState {
+    pub child: Option<Child>,
+    pub stdin: Option<std::process::ChildStdin>,
+    pub reader: Option<TokioBufReader<ChildStdout>>,
+}
+
+impl SidecarState {
+    pub fn new() -> Self {
+        Self { child: None, stdin: None, reader: None }
+    }
+}
+
+fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    // Determine platform triple suffix
+    let suffix = if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
+        "aarch64-apple-darwin"
+    } else if cfg!(target_os = "macos") && cfg!(target_arch = "x86_64") {
+        "x86_64-apple-darwin"
+    } else if cfg!(target_os = "windows") {
+        "x86_64-pc-windows-msvc"
+    } else {
+        return Err("Unsupported platform".to_string());
+    };
+
+    let binary_name = format!("racc-assistant-{suffix}");
+
+    // Production: check Tauri resource dir
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let path = resource_dir.join("binaries").join(&binary_name);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    // Development: check src-tauri/binaries (Tauri sets CWD to src-tauri during dev)
+    let dev_path = std::path::PathBuf::from("binaries").join(&binary_name);
+    if dev_path.exists() {
+        return Ok(dev_path);
+    }
+
+    // Development fallback: check from project root
+    let project_path = std::path::PathBuf::from("src-tauri/binaries").join(&binary_name);
+    if project_path.exists() {
+        return Ok(project_path);
+    }
+
+    Err(format!(
+        "Sidecar binary '{binary_name}' not found. Run sidecar/build.sh first."
+    ))
+}
+
+fn spawn_sidecar(app: &tauri::AppHandle) -> Result<(Child, std::process::ChildStdin, TokioBufReader<ChildStdout>), String> {
+    let path = resolve_sidecar_path(app)?;
+
+    let mut child = TokioCommand::new(path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn sidecar: {e}"))?;
+
+    // Take ownership of stdin and stdout separately to avoid borrow conflicts
+    let stdout = child.stdout.take()
+        .ok_or("Failed to capture sidecar stdout")?;
+    let stdin = child.stdin.take()
+        .ok_or("Failed to capture sidecar stdin")?;
+
+    // Convert tokio ChildStdin to std ChildStdin for synchronous writes
+    let std_stdin = stdin.into_std().map_err(|e| format!("Failed to convert stdin: {e}"))?;
+    let reader = TokioBufReader::new(stdout);
+
+    Ok((child, std_stdin, reader))
+}
+
+fn write_to_stdin(stdin: &mut std::process::ChildStdin, msg: &str) -> Result<(), String> {
+    writeln!(stdin, "{}", msg).map_err(|e| format!("Failed to write to sidecar: {e}"))?;
+    stdin.flush().map_err(|e| format!("Failed to flush sidecar stdin: {e}"))?;
+    Ok(())
 }
 
 // --- Helper: resolve session ID to filesystem path ---
@@ -264,4 +355,232 @@ pub async fn get_session_costs_for_assistant(
     // Reuse existing cost logic by invoking get_project_costs
     let costs = crate::commands::cost::get_project_costs(path).await?;
     serde_json::to_string(&costs).map_err(|e| e.to_string())
+}
+
+// --- Sidecar Tauri Commands ---
+
+#[tauri::command]
+pub async fn assistant_send_message(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, tokio::sync::Mutex<SidecarState>>,
+    db: tauri::State<'_, Mutex<Connection>>,
+    content: String,
+) -> Result<(), String> {
+    let mut sidecar_state = sidecar.lock().await;
+
+    // Lazy spawn
+    if sidecar_state.child.is_none() {
+        let (child, mut stdin, reader) = spawn_sidecar(&app)?;
+
+        // Send config if available (read DB before holding sidecar lock long)
+        let config = {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            let get_val = |key: &str| -> Option<String> {
+                conn.query_row(
+                    "SELECT value FROM assistant_config WHERE key = ?1",
+                    [key],
+                    |row| row.get(0),
+                )
+                .ok()
+            };
+            (get_val("provider"), get_val("api_key"), get_val("model"))
+        };
+
+        if let (Some(provider), Some(api_key), Some(model)) = config {
+            let config_msg = serde_json::json!({
+                "type": "set_config",
+                "provider": provider,
+                "api_key": api_key,
+                "model": model
+            });
+            write_to_stdin(&mut stdin, &config_msg.to_string())?;
+        }
+
+        // Send history
+        let history = {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT role, content, tool_name, tool_call_id FROM assistant_messages ORDER BY id DESC LIMIT 50",
+                )
+                .map_err(|e| e.to_string())?;
+
+            let msgs: Vec<serde_json::Value> = stmt
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "role": row.get::<_, String>(0)?,
+                        "content": row.get::<_, String>(1)?,
+                        "tool_name": row.get::<_, Option<String>>(2)?,
+                        "tool_call_id": row.get::<_, Option<String>>(3)?
+                    }))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let mut msgs = msgs;
+            msgs.reverse();
+            msgs
+        };
+
+        let history_msg = serde_json::json!({
+            "type": "history",
+            "messages": history
+        });
+        write_to_stdin(&mut stdin, &history_msg.to_string())?;
+
+        sidecar_state.child = Some(child);
+        sidecar_state.stdin = Some(stdin);
+        sidecar_state.reader = Some(reader);
+    }
+
+    // Send user message
+    let msg = serde_json::json!({
+        "type": "user_message",
+        "content": content
+    });
+
+    if let Some(stdin) = sidecar_state.stdin.as_mut() {
+        write_to_stdin(stdin, &msg.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn assistant_read_response(
+    sidecar: tauri::State<'_, tokio::sync::Mutex<SidecarState>>,
+    db: tauri::State<'_, Mutex<Connection>>,
+) -> Result<String, String> {
+    let mut sidecar_state = sidecar.lock().await;
+
+    let reader = sidecar_state.reader.as_mut()
+        .ok_or("Sidecar not running")?;
+
+    // Read one line asynchronously (does not block the tokio runtime)
+    let mut line = String::new();
+    reader.read_line(&mut line).await
+        .map_err(|e| format!("Failed to read from sidecar: {e}"))?;
+
+    if line.is_empty() {
+        return Err("Sidecar process exited".to_string());
+    }
+
+    // Handle tool calls in a loop — LLM may issue multiple sequential tool calls
+    loop {
+        let parsed = match serde_json::from_str::<serde_json::Value>(line.trim()) {
+            Ok(v) => v,
+            Err(_) => return Ok(line.trim().to_string()),
+        };
+
+        if parsed.get("type").and_then(|t| t.as_str()) != Some("tool_call") {
+            return Ok(line.trim().to_string());
+        }
+
+        // It's a tool call — resolve it
+        let tool_name = parsed["name"].as_str().unwrap_or("");
+        let tool_id = parsed["id"].as_str().unwrap_or("");
+        let args = &parsed["args"];
+
+        let result = match tool_name {
+            "get_all_sessions" => {
+                // Reuse the existing get_all_sessions_for_assistant command logic
+                let conn = db.lock().map_err(|e| e.to_string())?;
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT s.id, s.status, s.agent, s.branch, r.name, r.path, s.worktree_path, s.created_at
+                         FROM sessions s JOIN repos r ON s.repo_id = r.id ORDER BY s.created_at DESC",
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                let now = chrono::Utc::now();
+                let sessions: Vec<serde_json::Value> = stmt
+                    .query_map([], |row| {
+                        let created_at: String = row.get(7)?;
+                        let elapsed = chrono::NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
+                            .map(|ndt| (now - ndt.and_utc()).num_minutes())
+                            .unwrap_or(0);
+                        Ok(serde_json::json!({
+                            "id": row.get::<_, i64>(0)?,
+                            "status": row.get::<_, String>(1)?,
+                            "agent": row.get::<_, String>(2)?,
+                            "branch": row.get::<_, Option<String>>(3)?,
+                            "repo_name": row.get::<_, String>(4)?,
+                            "repo_path": row.get::<_, String>(5)?,
+                            "worktree_path": row.get::<_, Option<String>>(6)?,
+                            "elapsed_minutes": elapsed,
+                            "created_at": created_at
+                        }))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                serde_json::to_string(&sessions).unwrap_or_default()
+            }
+            "get_session_diff" => {
+                let session_id = args["session_id"].as_i64().unwrap_or(0);
+                let path = {
+                    let conn = db.lock().map_err(|e| e.to_string())?;
+                    resolve_session_path(&conn, session_id)?
+                };
+                // Use tokio::process for non-blocking git diff
+                let output = tokio::process::Command::new("git")
+                    .args(["diff", "HEAD"])
+                    .current_dir(&path)
+                    .output()
+                    .await
+                    .map_err(|e| format!("Failed to get diff: {e}"))?;
+                String::from_utf8_lossy(&output.stdout).to_string()
+            }
+            "get_session_costs" => {
+                let session_id = args["session_id"].as_i64().unwrap_or(0);
+                let path = {
+                    let conn = db.lock().map_err(|e| e.to_string())?;
+                    resolve_session_path(&conn, session_id)?
+                };
+                let costs = crate::commands::cost::get_project_costs(path).await
+                    .unwrap_or_default();
+                serde_json::to_string(&costs).unwrap_or_default()
+            }
+            _ => "Unknown tool".to_string(),
+        };
+
+        // Send tool result back to sidecar
+        let tool_result = serde_json::json!({
+            "type": "tool_result",
+            "call_id": tool_id,
+            "content": result
+        });
+        if let Some(stdin) = sidecar_state.stdin.as_mut() {
+            write_to_stdin(stdin, &tool_result.to_string())?;
+        }
+
+        // Read the next line — may be another tool call or a chunk/done/error
+        line.clear();
+        reader.read_line(&mut line).await
+            .map_err(|e| format!("Failed to read from sidecar: {e}"))?;
+
+        if line.is_empty() {
+            return Err("Sidecar process exited".to_string());
+        }
+
+        // Loop continues to check if this is another tool_call
+    }
+}
+
+#[tauri::command]
+pub async fn assistant_shutdown(
+    sidecar: tauri::State<'_, tokio::sync::Mutex<SidecarState>>,
+) -> Result<(), String> {
+    let mut state = sidecar.lock().await;
+    if let Some(mut stdin) = state.stdin.take() {
+        let shutdown_msg = serde_json::json!({"type": "shutdown"});
+        write_to_stdin(&mut stdin, &shutdown_msg.to_string()).ok();
+    }
+    if let Some(mut child) = state.child.take() {
+        child.kill().await.ok();
+    }
+    state.reader = None;
+    Ok(())
 }

@@ -11,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_pty::init())
         .manage(Mutex::new(db))
+        .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
         .invoke_handler(tauri::generate_handler![
             commands::session::import_repo,
             commands::session::list_repos,
@@ -30,6 +31,9 @@ pub fn run() {
             commands::assistant::get_all_sessions_for_assistant,
             commands::assistant::get_session_diff_for_assistant,
             commands::assistant::get_session_costs_for_assistant,
+            commands::assistant::assistant_send_message,
+            commands::assistant::assistant_read_response,
+            commands::assistant::assistant_shutdown,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -77,7 +77,7 @@ pub struct SessionCost {
     pub estimated_cost_usd: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ProjectCosts {
     pub sessions: Vec<SessionCost>,
     pub total_input_tokens: u64,
