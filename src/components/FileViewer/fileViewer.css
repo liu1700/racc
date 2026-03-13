@@ -1,0 +1,36 @@
+.file-viewer-code .search-highlight {
+  background-color: rgba(255, 200, 50, 0.3);
+  border-radius: 2px;
+}
+
+.file-viewer-code .search-highlight.search-current {
+  background-color: rgba(255, 200, 50, 0.6);
+  outline: 1px solid rgba(255, 200, 50, 0.8);
+}
+
+.file-viewer-code .line-active {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Shiki theme overrides to match Racc surface tokens */
+.file-viewer-code pre {
+  background-color: transparent !important;
+  margin: 0;
+}
+
+.file-viewer-code code {
+  counter-reset: line;
+}
+
+.file-viewer-code code .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3em;
+  margin-right: 1em;
+  text-align: right;
+  color: #52525b;
+  user-select: none;
+  position: sticky;
+  left: 0;
+}
