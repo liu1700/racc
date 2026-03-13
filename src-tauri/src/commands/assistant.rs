@@ -1,10 +1,9 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::process::Stdio;
 use std::sync::Mutex;
-use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
-use tokio::process::{Child, ChildStdout, Command as TokioCommand};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
 use tauri::Manager;
 
 // --- Types ---
@@ -43,7 +42,7 @@ pub struct SessionInfo {
 
 pub struct SidecarState {
     pub child: Option<Child>,
-    pub stdin: Option<std::process::ChildStdin>,
+    pub stdin: Option<ChildStdin>,
     pub reader: Option<TokioBufReader<ChildStdout>>,
 }
 
@@ -96,7 +95,7 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
     ))
 }
 
-fn spawn_sidecar(app: &tauri::AppHandle) -> Result<(Child, std::process::ChildStdin, TokioBufReader<ChildStdout>), String> {
+fn spawn_sidecar(app: &tauri::AppHandle) -> Result<(Child, ChildStdin, TokioBufReader<ChildStdout>), String> {
     let path = resolve_sidecar_path(app)?;
 
     let mut child = TokioCommand::new(path)
@@ -112,16 +111,15 @@ fn spawn_sidecar(app: &tauri::AppHandle) -> Result<(Child, std::process::ChildSt
     let stdin = child.stdin.take()
         .ok_or("Failed to capture sidecar stdin")?;
 
-    // Convert tokio ChildStdin to std ChildStdin for synchronous writes
-    let std_stdin = stdin.into_std().map_err(|e| format!("Failed to convert stdin: {e}"))?;
     let reader = TokioBufReader::new(stdout);
 
-    Ok((child, std_stdin, reader))
+    Ok((child, stdin, reader))
 }
 
-fn write_to_stdin(stdin: &mut std::process::ChildStdin, msg: &str) -> Result<(), String> {
-    writeln!(stdin, "{}", msg).map_err(|e| format!("Failed to write to sidecar: {e}"))?;
-    stdin.flush().map_err(|e| format!("Failed to flush sidecar stdin: {e}"))?;
+async fn write_to_stdin(stdin: &mut ChildStdin, msg: &str) -> Result<(), String> {
+    stdin.write_all(msg.as_bytes()).await.map_err(|e| format!("Failed to write to sidecar: {e}"))?;
+    stdin.write_all(b"\n").await.map_err(|e| format!("Failed to write to sidecar: {e}"))?;
+    stdin.flush().await.map_err(|e| format!("Failed to flush sidecar stdin: {e}"))?;
     Ok(())
 }
 
@@ -394,7 +392,7 @@ pub async fn assistant_send_message(
                 "api_key": api_key,
                 "model": model
             });
-            write_to_stdin(&mut stdin, &config_msg.to_string())?;
+            write_to_stdin(&mut stdin, &config_msg.to_string()).await?;
         }
 
         // Send history (exclude the most recent message — it's the user message
@@ -430,7 +428,7 @@ pub async fn assistant_send_message(
             "type": "history",
             "messages": history
         });
-        write_to_stdin(&mut stdin, &history_msg.to_string())?;
+        write_to_stdin(&mut stdin, &history_msg.to_string()).await?;
 
         sidecar_state.child = Some(child);
         sidecar_state.stdin = Some(stdin);
@@ -444,7 +442,7 @@ pub async fn assistant_send_message(
     });
 
     if let Some(stdin) = sidecar_state.stdin.as_mut() {
-        write_to_stdin(stdin, &msg.to_string())?;
+        write_to_stdin(stdin, &msg.to_string()).await?;
     }
 
     Ok(())
@@ -457,7 +455,9 @@ pub async fn assistant_read_response(
 ) -> Result<String, String> {
     let mut sidecar_state = sidecar.lock().await;
 
-    let reader = sidecar_state.reader.as_mut()
+    // Destructure to get separate mutable references (avoids double borrow of sidecar_state)
+    let SidecarState { ref mut reader, ref mut stdin, .. } = *sidecar_state;
+    let reader = reader.as_mut()
         .ok_or("Sidecar not running")?;
 
     // Read one line asynchronously (does not block the tokio runtime)
@@ -555,8 +555,8 @@ pub async fn assistant_read_response(
             "call_id": tool_id,
             "content": result
         });
-        if let Some(stdin) = sidecar_state.stdin.as_mut() {
-            write_to_stdin(stdin, &tool_result.to_string())?;
+        if let Some(stdin) = stdin.as_mut() {
+            write_to_stdin(stdin, &tool_result.to_string()).await?;
         }
 
         // Read the next line — may be another tool call or a chunk/done/error
@@ -579,7 +579,7 @@ pub async fn assistant_shutdown(
     let mut state = sidecar.lock().await;
     if let Some(mut stdin) = state.stdin.take() {
         let shutdown_msg = serde_json::json!({"type": "shutdown"});
-        write_to_stdin(&mut stdin, &shutdown_msg.to_string()).ok();
+        write_to_stdin(&mut stdin, &shutdown_msg.to_string()).await.ok();
     }
     if let Some(mut child) = state.child.take() {
         child.kill().await.ok();
