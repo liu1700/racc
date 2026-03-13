@@ -18,9 +18,11 @@ interface SessionState {
     repoId: number,
     useWorktree: boolean,
     branch?: string,
+    skipPermissions?: boolean,
   ) => Promise<void>;
+  reattachSession: (sessionId: number, skipPermissions?: boolean) => Promise<void>;
   stopSession: (sessionId: number) => Promise<void>;
-  removeSession: (sessionId: number) => Promise<void>;
+  removeSession: (sessionId: number, deleteWorktree?: boolean) => Promise<void>;
   setActiveSession: (id: number) => void;
   clearError: () => void;
 }
@@ -88,7 +90,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (repoId, useWorktree, branch) => {
+  createSession: async (repoId, useWorktree, branch, skipPermissions = true) => {
     set({ error: null });
     try {
       const session = await invoke<Session>("create_session", {
@@ -102,8 +104,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const repo = repos.find((r) => r.repo.id === repoId)?.repo;
       const cwd = session.worktree_path || repo?.path || ".";
 
+      // Build agent command with optional flags
+      const agentCmd = skipPermissions ? "claude --dangerously-skip-permissions" : "claude";
+
       // Spawn PTY in the session's working directory
-      spawnPty(session.id, cwd, 80, 24, "claude");
+      spawnPty(session.id, cwd, 80, 24, agentCmd);
+
+      const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
+      set({ repos: updatedRepos, activeSessionId: session.id });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
+    }
+  },
+
+  reattachSession: async (sessionId, skipPermissions = true) => {
+    set({ error: null });
+    try {
+      const session = await invoke<Session>("reattach_session", { sessionId });
+
+      const { repos } = get();
+      const repo = repos.find((r) => r.repo.id === session.repo_id)?.repo;
+      const cwd = session.worktree_path || repo?.path || ".";
+
+      const flags = skipPermissions ? " --dangerously-skip-permissions" : "";
+      const agentCmd = `claude --continue${flags}`;
+
+      spawnPty(session.id, cwd, 80, 24, agentCmd);
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });
@@ -129,10 +156,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  removeSession: async (sessionId) => {
+  removeSession: async (sessionId, deleteWorktree = false) => {
     try {
       killPty(sessionId);
-      await invoke("remove_session", { sessionId });
+      await invoke("remove_session", { sessionId, deleteWorktree });
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
       set({

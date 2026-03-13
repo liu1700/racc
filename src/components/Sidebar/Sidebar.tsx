@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { ImportRepoDialog } from "./ImportRepoDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
+import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import type { Session, SessionStatus } from "../../types/session";
 
 const statusColor: Record<SessionStatus, string> = {
@@ -41,11 +42,12 @@ export function Sidebar() {
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const stopSession = useSessionStore((s) => s.stopSession);
-  const removeSession = useSessionStore((s) => s.removeSession);
+  const reattachSession = useSessionStore((s) => s.reattachSession);
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
+  const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
 
   const toggleRepo = (repoId: number) => {
     setExpandedRepos((prev) => {
@@ -148,16 +150,28 @@ export function Sidebar() {
                       ■
                     </button>
                   ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeSession(session.id);
-                      }}
-                      className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
-                      title="Remove session"
-                    >
-                      ×
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          reattachSession(session.id);
+                        }}
+                        className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
+                        title="Reattach session"
+                      >
+                        ▶
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRemoveDialogSession(session);
+                        }}
+                        className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
+                        title="Remove session"
+                      >
+                        ×
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
@@ -170,6 +184,14 @@ export function Sidebar() {
           repoId={agentDialogRepoId}
           open={true}
           onClose={() => setAgentDialogRepoId(null)}
+        />
+      )}
+
+      {removeDialogSession !== null && (
+        <RemoveSessionDialog
+          session={removeDialogSession}
+          open={true}
+          onClose={() => setRemoveDialogSession(null)}
         />
       )}
     </aside>

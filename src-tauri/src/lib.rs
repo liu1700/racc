@@ -12,6 +12,35 @@ pub fn run() {
         .plugin(tauri_plugin_pty::init())
         .manage(Mutex::new(db))
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
+        .setup(|app| {
+            use tauri::menu::{MenuBuilder, SubmenuBuilder};
+
+            let app_menu = SubmenuBuilder::new(app, "Racc")
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&edit_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::session::import_repo,
             commands::session::list_repos,
@@ -19,6 +48,7 @@ pub fn run() {
             commands::session::create_session,
             commands::session::stop_session,
             commands::session::remove_session,
+            commands::session::reattach_session,
             commands::session::reconcile_sessions,
             commands::git::create_worktree,
             commands::git::delete_worktree,

@@ -39,11 +39,31 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
   useEffect(() => {
     if (sessionId === null || !terminal) return;
 
+    // Bypass IME for Shift+punctuation keys so characters like "?" work
+    // with Chinese input methods active (IME consumes Shift for mode switching)
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (
+        event.type === 'keydown' &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key.length === 1
+      ) {
+        writePty(sessionId, event.key);
+        return false;
+      }
+      return true;
+    });
+
     const disposable = terminal.onData((data: string) => {
       writePty(sessionId, data);
     });
 
-    return () => disposable.dispose();
+    return () => {
+      terminal.attachCustomKeyEventHandler(() => true);
+      disposable.dispose();
+    };
   }, [sessionId, terminal]);
 
   // Sync terminal size to PTY
