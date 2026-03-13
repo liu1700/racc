@@ -47,15 +47,9 @@ export function CostTracker() {
   return (
     <div className="border-b border-surface-3 bg-surface-1 px-4 py-3">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-        Cost
+        Usage
       </h2>
       <div className="mt-2 grid grid-cols-2 gap-3">
-        <div>
-          <p className="text-xs text-zinc-500">Total cost</p>
-          <p className="text-lg font-semibold text-zinc-100">
-            ${costs?.total_estimated_cost_usd.toFixed(2) ?? "0.00"}
-          </p>
-        </div>
         <div>
           <p className="text-xs text-zinc-500">Sessions</p>
           <p className="text-lg font-semibold text-zinc-100">
@@ -63,27 +57,24 @@ export function CostTracker() {
           </p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">Input tokens</p>
+          <p className="text-xs text-zinc-500">Total tokens</p>
+          <p className="text-lg font-semibold text-zinc-100">
+            {formatTokens(
+              (costs?.total_input_tokens ?? 0) +
+                (costs?.total_output_tokens ?? 0)
+            )}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-zinc-500">Input</p>
           <p className="text-sm text-zinc-300">
             {formatTokens(costs?.total_input_tokens ?? 0)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">Output tokens</p>
+          <p className="text-xs text-zinc-500">Output</p>
           <p className="text-sm text-zinc-300">
             {formatTokens(costs?.total_output_tokens ?? 0)}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-zinc-500">Cache write</p>
-          <p className="text-sm text-zinc-300">
-            {formatTokens(costs?.total_cache_creation_tokens ?? 0)}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-zinc-500">Cache read</p>
-          <p className="text-sm text-zinc-300">
-            {formatTokens(costs?.total_cache_read_tokens ?? 0)}
           </p>
         </div>
       </div>

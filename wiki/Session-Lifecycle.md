@@ -67,7 +67,7 @@ User clicks [+] on a repo
         v
 [7] State Registration
     - Session appears nested under repo in sidebar with green "Running" dot
-    - Cost monitoring begins via JSONL file polling (10s interval)
+    - Token usage monitoring begins via JSONL file polling (10s interval)
 ```
 
 ## State Machine

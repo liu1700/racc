@@ -14,7 +14,7 @@ The main interface showing all active agent sessions as status cards. Designed a
 - Status color dot (preattentive pop-out for instant triage)
 - Current task description / micro-summary
 - Runtime duration and progress indicator
-- Token consumption & estimated cost
+- Token consumption (input/output breakdown)
 - Current operation (reading file / executing command / waiting for approval)
 - Associated git branch and worktree path
 
@@ -25,21 +25,19 @@ The main interface showing all active agent sessions as status cards. Designed a
 - Stop / terminate sessions
 - Quick switch between sessions (with PTY output buffer replay)
 
-### 2. Real-Time Cost Tracking
+### 2. Real-Time Token Usage Tracking
 
 This is the **#1 user pain point** — the community has independently built 7+ monitoring tools, proving urgency.
 
 **Per-session:**
 - Token consumption (input/output breakdown)
-- Estimated cost in real-time on the session card
 
 **Global (status bar):**
-- Total spend across all sessions
-- Weekly/monthly spend
-- Ratio against subscription quota
-- Configurable alert thresholds
+- Total tokens across all sessions
+- Weekly token usage
+- Session count by status
 
-**MVP approach:** Read Claude Code's local usage data files. Support for other agents' cost data in later versions.
+**MVP approach:** Read Claude Code's local usage data files. Token counts only — no USD cost estimation (irrelevant for subscription users like Claude Max). Support for other agents' usage data in later versions.
 
 ### 3. Visual Diff Review *(not yet implemented)*
 
@@ -64,12 +62,12 @@ A global AI assistant ("butler") that helps developers understand and review wha
 **Capabilities (v1):**
 - Summarizes diffs across any session, categorizing files by review priority (HIGH: security/config/DB, MEDIUM: business logic/API, LOW: tests/types/formatting)
 - Flags specific risks (unparameterized SQL, hardcoded secrets, missing error handling, breaking API changes)
-- Answers questions about any session's work, costs, and status
+- Answers questions about any session's work, token usage, and status
 - Maintains a persistent conversation across app restarts
 
 **Architecture:** Runs as a Tauri sidecar binary (TypeScript compiled with `bun build --compile`), powered by `@mariozechner/pi-ai` (OpenRouter provider) and `@mariozechner/pi-agent-core` (agent runtime with tool calling). Communicates with Rust backend via stdin/stdout JSON lines protocol.
 
-**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token/cost data per session). Tool calls are relayed to Rust for git/SQLite operations.
+**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session). Tool calls are relayed to Rust for git/SQLite operations.
 
 **Why this replaces the Activity Log:** The original Activity Log aimed to show which files agents read, which commands they ran. The AI assistant provides higher-value intelligence — it doesn't just list changes, it triages them by risk and summarizes what matters. Structured event tracking is deferred; the assistant provides more value than raw event lists.
 

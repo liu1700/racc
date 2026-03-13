@@ -4,7 +4,7 @@ export interface SessionCost {
   output_tokens: number;
   cache_creation_tokens: number;
   cache_read_tokens: number;
-  estimated_cost_usd: number;
+  modified_at: number;
 }
 
 export interface ProjectCosts {
@@ -13,5 +13,6 @@ export interface ProjectCosts {
   total_output_tokens: number;
   total_cache_creation_tokens: number;
   total_cache_read_tokens: number;
-  total_estimated_cost_usd: number;
+  week_input_tokens: number;
+  week_output_tokens: number;
 }
