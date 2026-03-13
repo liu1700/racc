@@ -61,6 +61,7 @@ pub fn run() {
             commands::assistant::get_all_sessions_for_assistant,
             commands::assistant::get_session_diff_for_assistant,
             commands::assistant::get_session_costs_for_assistant,
+            commands::assistant::read_file_for_assistant,
             commands::assistant::assistant_send_message,
             commands::assistant::assistant_read_response,
             commands::assistant::assistant_shutdown,

@@ -356,6 +356,20 @@ pub async fn get_session_costs_for_assistant(
     serde_json::to_string(&costs).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn read_file_for_assistant(
+    db: tauri::State<'_, Mutex<Connection>>,
+    session_id: Option<i64>,
+    repo_id: Option<i64>,
+    file_path: String,
+) -> Result<String, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    let result = crate::commands::file::read_file_core(
+        &conn, session_id, repo_id, &file_path, Some(200),
+    )?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
 // --- Sidecar Tauri Commands ---
 
 #[tauri::command]
@@ -545,6 +559,24 @@ pub async fn assistant_read_response(
                 let costs = crate::commands::cost::get_project_costs(path).await
                     .unwrap_or_default();
                 serde_json::to_string(&costs).unwrap_or_default()
+            }
+            "read_file" => {
+                let file_path = args.get("file_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let session_id = args.get("session_id")
+                    .and_then(|v| v.as_i64());
+                let repo_id = args.get("repo_id")
+                    .and_then(|v| v.as_i64());
+
+                let conn = db.lock().map_err(|e| e.to_string())?;
+                match crate::commands::file::read_file_core(
+                    &conn, session_id, repo_id, &file_path, Some(200),
+                ) {
+                    Ok(content) => serde_json::to_string(&content).unwrap_or_default(),
+                    Err(e) => format!("Error reading file: {}", e),
+                }
             }
             _ => "Unknown tool".to_string(),
         };
