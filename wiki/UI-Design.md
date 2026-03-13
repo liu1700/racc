@@ -15,7 +15,7 @@ Three-panel layout, left to right:
 |  (~15%)        |         (~55%)                     |   (~30%)             |
 |                |                                    |                      |
 |  Session List  |  Agent Terminal (PTY / xterm.js)   |  AI Assistant        |
-|  + Quick       |  ── or ──                          |  Cost Dashboard      |
+|  + Quick       |  ── or ──                          |  Usage Dashboard     |
 |    Actions     |  Diff Review View                  |                      |
 |                |  (switchable)                      |                      |
 |  [New]         |                                    |                      |
@@ -24,7 +24,7 @@ Three-panel layout, left to right:
 |                |                                    |                      |
 +----------------+------------------------------------+----------------------+
 |                        Global Status Bar                                   |
-|  Total Cost: $X.XX | This Week: $X.XX | Quota: XX% | Active Sessions: N   |
+|  Total Tokens: XX.Xk | This Week: XX.Xk | Active Sessions: N               |
 +----------------------------------------------------------------------------+
 ```
 
@@ -126,26 +126,25 @@ Currently terminal-only mode:
 
 ## Right Panel — Intelligence Dashboard
 
-### Cost Dashboard (implemented)
+### Usage Dashboard (implemented)
 - Polls `get_project_costs` every 10 seconds
-- Displays: total estimated cost, session count
-- Token breakdown: input, output, cache creation, cache read tokens
-- Model-aware pricing: Opus ($15/$75), Sonnet ($3/$15), Haiku ($0.80/$4) per 1M tokens
-- Silent failure if cost data is unavailable
+- Displays: session count, total tokens (input + output)
+- Token breakdown: input, output
+- Silent failure if usage data is unavailable
 
 ### AI Assistant (implemented)
 
-A global AI assistant ("butler") that lives below the cost tracker. Powered by `@mariozechner/pi-ai` and `@mariozechner/pi-agent-core` running as a Tauri sidecar binary (compiled with `bun build --compile`).
+A global AI assistant ("butler") that lives below the usage tracker. Powered by `@mariozechner/pi-ai` and `@mariozechner/pi-agent-core` running as a Tauri sidecar binary (compiled with `bun build --compile`).
 
 **v1 capability:** Diff summary & risk triage.
 
 - **Streaming chat UI** with markdown rendering (`react-markdown`) for code blocks, headings, lists
-- **Three tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token/cost data per session)
-- **Quick action buttons** above the input field pre-fill common prompts ("Summarize Diff", "Costs")
+- **Three tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session)
+- **Quick action buttons** above the input field pre-fill common prompts ("Summarize Diff", "Usage")
 - **OpenRouter provider** — single API key gives access to all major models (Anthropic, OpenAI, Google, etc.)
 - **Setup flow:** Inline configuration panel shown when no API key is set; key entry validates against OpenRouter and populates a model picker
 - **Conversation persistence:** All messages stored in SQLite (`assistant_messages` table) and hydrated on app restart
-- **Cost tracking:** The assistant's own LLM spend is displayed in the panel header, separate from agent session costs
+- **Usage tracking:** The assistant's own LLM spend is displayed in the panel header, separate from agent session usage
 - **Sidecar lifecycle:** Spawned lazily on first interaction, stays alive for the app session, graceful shutdown on app close
 
 **Architecture:** Frontend → Rust → sidecar (stdin/stdout JSON lines) → OpenRouter → LLM. Tool calls are relayed back to Rust for git/SQLite operations.
@@ -156,8 +155,8 @@ This replaces the previously planned Activity Log. The assistant provides higher
 
 Fixed bottom bar showing:
 - **Categorical session summary (implemented):** Color-coded counts by status category (e.g., "2 running · 1 error · 1 completed") with status-colored numbers — only non-zero categories shown. Enables the developer to hold system state as categorical chunks rather than N individual items.
+- **Token usage (implemented):** Total Tokens and This Week counts, polled from `get_project_costs` every 10s
 - Connection status indicator (green dot)
-- Placeholder cost displays (to be connected to real-time aggregation)
 
 ## Notification Architecture
 

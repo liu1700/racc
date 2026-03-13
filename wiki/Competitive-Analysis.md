@@ -12,7 +12,7 @@ Racc occupies a unique position: it is **not** a coding AI, **not** a code edito
 |-----------|------|-----------------------------------|-------------------------------|
 | **Multi-session** | Native visual dashboard | CLI or simple WebUI | Single-session sidebar |
 | **Agent choice** | Any terminal agent | Usually tied to one agent | Locked to vendor model |
-| **Cost tracking** | Built-in, first-class | Requires third-party tools | None or minimal |
+| **Usage tracking** | Built-in, first-class | Requires third-party tools | None or minimal |
 | **Env isolation** | Worktree + Docker Sandbox | Worktree only | No explicit isolation |
 | **Remote support** | Tailscale native | Manual SSH | Partial |
 | **Change review** | PR-level diff view | None | Inline diff only |

@@ -17,12 +17,12 @@
 | PTY lifecycle management | Spawn, kill, resize, output buffering (1MB/session) | Done |
 | Repo-centric session management | SQLite persistence, native folder picker, repo import/remove | Done |
 | Session reconciliation | Detect orphaned sessions on startup, mark Disconnected | Done |
-| Basic cost tracking | Parse Claude Code JSONL files, model-aware pricing (10s poll) | Done |
+| Token usage tracking | Parse Claude Code JSONL files, aggregate token counts (10s poll) | Done |
 | Zustand state management | Session store with 11 actions, `useShallow` optimization | Done |
 | Git diff viewer | View changes made by agents | **Next** |
 | Activity log | Structured agent event tracking | **Next** |
 
-**Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see cost per session, and review diffs before accepting changes.
+**Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see token usage per session, and review diffs before accepting changes.
 
 **Recent stabilization work:**
 - Fixed xterm.js init race condition (always mount terminal div before init)
