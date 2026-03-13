@@ -22,3 +22,5 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-pty = "0.2"
+ignore = "0.4"
+nucleo-matcher = "0.3"
