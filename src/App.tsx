@@ -4,7 +4,10 @@ import { Terminal } from "./components/Terminal/Terminal";
 import { AssistantPanel } from "./components/Assistant/AssistantPanel";
 import { CostTracker } from "./components/CostTracker/CostTracker";
 import { StatusBar } from "./components/Dashboard/StatusBar";
+import { FileViewer } from "./components/FileViewer/FileViewer";
+import { CommandPalette } from "./components/FileViewer/CommandPalette";
 import { useSessionStore } from "./stores/sessionStore";
+import { useFileViewerStore } from "./stores/fileViewerStore";
 
 function App() {
   const initialize = useSessionStore((s) => s.initialize);
@@ -12,6 +15,17 @@ function App() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+        e.preventDefault();
+        useFileViewerStore.getState().openPalette();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-surface-0">
@@ -21,8 +35,9 @@ function App() {
         <Sidebar />
 
         {/* Center — Agent Terminal (~55%) */}
-        <main className="flex flex-1 flex-col border-x border-surface-3">
+        <main className="relative flex flex-1 flex-col border-x border-surface-3">
           <Terminal />
+          <FileViewer />
         </main>
 
         {/* Right Panel — Activity + Cost (~30%) */}
@@ -34,6 +49,7 @@ function App() {
 
       {/* Global Status Bar */}
       <StatusBar />
+      <CommandPalette />
     </div>
   );
 }
