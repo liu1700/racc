@@ -23,6 +23,13 @@ pub fn run() {
             commands::git::delete_worktree,
             commands::git::get_diff,
             commands::cost::get_project_costs,
+            commands::assistant::get_assistant_config,
+            commands::assistant::set_assistant_config,
+            commands::assistant::save_assistant_message,
+            commands::assistant::get_assistant_messages,
+            commands::assistant::get_all_sessions_for_assistant,
+            commands::assistant::get_session_diff_for_assistant,
+            commands::assistant::get_session_costs_for_assistant,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

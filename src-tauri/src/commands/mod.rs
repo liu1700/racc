@@ -1,3 +1,4 @@
+pub mod assistant;
 pub mod cost;
 pub mod db;
 pub mod git;
