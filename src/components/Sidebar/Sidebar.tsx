@@ -119,6 +119,8 @@ export function Sidebar() {
                   onClick={() => {
                     if (session.status === "Running") {
                       setActiveSession(session.id);
+                    } else {
+                      reattachSession(session.id);
                     }
                   }}
                   className={`group ml-4 flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors duration-150 ${

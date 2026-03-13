@@ -2,47 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-
-// --- Pricing per 1M tokens ---
-
-struct ModelPricing {
-    input: f64,
-    output: f64,
-    cache_write: f64,
-    cache_read: f64,
-}
-
-const OPUS_PRICING: ModelPricing = ModelPricing {
-    input: 15.0,
-    output: 75.0,
-    cache_write: 18.75,
-    cache_read: 1.50,
-};
-
-const SONNET_PRICING: ModelPricing = ModelPricing {
-    input: 3.0,
-    output: 15.0,
-    cache_write: 3.75,
-    cache_read: 0.30,
-};
-
-const HAIKU_PRICING: ModelPricing = ModelPricing {
-    input: 0.80,
-    output: 4.0,
-    cache_write: 1.0,
-    cache_read: 0.08,
-};
-
-fn pricing_for_model(model: &str) -> &'static ModelPricing {
-    let lower = model.to_lowercase();
-    if lower.contains("opus") {
-        &OPUS_PRICING
-    } else if lower.contains("haiku") {
-        &HAIKU_PRICING
-    } else {
-        &SONNET_PRICING
-    }
-}
+use std::time::{Duration, SystemTime};
 
 // --- JSONL deserialization types ---
 
@@ -53,7 +13,6 @@ struct JsonlLine {
 
 #[derive(Deserialize)]
 struct MessagePayload {
-    model: Option<String>,
     usage: Option<UsageFields>,
 }
 
@@ -74,7 +33,8 @@ pub struct SessionCost {
     pub output_tokens: u64,
     pub cache_creation_tokens: u64,
     pub cache_read_tokens: u64,
-    pub estimated_cost_usd: f64,
+    /// Seconds since UNIX epoch when the JSONL file was last modified
+    pub modified_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -84,7 +44,8 @@ pub struct ProjectCosts {
     pub total_output_tokens: u64,
     pub total_cache_creation_tokens: u64,
     pub total_cache_read_tokens: u64,
-    pub total_estimated_cost_usd: f64,
+    pub week_input_tokens: u64,
+    pub week_output_tokens: u64,
 }
 
 // --- Core logic ---
@@ -100,7 +61,6 @@ fn parse_jsonl_file(path: &std::path::Path) -> SessionCost {
     let mut output_tokens: u64 = 0;
     let mut cache_creation_tokens: u64 = 0;
     let mut cache_read_tokens: u64 = 0;
-    let mut estimated_cost: f64 = 0.0;
 
     let file = match fs::File::open(path) {
         Ok(f) => f,
@@ -111,10 +71,18 @@ fn parse_jsonl_file(path: &std::path::Path) -> SessionCost {
                 output_tokens: 0,
                 cache_creation_tokens: 0,
                 cache_read_tokens: 0,
-                estimated_cost_usd: 0.0,
+                modified_at: 0,
             };
         }
     };
+
+    let modified_at = file
+        .metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
 
     let reader = BufReader::new(file);
     for line in reader.lines() {
@@ -142,23 +110,10 @@ fn parse_jsonl_file(path: &std::path::Path) -> SessionCost {
             None => continue,
         };
 
-        let model_name = message.model.as_deref().unwrap_or("sonnet");
-        let pricing = pricing_for_model(model_name);
-
-        let inp = usage.input_tokens.unwrap_or(0);
-        let out = usage.output_tokens.unwrap_or(0);
-        let cw = usage.cache_creation_input_tokens.unwrap_or(0);
-        let cr = usage.cache_read_input_tokens.unwrap_or(0);
-
-        input_tokens += inp;
-        output_tokens += out;
-        cache_creation_tokens += cw;
-        cache_read_tokens += cr;
-
-        estimated_cost += (inp as f64 * pricing.input / 1_000_000.0)
-            + (out as f64 * pricing.output / 1_000_000.0)
-            + (cw as f64 * pricing.cache_write / 1_000_000.0)
-            + (cr as f64 * pricing.cache_read / 1_000_000.0);
+        input_tokens += usage.input_tokens.unwrap_or(0);
+        output_tokens += usage.output_tokens.unwrap_or(0);
+        cache_creation_tokens += usage.cache_creation_input_tokens.unwrap_or(0);
+        cache_read_tokens += usage.cache_read_input_tokens.unwrap_or(0);
     }
 
     SessionCost {
@@ -167,7 +122,7 @@ fn parse_jsonl_file(path: &std::path::Path) -> SessionCost {
         output_tokens,
         cache_creation_tokens,
         cache_read_tokens,
-        estimated_cost_usd: (estimated_cost * 100.0).round() / 100.0,
+        modified_at,
     }
 }
 
@@ -188,14 +143,7 @@ pub async fn get_project_costs(worktree_path: String) -> Result<ProjectCosts, St
     let project_dir = home.join(".claude").join("projects").join(&encoded);
 
     if !project_dir.exists() {
-        return Ok(ProjectCosts {
-            sessions: vec![],
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cache_creation_tokens: 0,
-            total_cache_read_tokens: 0,
-            total_estimated_cost_usd: 0.0,
-        });
+        return Ok(ProjectCosts::default());
     }
 
     let mut sessions: Vec<SessionCost> = Vec::new();
@@ -213,7 +161,23 @@ pub async fn get_project_costs(worktree_path: String) -> Result<ProjectCosts, St
     let total_output: u64 = sessions.iter().map(|s| s.output_tokens).sum();
     let total_cache_creation: u64 = sessions.iter().map(|s| s.cache_creation_tokens).sum();
     let total_cache_read: u64 = sessions.iter().map(|s| s.cache_read_tokens).sum();
-    let total_cost: f64 = sessions.iter().map(|s| s.estimated_cost_usd).sum();
+
+    // Sessions modified within the last 7 days
+    let week_ago = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_secs()
+        .saturating_sub(7 * 24 * 3600);
+    let week_input: u64 = sessions
+        .iter()
+        .filter(|s| s.modified_at >= week_ago)
+        .map(|s| s.input_tokens)
+        .sum();
+    let week_output: u64 = sessions
+        .iter()
+        .filter(|s| s.modified_at >= week_ago)
+        .map(|s| s.output_tokens)
+        .sum();
 
     Ok(ProjectCosts {
         sessions,
@@ -221,6 +185,7 @@ pub async fn get_project_costs(worktree_path: String) -> Result<ProjectCosts, St
         total_output_tokens: total_output,
         total_cache_creation_tokens: total_cache_creation,
         total_cache_read_tokens: total_cache_read,
-        total_estimated_cost_usd: (total_cost * 100.0).round() / 100.0,
+        week_input_tokens: week_input,
+        week_output_tokens: week_output,
     })
 }
