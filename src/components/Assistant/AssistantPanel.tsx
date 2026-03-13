@@ -22,7 +22,7 @@ export function AssistantPanel() {
   const isConfigured = config?.api_key && config?.model;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden border-t border-surface-3">
+    <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-surface-3 px-4 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Assistant

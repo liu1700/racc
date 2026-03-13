@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
 import { AssistantPanel } from "./components/Assistant/AssistantPanel";
-import { CostTracker } from "./components/CostTracker/CostTracker";
 import { StatusBar } from "./components/Dashboard/StatusBar";
 import { FileViewer } from "./components/FileViewer/FileViewer";
 import { CommandPalette } from "./components/FileViewer/CommandPalette";
@@ -40,9 +39,8 @@ function App() {
           <FileViewer />
         </main>
 
-        {/* Right Panel — Activity + Cost (~30%) */}
+        {/* Right Panel — Assistant Chat (~30%) */}
         <aside className="flex w-80 flex-col overflow-hidden">
-          <CostTracker />
           <AssistantPanel />
         </aside>
       </div>

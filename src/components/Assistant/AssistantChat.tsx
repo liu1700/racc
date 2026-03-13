@@ -5,12 +5,14 @@ import { AssistantMessage } from "./AssistantMessage";
 import Markdown from "react-markdown";
 
 export function AssistantChat() {
-  const { messages, isStreaming, streamingText, sendMessage } = useAssistantStore(
+  const { messages, isStreaming, streamingText, error, sendMessage, clearError } = useAssistantStore(
     useShallow((s) => ({
       messages: s.messages,
       isStreaming: s.isStreaming,
       streamingText: s.streamingText,
+      error: s.error,
       sendMessage: s.sendMessage,
+      clearError: s.clearError,
     }))
   );
   const [input, setInput] = useState("");
@@ -69,6 +71,13 @@ export function AssistantChat() {
             <div className="rounded-lg bg-surface-2 px-3 py-2 text-xs text-zinc-500">
               Thinking...
             </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
+            <span className="flex-1">{error}</span>
+            <button onClick={clearError} className="shrink-0 text-red-500 hover:text-red-300">&times;</button>
           </div>
         )}
 
