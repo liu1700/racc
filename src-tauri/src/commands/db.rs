@@ -81,5 +81,32 @@ pub fn init_db() -> Result<Connection, String> {
         .map_err(|e| format!("Migration v2 failed: {e}"))?;
     }
 
+    if version < 3 {
+        conn.execute_batch(
+            "
+        BEGIN;
+
+        CREATE TABLE IF NOT EXISTS assistant_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            tool_name TEXT,
+            tool_call_id TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS assistant_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        PRAGMA user_version = 3;
+
+        COMMIT;
+        ",
+        )
+        .map_err(|e| format!("Migration v3 failed: {e}"))?;
+    }
+
     Ok(conn)
 }
