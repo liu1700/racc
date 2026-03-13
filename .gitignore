@@ -18,3 +18,8 @@ tsconfig.tsbuildinfo
 # Environment
 .env
 .env.local
+
+# Sidecar binaries and build artifacts
+src-tauri/binaries/racc-assistant-*
+sidecar/node_modules/
+sidecar/dist/
