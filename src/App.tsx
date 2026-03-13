@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
-import { ActivityLog } from "./components/ActivityLog/ActivityLog";
+import { AssistantPanel } from "./components/Assistant/AssistantPanel";
 import { CostTracker } from "./components/CostTracker/CostTracker";
 import { StatusBar } from "./components/Dashboard/StatusBar";
 import { useSessionStore } from "./stores/sessionStore";
@@ -28,7 +28,7 @@ function App() {
         {/* Right Panel — Activity + Cost (~30%) */}
         <aside className="flex w-80 flex-col overflow-hidden">
           <CostTracker />
-          <ActivityLog />
+          <AssistantPanel />
         </aside>
       </div>
 
