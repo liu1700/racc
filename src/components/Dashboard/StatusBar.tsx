@@ -18,6 +18,10 @@ export function StatusBar() {
   const active = useSessionStore(useShallow((s) => s.getActiveSession()));
   const worktreePath = active?.session.worktree_path ?? active?.repo.path;
   const allSessions = repos.flatMap((r) => r.sessions);
+  const activityPanelOpen = useSessionStore((s) => s.activityPanelOpen);
+  const setActivityPanelOpen = useSessionStore((s) => s.setActivityPanelOpen);
+  const sessionActivities = useSessionStore((s) => s.sessionActivities);
+  const hasActivities = Object.keys(sessionActivities).length > 0;
 
   const [costs, setCosts] = useState<ProjectCosts | null>(null);
 
@@ -74,6 +78,16 @@ export function StatusBar() {
   return (
     <footer className="flex items-center justify-between border-t border-surface-3 bg-surface-1 px-4 py-1.5 text-xs text-zinc-500">
       <div className="flex items-center gap-4">
+        {hasActivities && (
+          <button
+            type="button"
+            onClick={() => setActivityPanelOpen(!activityPanelOpen)}
+            className="mr-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+            title={activityPanelOpen ? "Hide activity panel" : "Show activity panel"}
+          >
+            {activityPanelOpen ? "▼" : "▲"}
+          </button>
+        )}
         <span>
           Sessions:{" "}
           {segments.length === 0 ? (
