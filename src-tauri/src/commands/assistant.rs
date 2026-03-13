@@ -4,7 +4,7 @@ use std::io::Write;
 use std::process::Stdio;
 use std::sync::Mutex;
 use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
+use tokio::process::{Child, ChildStdout, Command as TokioCommand};
 use tauri::Manager;
 
 // --- Types ---
@@ -333,10 +333,11 @@ pub async fn get_session_diff_for_assistant(
         resolve_session_path(&conn, session_id)?
     };
 
-    let output = std::process::Command::new("git")
+    let output = TokioCommand::new("git")
         .args(["diff", "HEAD"])
         .current_dir(&path)
         .output()
+        .await
         .map_err(|e| format!("Failed to get diff: {e}"))?;
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -396,12 +397,13 @@ pub async fn assistant_send_message(
             write_to_stdin(&mut stdin, &config_msg.to_string())?;
         }
 
-        // Send history
+        // Send history (exclude the most recent message — it's the user message
+        // that was just persisted and will be sent separately as user_message)
         let history = {
             let conn = db.lock().map_err(|e| e.to_string())?;
             let mut stmt = conn
                 .prepare(
-                    "SELECT role, content, tool_name, tool_call_id FROM assistant_messages ORDER BY id DESC LIMIT 50",
+                    "SELECT role, content, tool_name, tool_call_id FROM assistant_messages ORDER BY id DESC LIMIT 51",
                 )
                 .map_err(|e| e.to_string())?;
 
@@ -418,7 +420,8 @@ pub async fn assistant_send_message(
                 .filter_map(|r| r.ok())
                 .collect();
 
-            let mut msgs = msgs;
+            // msgs is in DESC order; the first entry is the just-saved user message — skip it
+            let mut msgs: Vec<serde_json::Value> = msgs.into_iter().skip(1).collect();
             msgs.reverse();
             msgs
         };
