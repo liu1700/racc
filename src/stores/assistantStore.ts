@@ -74,7 +74,6 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
     }));
 
     try {
-      // Persist user message
       await invoke("save_assistant_message", {
         role: "user",
         content,
@@ -82,8 +81,47 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
         toolCallId: null,
       });
 
-      // Send to sidecar via Rust backend
       await invoke("assistant_send_message", { content });
+
+      // Poll for responses
+      let done = false;
+      while (!done) {
+        try {
+          // assistant_read_response uses async I/O — it awaits the next
+          // sidecar output line and handles tool calls internally (looping
+          // until a non-tool-call message is ready), so this is not a busy poll.
+          const line = await invoke<string>("assistant_read_response");
+          if (!line) {
+            // Empty response — add a small delay before retrying
+            await new Promise((r) => setTimeout(r, 50));
+            continue;
+          }
+
+          const msg = JSON.parse(line);
+          switch (msg.type) {
+            case "chunk":
+              get().appendChunk(msg.text);
+              break;
+            case "done":
+              get().finishStreaming(msg.usage || { input_tokens: 0, output_tokens: 0, cost_usd: 0 });
+              done = true;
+              break;
+            case "error":
+              set({ isStreaming: false, error: msg.message });
+              done = true;
+              break;
+            case "models":
+              set({ models: msg.models });
+              break;
+            default:
+              // Unknown message type (e.g. tool_call that wasn't handled server-side) — skip
+              break;
+          }
+        } catch {
+          set({ isStreaming: false, error: "Lost connection to assistant" });
+          done = true;
+        }
+      }
     } catch (e) {
       set({ isStreaming: false, error: String(e) });
     }
