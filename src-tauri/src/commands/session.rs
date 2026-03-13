@@ -310,14 +310,15 @@ pub async fn stop_session(
 pub async fn remove_session(
     db: tauri::State<'_, Mutex<Connection>>,
     session_id: i64,
+    delete_worktree: bool,
 ) -> Result<(), String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
 
-    let status: String = conn
+    let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
         .query_row(
-            "SELECT status FROM sessions WHERE id = ?1",
+            "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
             [session_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| format!("Session not found: {e}"))?;
 
@@ -325,10 +326,88 @@ pub async fn remove_session(
         return Err("Cannot remove a running session. Stop it first.".to_string());
     }
 
+    // Remove worktree via git if requested
+    if delete_worktree {
+        if let Some(wt_path) = &worktree_path {
+            let repo_path: String = conn
+                .query_row(
+                    "SELECT path FROM repos WHERE id = ?1",
+                    [repo_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Repo not found: {e}"))?;
+
+            let output = Command::new("git")
+                .args(["worktree", "remove", wt_path, "--force"])
+                .current_dir(&repo_path)
+                .output()
+                .map_err(|e| format!("Failed to remove worktree: {e}"))?;
+
+            if !output.status.success() {
+                return Err(format!(
+                    "git worktree remove failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+        }
+    }
+
     conn.execute("DELETE FROM sessions WHERE id = ?1", [session_id])
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn reattach_session(
+    db: tauri::State<'_, Mutex<Connection>>,
+    session_id: i64,
+) -> Result<Session, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+
+    let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
+        .query_row(
+            "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| format!("Session not found: {e}"))?;
+
+    if status == "Running" {
+        return Err("Session is already running".to_string());
+    }
+
+    // Verify worktree still exists if this is a worktree session
+    if let Some(ref wt_path) = worktree_path {
+        if !std::path::Path::new(wt_path).exists() {
+            return Err(format!("Worktree directory no longer exists: {wt_path}"));
+        }
+    }
+
+    conn.execute(
+        "UPDATE sessions SET status = 'Running', updated_at = datetime('now') WHERE id = ?1",
+        [session_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let (agent, branch, created_at, updated_at): (String, Option<String>, String, String) = conn
+        .query_row(
+            "SELECT agent, branch, created_at, updated_at FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(Session {
+        id: session_id,
+        repo_id,
+        agent,
+        worktree_path,
+        branch,
+        status: SessionStatus::Running,
+        created_at,
+        updated_at,
+    })
 }
 
 #[tauri::command]

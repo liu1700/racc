@@ -10,6 +10,7 @@ interface Props {
 export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
   const [useWorktree, setUseWorktree] = useState(false);
   const [branch, setBranch] = useState("");
+  const [skipPermissions, setSkipPermissions] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const createSession = useSessionStore((s) => s.createSession);
@@ -23,7 +24,7 @@ export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
     setCreating(true);
     setError(null);
     try {
-      await createSession(repoId, useWorktree, useWorktree ? branch.trim() : undefined);
+      await createSession(repoId, useWorktree, useWorktree ? branch.trim() : undefined, skipPermissions);
       setBranch("");
       setUseWorktree(false);
       onClose();
@@ -59,6 +60,16 @@ export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
           >
             <option value="claude-code">Claude Code</option>
           </select>
+        </label>
+
+        <label className="mb-4 flex items-center gap-2 text-xs text-zinc-300">
+          <input
+            type="checkbox"
+            checked={skipPermissions}
+            onChange={(e) => setSkipPermissions(e.target.checked)}
+            className="accent-accent"
+          />
+          Skip permissions
         </label>
 
         <label className="mb-4 flex items-center gap-2 text-xs text-zinc-300">

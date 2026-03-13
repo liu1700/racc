@@ -85,7 +85,9 @@ Status uses a **single preattentive channel** (color hue) so problems pop out au
 - **Running status pulse (implemented):** Running session dots use a subtle opacity animation (2s cycle) for ambient activity indication without distraction
 - **Hover transitions (implemented):** All interactive elements use `transition-colors duration-150` for smooth visual feedback
 - Quick actions per repo: [+] Launch new session, [×] Remove repo
-- Quick actions per session: Stop (if running), Remove (if not running)
+- Quick actions per session:
+  - Running: [■] Stop session
+  - Not running: [▶] Reattach session (re-spawn PTY with `claude --continue`), [×] Remove session (with confirmation dialog; worktree sessions offer optional `git worktree remove`)
 - Import Repo button opens native folder picker
 
 ### Status Colors
@@ -114,6 +116,7 @@ Currently terminal-only mode:
 - Buffer replay on session switch (up to 1MB per session)
 - Async dynamic import of xterm to avoid blocking initial render
 - Placeholder message when no active session selected
+- **Chinese IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
 
 ### Diff Review Mode *(planned)*
 - Placeholder component exists (`DiffViewer.tsx`)
