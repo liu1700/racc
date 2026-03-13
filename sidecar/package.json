@@ -1,0 +1,19 @@
+{
+  "name": "racc-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash build.sh",
+    "dev": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.57.1",
+    "@mariozechner/pi-agent-core": "^0.57.1",
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}
