@@ -80,7 +80,7 @@ function ActivityBar({
 export function ActivityPanel() {
   const activities = useSessionStore((s) => s.sessionActivities);
   const panelOpen = useSessionStore((s) => s.activityPanelOpen);
-  const setOpen = useSessionStore((s) => s.setActivityPanelOpen);
+  const dismissPanel = useSessionStore((s) => s.dismissActivityPanel);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const removeSessionActivity = useSessionStore((s) => s.removeSessionActivity);
@@ -129,7 +129,7 @@ export function ActivityPanel() {
         </span>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={dismissPanel}
           className="text-zinc-500 hover:text-zinc-300 transition-colors text-xs px-1"
           title="Collapse activity panel"
         >
