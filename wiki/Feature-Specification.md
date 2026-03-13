@@ -57,25 +57,23 @@ When an agent completes a round of work, provide a proper review experience. Des
 
 **Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
 
-### 4. Agent Activity Transparency Log *(not yet implemented)*
+### 4. AI Assistant — Diff Summary & Risk Triage (implemented)
 
-Structured view of every agent operation.
+A global AI assistant ("butler") that helps developers understand and review what their coding agents have done, without requiring them to read every line of every diff.
 
-**Logged events:**
-- Files read (with paths)
-- Search queries executed
-- Shell commands run
-- Decisions made
-- Tool calls and their results
+**Capabilities (v1):**
+- Summarizes diffs across any session, categorizing files by review priority (HIGH: security/config/DB, MEDIUM: business logic/API, LOW: tests/types/formatting)
+- Flags specific risks (unparameterized SQL, hardcoded secrets, missing error handling, breaking API changes)
+- Answers questions about any session's work, costs, and status
+- Maintains a persistent conversation across app restarts
 
-**Features:**
-- Filterable by event type
-- Full-text searchable
-- Timestamp-ordered timeline
+**Architecture:** Runs as a Tauri sidecar binary (TypeScript compiled with `bun build --compile`), powered by `@mariozechner/pi-ai` (OpenRouter provider) and `@mariozechner/pi-agent-core` (agent runtime with tool calling). Communicates with Rust backend via stdin/stdout JSON lines protocol.
 
-**Why this matters:** Current agents show "Read 3 files" — but which 3? This solves the transparency problem.
+**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token/cost data per session). Tool calls are relayed to Rust for git/SQLite operations.
 
-**Current status:** UI placeholder exists in `ActivityLog.tsx`. Structured event parsing is planned for P1.
+**Why this replaces the Activity Log:** The original Activity Log aimed to show which files agents read, which commands they ran. The AI assistant provides higher-value intelligence — it doesn't just list changes, it triages them by risk and summarizes what matters. Structured event tracking is deferred; the assistant provides more value than raw event lists.
+
+**Current status:** Fully implemented. Components: `AssistantPanel.tsx`, `AssistantSetup.tsx`, `AssistantChat.tsx`, `AssistantMessage.tsx`. State: `assistantStore.ts`. Backend: `assistant.rs`. Sidecar: `sidecar/` project.
 
 ---
 

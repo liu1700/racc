@@ -14,9 +14,9 @@ Three-panel layout, left to right:
 |  Left Sidebar  |         Center Main Area           |   Right Panel        |
 |  (~15%)        |         (~55%)                     |   (~30%)             |
 |                |                                    |                      |
-|  Session List  |  Agent Terminal (PTY / xterm.js)   |  Activity Log        |
+|  Session List  |  Agent Terminal (PTY / xterm.js)   |  AI Assistant        |
 |  + Quick       |  ── or ──                          |  Cost Dashboard      |
-|    Actions     |  Diff Review View                  |  File Change List    |
+|    Actions     |  Diff Review View                  |                      |
 |                |  (switchable)                      |                      |
 |  [New]         |                                    |                      |
 |  [Pause]       |                                    |                      |
@@ -130,14 +130,24 @@ Currently terminal-only mode:
 - Model-aware pricing: Opus ($15/$75), Sonnet ($3/$15), Haiku ($0.80/$4) per 1M tokens
 - Silent failure if cost data is unavailable
 
-### Activity Log *(placeholder)*
-- Shows "Agent activity will appear here"
-- Structured event parsing planned for P1
-- **Progressive disclosure:** Summary view shows one-line-per-event for information scent; expanding an event reveals full detail. Prevents cognitive overload while maintaining transparency.
+### AI Assistant (implemented)
 
-### File Change List *(planned)*
-- Not yet implemented
-- Will show files modified in current session with status badges
+A global AI assistant ("butler") that lives below the cost tracker. Powered by `@mariozechner/pi-ai` and `@mariozechner/pi-agent-core` running as a Tauri sidecar binary (compiled with `bun build --compile`).
+
+**v1 capability:** Diff summary & risk triage.
+
+- **Streaming chat UI** with markdown rendering (`react-markdown`) for code blocks, headings, lists
+- **Three tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token/cost data per session)
+- **Quick action buttons** above the input field pre-fill common prompts ("Summarize Diff", "Costs")
+- **OpenRouter provider** — single API key gives access to all major models (Anthropic, OpenAI, Google, etc.)
+- **Setup flow:** Inline configuration panel shown when no API key is set; key entry validates against OpenRouter and populates a model picker
+- **Conversation persistence:** All messages stored in SQLite (`assistant_messages` table) and hydrated on app restart
+- **Cost tracking:** The assistant's own LLM spend is displayed in the panel header, separate from agent session costs
+- **Sidecar lifecycle:** Spawned lazily on first interaction, stays alive for the app session, graceful shutdown on app close
+
+**Architecture:** Frontend → Rust → sidecar (stdin/stdout JSON lines) → OpenRouter → LLM. Tool calls are relayed back to Rust for git/SQLite operations.
+
+This replaces the previously planned Activity Log. The assistant provides higher-value intelligence (risk triage, change summarization) over raw event lists. Structured event tracking is deferred.
 
 ## Global Status Bar (implemented)
 

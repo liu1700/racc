@@ -31,6 +31,10 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  tauri-plugin-pty: Native PTY processes (one per session)        ||
 |  |  Agent runs inside PTY → xterm.js renders output in real-time   ||
 |  +------------------------------------------------------------------+|
+|  +------------------------------------------------------------------+|
+|  |  Sidecar: racc-assistant (bun-compiled binary, stdin/stdout JSON) ||
+|  |  pi-ai + pi-agent-core → OpenRouter → LLM                       ||
+|  +------------------------------------------------------------------+|
 +----------------------------------------------------------------------+
 ```
 
@@ -43,6 +47,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 | **Backend** | Rust (Tauri commands) | Session CRUD, git worktrees, cost tracking |
 | **Terminal I/O** | `tauri-plugin-pty` | Spawn/kill PTY processes, stream data to xterm.js |
 | **Persistence** | SQLite | Repos and sessions stored in `~/.racc/racc.db` |
+| **AI Assistant** | Sidecar binary (pi-ai + pi-agent-core) | Diff summary, risk triage, session queries via OpenRouter LLM |
 | **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
 | **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
 | **Agent Runtime** | Claude Code / Aider / Codex | Pluggable — IDE does not bind to a specific agent |
@@ -77,10 +82,13 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 - On app close, `killAll()` cleans up all active PTY processes
 - Cost tracking reads Claude Code JSONL files from `~/.claude/projects/{encoded_path}/*.jsonl`
 
-**Schema (v2):**
+**Schema (v3):**
 - `repos` table: id, path, name, added_at
 - `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-- Migration from v1 dropped deprecated `tmux_session_name` column
+- `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
+- `assistant_config` table: key, value
+- Migration v1→v2 dropped deprecated `tmux_session_name` column
+- Migration v2→v3 added assistant tables
 
 ### Agent Communication: Native PTY
 
@@ -130,6 +138,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reconcile_sessions` | Session and repo lifecycle management |
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, calculate costs with model-specific pricing |
+| `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, sidecar process management |
 | `db.rs` | (internal) | SQLite initialization, schema migrations |
 
 ### Frontend Component Architecture
@@ -142,7 +151,10 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `NewAgentDialog.tsx` | Modal | Agent selector, worktree toggle, branch input |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
 | `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token/cost breakdown |
-| `ActivityLog.tsx` | Right panel | Placeholder (P1 feature) |
+| `AssistantPanel.tsx` | Right panel | AI assistant container — switches between setup and chat views |
+| `AssistantSetup.tsx` | Right panel | OpenRouter API key input and model selection |
+| `AssistantChat.tsx` | Right panel | Message list, streaming display, quick actions, text input |
+| `AssistantMessage.tsx` | Right panel | Single message bubble with markdown rendering (`react-markdown`) |
 | `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
 | `StatusBar.tsx` | Bottom bar | Active session count, connection status |
 
