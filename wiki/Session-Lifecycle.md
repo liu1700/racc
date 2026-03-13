@@ -34,6 +34,7 @@ User clicks [+] on a repo
         v
 [1] Configure session
     - Select agent (currently Claude Code)
+    - Skip permissions checkbox (default: on) — appends --dangerously-skip-permissions
     - Choose: "Run in repo" or "Create worktree"
     - If worktree: provide branch name
         |
@@ -83,20 +84,25 @@ User clicks [+] on a repo
           |                  |
      +----v-----+    +------v------+
      |Completed |    |Disconnected |
-     +----------+    +------+------+
-                            |
-                     app restarts,
-                     reconcile_sessions()
-                     marks all Running → Disconnected
+     +----+-----+    +------+------+
+          |                  |
+          +--------+---------+
+                   |
+            user clicks ▶
+            (reattach)
+                   |
+              +----v----+
+              | Running |  (new PTY, claude --continue)
+              +---------+
 ```
 
 ### State Definitions
 
 | State | Meaning | Entry Trigger | User Can... |
 |-------|---------|---------------|-------------|
-| **Running** | Agent is actively executing in PTY | Session created, PTY spawned successfully | View terminal, send input, stop |
-| **Completed** | Session stopped by user | User clicks stop → PTY killed, DB updated | Remove session record |
-| **Disconnected** | PTY process no longer exists | App restart — reconciliation marks all previously Running sessions | Remove session record |
+| **Running** | Agent is actively executing in PTY | Session created or reattached, PTY spawned successfully | View terminal, send input, stop |
+| **Completed** | Session stopped by user | User clicks stop → PTY killed, DB updated | Reattach, remove session |
+| **Disconnected** | PTY process no longer exists | App restart — reconciliation marks all previously Running sessions | Reattach, remove session |
 | **Error** | Session creation or operation failed | PTY spawn failure / unexpected error | Remove, retry |
 
 ### Key Design: Reconciliation on Startup
@@ -107,12 +113,25 @@ On app startup, `reconcile_sessions()` handles the fact that PTY state is in-mem
 2. Update ALL of them to `Disconnected` (PTY processes cannot survive app restart)
 3. Return full repo + session list to frontend
 
-**Tradeoff:** Unlike tmux-based sessions, PTY processes do not survive app crashes. This is a deliberate simplification — session immortality via remote execution is planned for v0.2.
+**Tradeoff:** Unlike tmux-based sessions, PTY processes do not survive app crashes. However, `reattach_session` mitigates this by re-spawning the PTY with `claude --continue` to resume the conversation. Session immortality via remote execution is planned for v0.2.
+
+### Session Reattach
+
+Disconnected and Completed sessions can be reattached via the ▶ button in the sidebar:
+
+1. Backend `reattach_session` validates the session is not already Running
+2. If the session has a worktree, verifies the worktree directory still exists on disk
+3. Updates session status to `Running` in SQLite
+4. Frontend spawns a new PTY in the session's working directory (worktree path or repo path)
+5. Sends `claude --continue` (with optional `--dangerously-skip-permissions`) to resume the last conversation in that directory
+
+**Limitation:** Terminal output from the previous PTY is lost — only the Claude Code conversation context is resumed via `--continue`.
 
 ### Session Cleanup
 
 - **Stop session:** kills PTY process via `ptyManager.killPty()`, updates SQLite status to `Completed`
-- **Remove session:** kills PTY (if running), deletes SQLite record (only if not `Running`)
+- **Remove session:** confirmation dialog required; kills PTY (if running), deletes SQLite record (only if not `Running`)
+  - If the session has a worktree, dialog shows an optional checkbox to also delete the worktree via `git worktree remove --force`
 - **Remove repo:** only allowed if no `Running` sessions; cascades to delete all session records
 - **App close:** `killAll()` terminates all active PTY processes via window `beforeunload` event
 

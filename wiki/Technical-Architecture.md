@@ -63,6 +63,8 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 
 **Risk:** WebView cross-platform inconsistency (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux). Requires extra cross-platform testing investment.
 
+**macOS menu:** A custom minimal menu (Racc + Edit) replaces the default Tauri menu to prevent the macOS Help menu from intercepting keyboard events in the WebView terminal.
+
 **Frontend stack:**
 - React 19 + TypeScript 5.8
 - xterm.js 5.5 with FitAddon for responsive terminal sizing
@@ -135,7 +137,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 
 | Module | Commands | Purpose |
 |--------|----------|---------|
-| `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reconcile_sessions` | Session and repo lifecycle management |
+| `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reattach_session`, `reconcile_sessions` | Session and repo lifecycle management |
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, calculate costs with model-specific pricing |
 | `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, sidecar process management |
@@ -148,7 +150,8 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `App.tsx` | Root layout | Three-panel layout orchestrator, calls `initialize()` on mount |
 | `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
-| `NewAgentDialog.tsx` | Modal | Agent selector, worktree toggle, branch input |
+| `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
+| `RemoveSessionDialog.tsx` | Modal | Removal confirmation with optional worktree cleanup checkbox |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
 | `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token/cost breakdown |
 | `AssistantPanel.tsx` | Right panel | AI assistant container — switches between setup and chat views |
