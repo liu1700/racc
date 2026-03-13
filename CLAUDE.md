@@ -39,7 +39,7 @@ No test framework is configured yet.
 
 **Frontend state:** Zustand store in `src/stores/sessionStore.ts` manages session list and active session, calls Tauri commands.
 
-**UI layout:** Three-panel — left sidebar (session list, 15%), center (xterm.js terminal, 55%), right panel (cost tracker + activity log, 30%), bottom status bar.
+**UI layout:** Three-panel — left sidebar (session list, 15%), center (xterm.js terminal, 55%), right panel (cost tracker + AI assistant, 30%), bottom status bar.
 
 ## Key Conventions
 
