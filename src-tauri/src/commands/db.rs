@@ -125,6 +125,31 @@ pub fn init_db() -> Result<Connection, String> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS session_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_session ON session_events(session_id);
+        CREATE INDEX IF NOT EXISTS idx_events_type ON session_events(event_type);
+
+        CREATE TABLE IF NOT EXISTS insights (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            insight_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            detail_json TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at INTEGER NOT NULL,
+            resolved_at INTEGER
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_insights_fingerprint
+            ON insights(fingerprint) WHERE status = 'active';
+
         PRAGMA user_version = 4;
 
         COMMIT;

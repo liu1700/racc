@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
-import { AssistantPanel } from "./components/Assistant/AssistantPanel";
+import { InsightsPanel } from "./components/Insights/InsightsPanel";
 import { StatusBar } from "./components/Dashboard/StatusBar";
 import { FileViewer } from "./components/FileViewer/FileViewer";
 import { CommandPalette } from "./components/FileViewer/CommandPalette";
@@ -123,9 +123,9 @@ function App() {
           </div>
         </main>
 
-        {/* Right Panel — Assistant Chat (~30%) */}
+        {/* Right Panel — Insights (~30%) */}
         <aside className="flex w-80 flex-col overflow-hidden">
-          <AssistantPanel />
+          <InsightsPanel />
         </aside>
       </div>
 

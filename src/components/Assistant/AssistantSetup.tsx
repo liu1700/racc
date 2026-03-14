@@ -2,7 +2,11 @@ import { useState } from "react";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { useShallow } from "zustand/react/shallow";
 
-export function AssistantSetup() {
+interface AssistantSetupProps {
+  onBack?: () => void;
+}
+
+export function AssistantSetup({ onBack }: AssistantSetupProps) {
   const { saveConfig, models, setModels, error, setError } = useAssistantStore(
     useShallow((s) => ({
       saveConfig: s.saveConfig,
@@ -57,9 +61,19 @@ export function AssistantSetup() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center p-4">
       <div className="w-full max-w-xs space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Assistant Setup
-        </h3>
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="text-xs text-text-tertiary hover:text-text-secondary"
+            >
+              ← Back
+            </button>
+          )}
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Assistant Setup
+          </h3>
+        </div>
 
         <div>
           <label className="mb-1 block text-[10px] text-zinc-500">Provider</label>

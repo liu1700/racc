@@ -14,8 +14,8 @@ Three-panel layout, left to right:
 |  Left Sidebar  |         Center Main Area           |   Right Panel        |
 |  (~15%)        |         (~55%)                     |   (~30%)             |
 |                |                                    |                      |
-|  Session List  |  Agent Terminal (PTY / xterm.js)   |  AI Assistant        |
-|  + Inline      |  ── or ──                          |  Usage Dashboard     |
+|  Session List  |  Tasks / Terminal (tab switching)   |  Insights Panel      |
+|  + Inline      |  ── or ──                          |  (pattern detection) |
 |    Activity    |  Diff Review View                  |                      |
 |  + Quick       |  (switchable)                      |                      |
 |    Actions     |                                    |                      |
@@ -170,32 +170,52 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 - Full side-by-side review UI planned for P1
 - **Batched review design:** When agents complete work, diffs queue for review. The developer enters review mode on their own schedule — no forced interruption of deep work. Aligns with research showing optimal review at 200–400 lines per session, with effectiveness dropping after 60–90 minutes.
 
-## Right Panel — Intelligence Dashboard
+## Right Panel — Insights Panel (implemented)
 
-### Usage Dashboard (implemented)
-- Polls `get_project_costs` every 10 seconds
-- Displays: session count, total tokens (input + output)
-- Token breakdown: input, output
-- Silent failure if usage data is unavailable
+An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Replaces the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
 
-### AI Assistant (implemented)
+### Timeline Feed
+- Chronological list of detected insights, newest first
+- Each insight rendered as a card with severity-colored left border and timeline dot
+- Severity colors: red (alert — file conflicts, cost spikes), amber (warning — repeated prompts, permissions), green (suggestion — similar sessions)
+- Cards expand inline on click to reveal evidence and action buttons
+- Empty state: "No insights yet. Patterns will appear as you work across sessions."
+- Active count badge in header
 
-A global AI assistant ("butler") that lives below the usage tracker. Powered by `@mariozechner/pi-ai` and `@mariozechner/pi-agent-core` running as a Tauri sidecar binary (compiled with `bun build --compile`).
+### Real-Time Detection (frontend)
+Three rules run on every incoming event with zero delay:
+- **File Conflict:** Tracks `Map<filePath, Set<sessionId>>` — alerts when >1 session edits the same file
+- **Cost Anomaly:** Rolling window of 10 cost deltas per session — alerts when latest > 3× average and > $0.50
+- **Repeated Permission:** Per-session permission counter — warns at ≥3 of the same type
 
-**v1 capability:** Diff summary & risk triage.
+### Batch Detection (Rust backend, every 5 minutes)
+Three detectors run on persisted event history:
+- **Repeated Prompt:** Clusters user inputs from last 7 days using normalized Levenshtein similarity (threshold ≥0.7, `strsim` crate). Triggers when ≥3 distinct sessions share a cluster.
+- **Startup Pattern:** Compares first 5 user inputs per session. Triggers when ≥3 sessions share the same command prefix.
+- **Similar Sessions:** Compares file operation sets across running sessions using Jaccard index (threshold ≥0.4).
 
-- **Streaming chat UI** with markdown rendering (`react-markdown`) for code blocks, headings, lists
-- **Three tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session)
-- **Quick action buttons** above the input field pre-fill common prompts ("Summarize Diff", "Usage")
-- **OpenRouter provider** — single API key gives access to all major models (Anthropic, OpenAI, Google, etc.)
-- **Setup flow:** Inline configuration panel shown when no API key is set; key entry validates against OpenRouter and populates a model picker
-- **Conversation persistence:** All messages stored in SQLite (`assistant_messages` table) and hydrated on app restart
-- **Usage tracking:** The assistant's own LLM spend is displayed in the panel header, separate from agent session usage
-- **Sidecar lifecycle:** Spawned lazily on first interaction, stays alive for the app session, graceful shutdown on app close
+Results pushed to frontend via Tauri event (`insight-detected`).
 
-**Architecture:** Frontend → Rust → sidecar (stdin/stdout JSON lines) → OpenRouter → LLM. Tool calls are relayed back to Rust for git/SQLite operations.
+### Insight Actions
+Each card expands to show evidence (matched prompts, conflicting files, session details) and type-specific action buttons:
 
-This replaces the previously planned Activity Log. The assistant provides higher-value intelligence (risk triage, change summarization) over raw event lists. Structured event tracking is deferred.
+| Type | Primary Action | Secondary |
+|------|---------------|-----------|
+| Repeated Prompt | Add to CLAUDE.md | Dismiss |
+| Startup Pattern | Add to CLAUDE.md | Dismiss |
+| Repeated Permission | Copy allowlist rule | Dismiss |
+| Cost Anomaly | Switch to session | Dismiss |
+| File Conflict | View File | Switch to session, Dismiss |
+| Similar Sessions | Switch to session | Dismiss |
+
+### Settings
+Settings gear (⚙) in the panel header opens `AssistantSetup.tsx` for configuring API keys — needed for LLM-generated suggestion text (e.g., summarizing repeated prompts into CLAUDE.md entries). Insights still detect and display without an API key; suggestion text shows raw evidence instead.
+
+### Event Capture Pipeline
+`ptyOutputParser.ts` detects user prompts (❯ marker) and agent activities. `eventCapture.ts` normalizes events and routes them to: (1) `insightsStore` for real-time rules, (2) SQLite via batched flush every 30 seconds. Events include: `user_input`, `file_operation`, `permission_request`, `cost_update`, `session_meta`.
+
+### Deduplication
+Each insight has a fingerprint (e.g., sorted session IDs + matched text hash). A unique partial index (`WHERE status = 'active'`) prevents duplicate insights at the database level.
 
 ## Inline Session Activity (implemented)
 

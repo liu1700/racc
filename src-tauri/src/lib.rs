@@ -72,6 +72,13 @@ pub fn run() {
             commands::task::update_task_status,
             commands::task::delete_task,
             commands::db::reset_db,
+            commands::insights::record_session_events,
+            commands::insights::get_insights,
+            commands::insights::update_insight_status,
+            commands::insights::save_insight,
+            commands::insights::get_session_events,
+            commands::insights::append_to_file,
+            commands::insights::run_batch_analysis,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
