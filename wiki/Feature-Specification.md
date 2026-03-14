@@ -4,7 +4,7 @@
 
 ## P0: Must-Have (MVP)
 
-These four features define the minimum viable product. Without any one of them, the product doesn't solve the core problem.
+These features define the minimum viable product. Without any one of them, the product doesn't solve the core problem.
 
 ### 1. Multi-Session Dashboard
 
@@ -15,7 +15,7 @@ The main interface showing all active agent sessions as status cards. Designed a
 - Current task description / micro-summary
 - Runtime duration and progress indicator
 - Token consumption (input/output breakdown)
-- Current operation via Activity Panel (reading file / executing command / waiting for approval) — **implemented**: real-time PTY output parsing with per-session action summaries
+- Latest terminal output (truncated) displayed inline in the sidebar — **implemented**: real-time PTY output capture per session
 - Associated git branch and worktree path
 
 **Categorical grouping:** Sessions are ordered by status priority (error/blocked → running → completed) so "needs attention" items always surface first. When 10 agents are grouped into 3 status categories, the developer holds 3 chunks rather than 10.
@@ -80,7 +80,32 @@ An actionable insights feed that replaces the previous AI assistant chat panel. 
 
 **Current status:** Fully implemented. Components: `InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`. State: `insightsStore.ts`. Services: `eventCapture.ts`. Backend: `insights.rs` (event recording, insight CRUD, batch analysis). Settings gear opens `AssistantSetup.tsx` for LLM API key configuration (used for generating suggestion text).
 
-### 5. File Viewer & Command Palette (implemented)
+### 5. Task Board — Cognitive Offloading & Agent Orchestration (implemented)
+
+A kanban-style task board integrated into the center panel for cognitive offloading and automated agent orchestration. Users write task descriptions (the act of writing IS the cognitive offload) and "fire" them to automatically spawn agent sessions.
+
+**Lifecycle:** Open → Running → Review → Done
+
+- **Open:** User writes a task description via inline input — zero-config, minimal friction
+- **Running:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
+- **Review:** Agent completes → task moves to Review column for batched evaluation. Click card to switch to terminal for review
+- **Done:** User confirms result, task archived
+
+**Fire Dialog:** Reuses NewAgentDialog pattern — agent selection, skip-permissions, worktree (ON by default), auto-generated branch name (`task/keywords` from description).
+
+**UI Integration:**
+- Center panel has Tasks | Terminal tab switching (Tasks is default view)
+- Terminal stays mounted via CSS `hidden` to preserve xterm.js state
+- Firing a task keeps user on Task Board; clicking sidebar session switches to Terminal
+- Task count badge on Tasks tab
+
+**Cognitive design rationale:** Based on Risko & Gilbert's cognitive offloading research — externalizing working memory to the task board reduces cognitive load. Batched evaluation (Review column) supports 60–90 minute work cycles per the cognitive research. Preattentive color coding (green=running, amber=review, blue=done) for <200ms status recognition.
+
+**Data model:** `tasks` table (SQLite v4) with FK to `repos` (CASCADE) and `sessions` (SET NULL). Status CHECK constraint enforces valid values.
+
+**Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, delete).
+
+### 6. File Viewer & Command Palette (implemented)
 
 A zero-footprint file viewer designed around cognitive science principles — no persistent file tree, no extra tabs. Files are viewed on demand and the UI disappears completely when closed.
 
@@ -110,7 +135,7 @@ These features significantly enhance the product but are not required for initia
 
 | Feature | Description | Dependency |
 |---------|-------------|------------|
-| **Task Queue & Background Execution** | Queue multiple tasks for sequential execution, or fan out N agents in parallel | Stable session management |
+| **Task Queue Enhancements** | Task dependencies, priority ordering, bulk operations, drag-and-drop | Task Board (implemented) |
 | **Tiered Notification System** | Five-tier alerts (ambient → critical) with anti-fatigue design: deduplication, notification budgets, user thresholds. Audio channel for Tier 3+ per Wickens' Multiple Resource Theory | Session status tracking |
 | **Cross-Machine Session Management** | Connect to remote agent sessions via Tailscale, manage from one dashboard | Tailscale integration |
 | **Portless Integration** | Auto-assign named URLs per worktree, embed preview window in IDE | Portless setup |

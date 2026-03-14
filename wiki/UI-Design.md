@@ -14,21 +14,15 @@ Three-panel layout, left to right:
 |  Left Sidebar  |         Center Main Area           |   Right Panel        |
 |  (~15%)        |         (~55%)                     |   (~30%)             |
 |                |                                    |                      |
-|  Session List  |  Agent Terminal (PTY / xterm.js)   |  Insights Panel      |
-|  + Quick       |  ── or ──                          |  (pattern detection) |
-|    Actions     |  Diff Review View                  |                      |
-|                |  (switchable)                      |                      |
-|  [New]         |                                    |                      |
-|  [Pause]       |                                    |                      |
-|  [Stop]        |                                    |                      |
+|  Session List  |  Tasks / Terminal (tab switching)   |  Insights Panel      |
+|  + Inline      |  ── or ──                          |  (pattern detection) |
+|    Activity    |  Diff Review View                  |                      |
+|  + Quick       |  (switchable)                      |                      |
+|    Actions     |                                    |                      |
 |                |                                    |                      |
 +----------------+------------------------------------+----------------------+
-|  Activity Panel (collapsible, auto-show/hide)                              |
-|  ● claude-code (feat/auth)          Reading src/auth/login.ts              |
-|  ● claude-code (fix/nav)            Running command: npm test              |
-+----------------------------------------------------------------------------+
 |                        Global Status Bar                                   |
-|  ▲ Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk          |
+|  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
 +----------------------------------------------------------------------------+
 ```
 
@@ -84,7 +78,7 @@ Status uses a **single preattentive channel** (color hue) so problems pop out au
 
 - Expandable repo list with nested sessions underneath each repo
 - Each repo shows: name, path, expand/collapse toggle
-- Each session shows: agent type, branch name, status color dot, elapsed time (e.g., "12m", "2h 15m")
+- Each session shows: agent type, branch name, status color dot, elapsed time (e.g., "12m", "2h 15m"), and a second line with truncated latest terminal output
 - **Status sorting (implemented):** Within each repo, sessions are sorted by status priority: error (0) → disconnected (1) → running (2) → completed (3) — so "needs attention" items always appear at the top
 - **Running status pulse (implemented):** Running session dots use a subtle opacity animation (2s cycle) for ambient activity indication without distraction
 - **Hover transitions (implemented):** All interactive elements use `transition-colors duration-150` for smooth visual feedback
@@ -108,11 +102,26 @@ Designed to align with color psychology research — reserving high-arousal red 
 
 **Constraint:** Status is communicated via color hue alone (single preattentive channel). Shape, size, and position encode other dimensions — never combined with color to indicate status.
 
-## Center Main Area — Terminal (implemented)
+## Center Main Area — Tasks / Terminal (implemented)
 
-Currently terminal-only mode:
+The center panel has a tab bar switching between **Tasks** (default) and **Terminal** views. Terminal stays mounted via CSS `hidden` to preserve xterm.js state across tab switches.
 
-### Terminal Mode (default — Deep Work)
+### Task Board Mode (default — Planning & Monitoring)
+
+A kanban-style board for cognitive offloading and agent orchestration. Four columns: Open, Running, Review, Done.
+
+- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
+- **Running column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display
+- **Review column:** Agent completed — task queued for batched evaluation. Click card to auto-switch to Terminal tab and activate the linked session. "Done" button to confirm
+- **Done column:** Archived tasks at reduced opacity
+
+**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
+
+**Tab badge:** Tasks tab shows count of non-done tasks in a rounded badge.
+
+**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=running, amber=review, blue=done). Batched evaluation via Review column supports 60–90 minute work cycles.
+
+### Terminal Mode (Deep Work)
 - Full xterm.js 5.5 terminal rendering the active agent session
 - Dark theme: background `#1a1a1f`, foreground `#d4d4d8`, cursor `#6366f1` (indigo accent)
 - FitAddon for responsive sizing with ResizeObserver
@@ -208,48 +217,22 @@ Settings gear (⚙) in the panel header opens `AssistantSetup.tsx` for configuri
 ### Deduplication
 Each insight has a fingerprint (e.g., sorted session IDs + matched text hash). A unique partial index (`WHERE status = 'active'`) prevents duplicate insights at the database level.
 
-## Activity Panel (implemented)
+## Inline Session Activity (implemented)
 
-A collapsible panel between the main content area and the StatusBar that shows one compact horizontal bar per active session, displaying a real-time action summary parsed from PTY output. Operates at Tier 1–2 (ambient/informational) in the notification architecture — provides peripheral awareness without demanding attention.
+Each session item in the sidebar shows a second line with the latest terminal output, providing at-a-glance awareness of what each agent is doing without a separate panel.
 
-**Cognitive design grounding:**
-- **Single cognitive chunk per session:** Each bar compresses a session into status color + identifier + action text, staying within Cowan's 4±1 limit
-- **Information scent for foraging:** Action summary (e.g., "Reading src/auth/login.ts") provides enough scent to decide whether to investigate without switching
-- **Preattentive pop-out:** Status color is the sole preattentive channel — amber (waiting for approval) or red (error) pops out among green (running) peers
-- **Mode separation:** Auto-shows during monitoring mode (sessions running), auto-hides when empty
+**Design:**
+- Status color dot + branch name + elapsed time (first row)
+- Truncated latest terminal output in muted text (second row, `text-[10px] text-zinc-600`)
+- Only shown when output exists for that session
 
-**Each session bar (28px height):**
-- Left: Status color dot (6px, `status-*` colors, `animate-status-pulse` for running) + agent name + branch
-- Right: Current action + detail (file path, command), truncated with ellipsis
-- Click: Switches to that session (same as sidebar click)
-- Active session: Subtle left border accent (`border-l-2 border-accent`)
+**PTY output capture:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and captures the last non-empty line (truncated to 120 chars). Stored as `sessionLastOutput: Record<number, string>` in the Zustand store.
 
-**Action-to-color mapping:**
-
-| Action | Dot color | Token |
-|--------|-----------|-------|
-| Reading, Editing, Writing, Running command, Searching, Thinking | Green | `status-running` |
-| Waiting for approval | Amber | `status-waiting` |
-| Idle (>10s no output) | Dimmed green | `status-running/50` |
-| Completed (exit 0) | Blue | `status-completed` |
-| Completed (non-zero exit) | Red | `status-error` |
-
-**PTY output parsing:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and matches Claude Code output patterns (tool use, permission prompts, exit codes, thinking indicators). Agent-specific — uses a parser registry (`Record<string, AgentParser>`) for future extensibility to Aider/Codex.
-
-**Auto-open/close behavior:**
-- Panel auto-opens when a session starts (unless user manually dismissed it)
-- User dismissal via header ▾ button sets `activityPanelDismissed = true`, suppressing auto-open
-- Dismissed state resets when going from zero to one running session
-- StatusBar ▲/▼ chevron provides a simple toggle without dismissal semantics
-
-**Completed session fade-out:** Bars hold visible for 4 seconds then fade over 1 second (`animate-fade-out` CSS animation), then are removed from the panel. Panel auto-collapses when the last activity fades out.
-
-**Implementation:** `ActivityPanel.tsx` component, `ptyOutputParser.ts` service, activity state in `sessionStore.ts`. Lifecycle hooks wire `startTracking` after `spawnPty` and `stopTracking` before `killPty`.
+**Implementation:** `ptyOutputParser.ts` service, `sessionLastOutput` state in `sessionStore.ts`, inline display in `Sidebar.tsx`. Lifecycle hooks wire `startTracking` after `spawnPty` and `stopTracking` before `killPty`.
 
 ## Global Status Bar (implemented)
 
 Fixed bottom bar showing:
-- **Activity panel toggle (implemented):** ▲/▼ chevron button, shown when activities exist, toggles the Activity Panel visibility
 - **Categorical session summary (implemented):** Color-coded counts by status category (e.g., "2 running · 1 error · 1 completed") with status-colored numbers — only non-zero categories shown. Enables the developer to hold system state as categorical chunks rather than N individual items.
 - **Token usage (implemented):** Total Tokens and This Week counts, polled from `get_project_costs` every 10s
 - Connection status indicator (green dot)
@@ -260,8 +243,8 @@ A five-tier alert system designed to prevent alarm fatigue (healthcare data show
 
 | Tier | Type | Implementation | Interruption |
 |------|------|----------------|--------------|
-| **1 — Ambient** | Status indicators | Color dot per session in sidebar + Activity Panel | None — preattentive |
-| **2 — Informational** | Progress updates | Activity Panel action summaries (e.g., "Reading src/App.tsx") | None — peripheral |
+| **1 — Ambient** | Status indicators | Color dot per session in sidebar | None — preattentive |
+| **2 — Informational** | Progress updates | Inline terminal output in sidebar (truncated last line) | None — peripheral |
 | **3 — Advisory** | Task complete | Non-blocking toast with soft chime | Low |
 | **4 — Warning** | Error/blocked | Persistent amber banner + distinctive tone | Medium |
 | **5 — Critical** | Security/data loss | Modal overlay + urgent sound | High |

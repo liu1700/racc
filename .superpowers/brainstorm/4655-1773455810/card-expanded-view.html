@@ -1,0 +1,154 @@
+<h2>Insight Card — Expanded Detail View</h2>
+<p class="subtitle">Click a card to expand, then take action from within the detail view</p>
+
+<div class="cards">
+  <!-- Option A: Inline expand -->
+  <div class="card" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0d1117;border-radius:8px;padding:16px;font-family:monospace;font-size:11px;color:#c9d1d9;min-height:380px;">
+        <div style="color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Insights</div>
+
+        <!-- Expanded card -->
+        <div style="background:#161b22;border:1px solid #1f6feb;border-radius:6px;margin-bottom:8px;overflow:hidden;">
+          <!-- Card header (collapsed state info) -->
+          <div style="padding:10px 12px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="color:#d29922;">&#9671;</span>
+              <span style="color:#f0f6fc;font-size:12px;font-weight:600;">Repeated instruction detected</span>
+            </div>
+            <span style="color:#484f58;font-size:10px;">&#9650; collapse</span>
+          </div>
+
+          <!-- Expanded detail -->
+          <div style="padding:12px;background:#0d1117;">
+            <div style="color:#8b949e;font-size:10px;margin-bottom:8px;">Found in 4 sessions over the past 2 days:</div>
+
+            <!-- Evidence list -->
+            <div style="margin-bottom:10px;">
+              <div style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:8px;margin-bottom:4px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span style="color:#58a6ff;font-size:10px;">session-1 (feat/auth)</span>
+                  <span style="color:#484f58;font-size:9px;">2h ago</span>
+                </div>
+                <div style="color:#c9d1d9;font-size:10px;margin-top:3px;font-style:italic;">"please use TDD approach, write tests first"</div>
+              </div>
+              <div style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:8px;margin-bottom:4px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span style="color:#58a6ff;font-size:10px;">session-3 (fix/api)</span>
+                  <span style="color:#484f58;font-size:9px;">5h ago</span>
+                </div>
+                <div style="color:#c9d1d9;font-size:10px;margin-top:3px;font-style:italic;">"use TDD, write the test before implementation"</div>
+              </div>
+              <div style="background:#161b22;border:1px solid #30363d;border-radius:4px;padding:8px;margin-bottom:4px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span style="color:#58a6ff;font-size:10px;">session-5 (refactor/db)</span>
+                  <span style="color:#484f58;font-size:9px;">1d ago</span>
+                </div>
+                <div style="color:#c9d1d9;font-size:10px;margin-top:3px;font-style:italic;">"always write tests first, TDD style"</div>
+              </div>
+              <div style="color:#484f58;font-size:9px;text-align:center;padding:4px;">+ 1 more occurrence</div>
+            </div>
+
+            <!-- Suggested action -->
+            <div style="background:#1c2128;border:1px solid #30363d;border-radius:6px;padding:10px;margin-bottom:10px;">
+              <div style="color:#8b949e;font-size:10px;margin-bottom:6px;">Suggested CLAUDE.md entry:</div>
+              <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px;font-size:10px;color:#7ee787;font-family:monospace;">
+                Always use TDD approach — write tests<br>before implementation code.
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display:flex;gap:8px;">
+              <div style="background:#238636;color:#fff;padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:500;">Add to CLAUDE.md</div>
+              <div style="background:#21262d;color:#c9d1d9;padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;">Edit first</div>
+              <div style="background:#21262d;color:#484f58;padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;">Dismiss</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsed card below -->
+        <div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px;margin-bottom:6px;border-left:3px solid #f85149;opacity:0.7;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="color:#f85149;">&#9888;</span>
+            <span style="color:#f0f6fc;font-size:11px;">File conflict: src/utils/api.ts</span>
+          </div>
+          <div style="color:#8b949e;font-size:10px;">Modified in 2 sessions</div>
+        </div>
+
+        <div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px;border-left:3px solid #3fb950;opacity:0.7;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="color:#3fb950;">&#10024;</span>
+            <span style="color:#f0f6fc;font-size:11px;">Similar sessions detected</span>
+          </div>
+          <div style="color:#8b949e;font-size:10px;">session-3 and session-7</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Inline Expand</h3>
+      <p>Card expands in-place within the feed. Other cards push down and dim. Keeps spatial context — you know where you are in the timeline.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Slide-over panel -->
+  <div class="card" data-choice="slideover" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0d1117;border-radius:8px;padding:0;font-family:monospace;font-size:11px;color:#c9d1d9;min-height:380px;display:flex;overflow:hidden;">
+        <!-- Left: dimmed feed -->
+        <div style="width:35%;background:#0d1117;padding:12px 8px;opacity:0.4;border-right:1px solid #30363d;">
+          <div style="color:#8b949e;font-size:9px;margin-bottom:8px;">INSIGHTS</div>
+          <div style="background:#161b22;border-radius:4px;padding:6px;margin-bottom:4px;border-left:2px solid #d29922;">
+            <span style="font-size:9px;color:#f0f6fc;">Repeated instruction</span>
+          </div>
+          <div style="background:#161b22;border-radius:4px;padding:6px;margin-bottom:4px;border-left:2px solid #f85149;">
+            <span style="font-size:9px;color:#f0f6fc;">File conflict</span>
+          </div>
+          <div style="background:#161b22;border-radius:4px;padding:6px;border-left:2px solid #3fb950;">
+            <span style="font-size:9px;color:#f0f6fc;">Similar sessions</span>
+          </div>
+        </div>
+
+        <!-- Right: detail panel -->
+        <div style="width:65%;background:#161b22;padding:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #30363d;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="color:#d29922;">&#9671;</span>
+              <span style="color:#f0f6fc;font-size:12px;font-weight:600;">Repeated instruction</span>
+            </div>
+            <span style="color:#484f58;font-size:10px;">&times;</span>
+          </div>
+
+          <div style="color:#8b949e;font-size:10px;margin-bottom:8px;">Found in 4 sessions:</div>
+
+          <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px;margin-bottom:4px;">
+            <span style="color:#58a6ff;font-size:9px;">session-1</span>
+            <div style="color:#c9d1d9;font-size:9px;font-style:italic;">"please use TDD approach"</div>
+          </div>
+          <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px;margin-bottom:4px;">
+            <span style="color:#58a6ff;font-size:9px;">session-3</span>
+            <div style="color:#c9d1d9;font-size:9px;font-style:italic;">"use TDD, write test first"</div>
+          </div>
+          <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px;margin-bottom:8px;">
+            <span style="color:#58a6ff;font-size:9px;">session-5</span>
+            <div style="color:#c9d1d9;font-size:9px;font-style:italic;">"always write tests first"</div>
+          </div>
+
+          <div style="background:#1c2128;border:1px solid #30363d;border-radius:4px;padding:8px;margin-bottom:10px;">
+            <div style="color:#8b949e;font-size:9px;margin-bottom:4px;">Suggested:</div>
+            <div style="color:#7ee787;font-size:9px;">Always use TDD — write tests before code.</div>
+          </div>
+
+          <div style="display:flex;gap:6px;">
+            <div style="background:#238636;color:#fff;padding:5px 10px;border-radius:4px;font-size:10px;">Add to CLAUDE.md</div>
+            <div style="background:#21262d;color:#c9d1d9;padding:5px 10px;border-radius:4px;font-size:10px;">Edit</div>
+            <div style="background:#21262d;color:#484f58;padding:5px 10px;border-radius:4px;font-size:10px;">Dismiss</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Slide-over Detail</h3>
+      <p>Detail slides in from the right, feed dims and narrows. More room for detail content. Feels like a master-detail pattern (email/Slack).</p>
+    </div>
+  </div>
+</div>

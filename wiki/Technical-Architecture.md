@@ -26,7 +26,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  | (ptyOutputParser.ts)|  |     |  | (db.rs)                 | | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  |  | UI Components       |  |     |                               | |
-|  |  | Sidebar/ActivityPanel|  |     |                               | |
+|  |  | Sidebar             |  |     |                               | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  +---------------------------+     +-------------------------------+ |
 |                                                                      |
@@ -91,13 +91,14 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 **Schema (v4):**
 - `repos` table: id, path, name, added_at
 - `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
+- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|running|review|done), session_id (FK SET NULL), created_at, updated_at
 - `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
 - `assistant_config` table: key, value
 - `session_events` table: id, session_id (FK→sessions), event_type, payload (JSON), created_at (Unix ms)
 - `insights` table: id, insight_type, severity, title, summary, detail_json, fingerprint (unique partial index on active), status, created_at, resolved_at
 - Migration v1→v2 dropped deprecated `tmux_session_name` column
 - Migration v2→v3 added assistant tables
-- Migration v3→v4 added session_events and insights tables for the Insights Panel
+- Migration v3→v4 added tasks, session_events, and insights tables
 
 ### Agent Communication: Native PTY
 
@@ -148,19 +149,21 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, aggregate token counts (total + weekly) |
 | `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `read_file_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, file reading relay, sidecar process management |
+| `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `delete_task` | Task CRUD for Task Board — create, list by repo, update status with optional session linking, delete with existence guard |
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
-| `db.rs` | (internal) | SQLite initialization, schema migrations (v1–v4) |
+| `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
 
 ### Frontend Component Architecture
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `App.tsx` | Root layout | Three-panel layout orchestrator, calls `initialize()` on mount |
+| `App.tsx` | Root layout | Three-panel layout orchestrator with Tasks/Terminal tab switching, calls `initialize()` on mount |
 | `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
 | `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
 | `RemoveSessionDialog.tsx` | Modal | Removal confirmation with optional worktree cleanup checkbox |
+| `ResetDbDialog.tsx` | Modal | Database reset confirmation — wipes all repos, sessions, and assistant history |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
 | `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token usage breakdown |
 | `InsightsPanel.tsx` | Right panel | Insights timeline feed — replaces previous AssistantPanel |
@@ -172,6 +175,12 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
 | `insightsStore.ts` | Store | Insights state, real-time detection rules (file conflicts, cost anomalies, permissions), Tauri event listener |
 | `eventCapture.ts` | Service | Event normalization, buffering, 30s batch flush to SQLite, real-time listener dispatch |
+| `TaskBoard.tsx` | Center panel | 4-column kanban (Open/Running/Review/Done) with session sync |
+| `TaskColumn.tsx` | Center panel | Single kanban column with header, cards, and new-task input |
+| `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, review action |
+| `TaskInput.tsx` | Center panel | Inline task creation input (Enter/Esc) |
+| `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
+| `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
 | `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
 | `StatusBar.tsx` | Bottom bar | Session counts, total/weekly token usage, connection status |
 

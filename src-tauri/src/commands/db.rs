@@ -1,8 +1,10 @@
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::State;
 
-fn db_path() -> Result<PathBuf, String> {
+pub fn db_path() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or("Could not find home directory")?;
@@ -113,6 +115,16 @@ pub fn init_db() -> Result<Connection, String> {
             "
         BEGIN;
 
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','running','review','done')),
+            session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS session_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -147,4 +159,23 @@ pub fn init_db() -> Result<Connection, String> {
     }
 
     Ok(conn)
+}
+
+#[tauri::command]
+pub fn reset_db(db: State<'_, Mutex<Connection>>) -> Result<(), String> {
+    let path = db_path()?;
+
+    // Close current connection by replacing it with a fresh one
+    let mut conn = db.lock().map_err(|e| format!("Failed to lock db: {e}"))?;
+
+    // Remove the database file
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete database: {e}"))?;
+    }
+
+    // Reinitialize
+    let new_conn = init_db()?;
+    *conn = new_conn;
+
+    Ok(())
 }
