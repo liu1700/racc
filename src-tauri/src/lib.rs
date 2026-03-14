@@ -73,6 +73,7 @@ pub fn run() {
             commands::insights::save_insight,
             commands::insights::get_session_events,
             commands::insights::append_to_file,
+            commands::insights::run_batch_analysis,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
