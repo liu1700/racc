@@ -138,7 +138,6 @@ export function TaskCard({ task }: Props) {
               )}
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-              <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
               <span>{formatElapsed(task.updated_at)}</span>
             </div>
           </>
@@ -147,7 +146,6 @@ export function TaskCard({ task }: Props) {
         {/* Open: show fire button */}
         {task.status === "open" && (
           <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-            <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
             <button
               onClick={() => setFireOpen(true)}
               className="ml-auto rounded bg-accent/15 px-2 py-0.5 text-accent hover:bg-accent/25"
