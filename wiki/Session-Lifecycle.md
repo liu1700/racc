@@ -100,7 +100,7 @@ User clicks [+] on a repo
 
 | State | Meaning | Entry Trigger | User Can... |
 |-------|---------|---------------|-------------|
-| **Running** | Agent is actively executing in PTY | Session created or reattached, PTY spawned successfully | View terminal, send input, stop |
+| **Running** | Agent is actively executing in PTY | Session created or reattached, PTY spawned successfully | View terminal, send input, stop, remove |
 | **Completed** | Session stopped by user | User clicks stop → PTY killed, DB updated | Reattach, remove session |
 | **Disconnected** | PTY process no longer exists | App restart — reconciliation marks all previously Running sessions | Reattach, remove session |
 | **Error** | Session creation or operation failed | PTY spawn failure / unexpected error | Remove, retry |
@@ -130,8 +130,10 @@ Disconnected and Completed sessions can be reattached via the ▶ button in the 
 ### Session Cleanup
 
 - **Stop session:** kills PTY process via `ptyManager.killPty()`, updates SQLite status to `Completed`
-- **Remove session:** confirmation dialog required; kills PTY (if running), deletes SQLite record (only if not `Running`)
+- **Remove session:** confirmation dialog required; any session can be removed regardless of status
+  - If the session is `Running`, the backend marks it as `Completed` first, then the frontend kills the PTY and stops tracking
   - If the session has a worktree, dialog shows an optional checkbox to also delete the worktree via `git worktree remove --force`
+  - Deletes the SQLite session record and triggers batch analysis cleanup
 - **Remove repo:** only allowed if no `Running` sessions; cascades to delete all session records
 - **App close:** `killAll()` terminates all active PTY processes via window `beforeunload` event
 
