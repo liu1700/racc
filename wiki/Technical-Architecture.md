@@ -132,6 +132,17 @@ Worktrees are created at `~/racc-worktrees/{repo}/{branch}` via `git worktree ad
 - Nix Flakes — learning curve too steep, narrows target audience
 - Firecracker — overkill for individual developers
 
+### WebSocket Remote API
+
+Racc embeds a WebSocket server (`tokio-tungstenite`) on `ws://127.0.0.1:9399` that allows external clients to create tasks, start/stop sessions, and receive real-time status events. The server shares the same SQLite database and event bus as the UI — remote commands trigger PTY spawning in the frontend automatically.
+
+See [WebSocket Remote API](WebSocket-Remote-API.md) for protocol details, available methods, and client examples.
+
+| Module | File | Purpose |
+|--------|------|---------|
+| `events.rs` | `src-tauri/src/events.rs` | `RaccEvent` enum, `EventSender` broadcast channel |
+| `ws_server.rs` | `src-tauri/src/ws_server.rs` | WebSocket server: TCP listener, connection pool, heartbeat, 10 method handlers, event fan-out |
+
 ### Networking: Tailscale + Portless *(planned v0.2)*
 
 - Tailscale provides the mesh network between local and remote machines
@@ -153,6 +164,8 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
 | `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
+| `events.rs` | *(not a command module)* | `RaccEvent` enum, `EventSender` type alias, `create_event_bus()` factory |
+| `ws_server.rs` | *(not a command module)* | WebSocket server on `127.0.0.1:9399` — 10 method handlers, event broadcast, heartbeat, graceful shutdown |
 
 ### Frontend Component Architecture
 
