@@ -7,6 +7,8 @@ import { spawnPty, killPty, killAll } from "../services/ptyManager";
 interface SessionState {
   repos: RepoWithSessions[];
   activeSessionId: number | null;
+  /** When true, the next activeSessionId change should NOT auto-switch to terminal tab. */
+  _skipTerminalSwitch: boolean;
   loading: boolean;
   error: string | null;
 
@@ -38,6 +40,7 @@ interface SessionState {
 export const useSessionStore = create<SessionState>((set, get) => ({
   repos: [],
   activeSessionId: null,
+  _skipTerminalSwitch: false,
   loading: false,
   error: null,
 

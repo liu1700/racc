@@ -75,6 +75,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const beforeRepo = beforeRepos.find((r) => r.repo.id === repoId);
     const beforeIds = new Set(beforeRepo?.sessions.map((s) => s.id) ?? []);
 
+    // Tell sessionStore not to auto-switch to terminal tab
+    useSessionStore.setState({ _skipTerminalSwitch: true });
+
     // Create session via existing flow
     await createSession(repoId, useWorktree, branch, skipPermissions);
 
