@@ -26,7 +26,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  | (ptyOutputParser.ts)|  |     |  | (db.rs)                 | | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  |  | UI Components       |  |     |                               | |
-|  |  | Sidebar/ActivityPanel|  |     |                               | |
+|  |  | Sidebar             |  |     |                               | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  +---------------------------+     +-------------------------------+ |
 |                                                                      |

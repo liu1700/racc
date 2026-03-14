@@ -46,6 +46,7 @@ export function Sidebar() {
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
+  const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
 
@@ -123,57 +124,64 @@ export function Sidebar() {
                       reattachSession(session.id);
                     }
                   }}
-                  className={`group ml-4 flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors duration-150 ${
+                  className={`group ml-4 cursor-pointer rounded px-2 py-1 transition-colors duration-150 ${
                     session.id === activeSessionId
                       ? "bg-surface-3"
                       : "hover:bg-surface-2"
                   }`}
                 >
-                  <span
-                    className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusColor[session.status]} ${
-                      session.status === "Running" ? "animate-status-pulse" : ""
-                    }`}
-                  />
-                  <span className="flex-1 truncate text-xs text-zinc-400">
-                    {session.branch ?? "main"}
-                  </span>
-                  <span className="text-[10px] tabular-nums text-zinc-600">
-                    {formatElapsed(session.created_at)}
-                  </span>
-                  {session.status === "Running" ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        stopSession(session.id);
-                      }}
-                      className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
-                      title="Stop session"
-                    >
-                      ■
-                    </button>
-                  ) : (
-                    <>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${statusColor[session.status]} ${
+                        session.status === "Running" ? "animate-status-pulse" : ""
+                      }`}
+                    />
+                    <span className="flex-1 truncate text-xs text-zinc-400">
+                      {session.branch ?? "main"}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-zinc-600">
+                      {formatElapsed(session.created_at)}
+                    </span>
+                    {session.status === "Running" ? (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          reattachSession(session.id);
-                        }}
-                        className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
-                        title="Reattach session"
-                      >
-                        ▶
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRemoveDialogSession(session);
+                          stopSession(session.id);
                         }}
                         className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
-                        title="Remove session"
+                        title="Stop session"
                       >
-                        ×
+                        ■
                       </button>
-                    </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            reattachSession(session.id);
+                          }}
+                          className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
+                          title="Reattach session"
+                        >
+                          ▶
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRemoveDialogSession(session);
+                          }}
+                          className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
+                          title="Remove session"
+                        >
+                          ×
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {sessionLastOutput[session.id] && (
+                    <p className="mt-0.5 truncate text-[10px] text-zinc-600 leading-tight pl-3.5">
+                      {sessionLastOutput[session.id]}
+                    </p>
                   )}
                 </div>
               ))}
