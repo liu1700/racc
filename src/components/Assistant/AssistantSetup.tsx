@@ -93,7 +93,7 @@ export function AssistantSetup({ onBack }: AssistantSetupProps) {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             onBlur={fetchModels}
-            onKeyDown={(e) => e.key === "Enter" && fetchModels()}
+            onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && fetchModels()}
             placeholder="sk-or-..."
             className="w-full rounded border border-surface-3 bg-surface-0 px-2 py-1.5 text-xs text-zinc-300 placeholder-zinc-600 outline-none focus:border-accent"
           />
