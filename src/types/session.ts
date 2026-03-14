@@ -22,3 +22,10 @@ export interface RepoWithSessions {
   repo: Repo;
   sessions: Session[];
 }
+
+export interface SessionActivity {
+  sessionId: number;
+  action: string;
+  detail: string | null;
+  timestamp: number;
+}
