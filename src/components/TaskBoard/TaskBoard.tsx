@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { TaskStatus } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -49,10 +50,20 @@ export function TaskBoard({ repoId }: Props) {
     }
   }, [repos]);
 
+  const importRepo = useSessionStore((s) => s.importRepo);
+
   if (!repoId) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-600">
-        Select a repo to view tasks
+      <div className="flex flex-1 items-center justify-center">
+        <button
+          onClick={async () => {
+            const selected = await openDialog({ directory: true, multiple: false });
+            if (selected) await importRepo(selected);
+          }}
+          className="text-sm text-zinc-500 transition-colors hover:text-accent"
+        >
+          Select a git repo
+        </button>
       </div>
     );
   }

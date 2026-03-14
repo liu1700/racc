@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-shell";
+import { useState, useRef, useEffect } from "react";
+import { open as openShell } from "@tauri-apps/plugin-shell";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../stores/sessionStore";
-import { ImportRepoDialog } from "./ImportRepoDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import { ResetDbDialog } from "./ResetDbDialog";
@@ -48,11 +48,35 @@ export function Sidebar() {
   const reattachSession = useSessionStore((s) => s.reattachSession);
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
+  const importRepo = useSessionStore((s) => s.importRepo);
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeRepo = repos.find((r) =>
+    r.sessions.some((s) => s.id === activeSessionId)
+  )?.repo ?? repos[0]?.repo ?? null;
+
+  const handleImportRepo = async () => {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (selected) await importRepo(selected);
+    setRepoDropdownOpen(false);
+  };
+
+  useEffect(() => {
+    if (!repoDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setRepoDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [repoDropdownOpen]);
 
   const toggleRepo = (repoId: number) => {
     setExpandedRepos((prev) => {
@@ -70,20 +94,58 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-56 flex-col overflow-y-auto border-r border-surface-3 bg-surface-1">
-      <div className="border-b border-surface-3 px-3 py-2">
-        <h1 className="text-xs font-bold uppercase tracking-widest text-zinc-500">
-          Racc
-        </h1>
+      <div className="relative border-b border-surface-3" ref={dropdownRef}>
+        {activeRepo ? (
+          <button
+            onClick={() => setRepoDropdownOpen((v) => !v)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-2"
+          >
+            <span className="flex-1 truncate text-xs font-medium text-zinc-300">
+              {activeRepo.name}
+            </span>
+            <span className="text-[10px] text-zinc-500">▾</span>
+          </button>
+        ) : (
+          <button
+            onClick={handleImportRepo}
+            className="w-full px-3 py-2 text-left text-xs text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200"
+          >
+            Select a git repo
+          </button>
+        )}
+
+        {repoDropdownOpen && (
+          <div className="absolute left-0 right-0 top-full z-50 border-b border-surface-3 bg-surface-1 shadow-lg">
+            {repos.map(({ repo }) => (
+              <button
+                key={repo.id}
+                onClick={() => {
+                  toggleRepo(repo.id);
+                  setRepoDropdownOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-surface-2 ${
+                  repo.id === activeRepo?.id ? "text-accent" : "text-zinc-400"
+                }`}
+                title={repo.path}
+              >
+                {repo.id === activeRepo?.id && <span className="text-[10px]">●</span>}
+                <span className="truncate">{repo.name}</span>
+              </button>
+            ))}
+            <div className="border-t border-surface-3">
+              <button
+                onClick={handleImportRepo}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-500 transition-colors hover:bg-surface-2 hover:text-zinc-200"
+              >
+                <span className="text-base leading-none">+</span>
+                Import new repo...
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <ImportRepoDialog />
-
       <div className="flex-1 overflow-y-auto px-1 py-1">
-        {repos.length === 0 && (
-          <p className="px-3 py-4 text-center text-xs text-zinc-600">
-            No repos imported yet
-          </p>
-        )}
 
         {repos.map(({ repo, sessions }) => (
           <div key={repo.id} className="mb-1">
@@ -180,7 +242,7 @@ export function Sidebar() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          open(session.pr_url!);
+                          openShell(session.pr_url!);
                         }}
                         className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-accent hover:underline"
                         title={session.pr_url}
