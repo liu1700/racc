@@ -8,23 +8,20 @@ const COLUMN_CONFIG: Record<
   { label: string; dotColor: string }
 > = {
   open: { label: "Open", dotColor: "bg-accent" },
-  running: { label: "Running", dotColor: "bg-status-running" },
-  review: { label: "Review", dotColor: "bg-status-waiting" },
-  done: { label: "Done", dotColor: "bg-status-completed" },
+  working: { label: "Working", dotColor: "bg-status-running" },
+  closed: { label: "Closed", dotColor: "bg-status-completed" },
 };
 
 interface Props {
   status: TaskStatus;
   tasks: Task[];
   onCreateTask?: (description: string) => void;
-  onSwitchToTerminal: () => void;
 }
 
 export function TaskColumn({
   status,
   tasks,
   onCreateTask,
-  onSwitchToTerminal,
 }: Props) {
   const [inputOpen, setInputOpen] = useState(false);
   const config = COLUMN_CONFIG[status];
@@ -46,7 +43,6 @@ export function TaskColumn({
           <TaskCard
             key={task.id}
             task={task}
-            onSwitchToTerminal={onSwitchToTerminal}
           />
         ))}
       </div>

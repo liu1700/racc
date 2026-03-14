@@ -44,7 +44,7 @@ function App() {
     ) {
       // Don't auto-switch if this session was just fired from a task
       const isFromFire = tasks.some(
-        (t) => t.session_id === activeSessionId && t.status === "running"
+        (t) => t.session_id === activeSessionId && t.status === "working"
       );
       if (!isFromFire) {
         setCenterTab("terminal");
@@ -64,7 +64,7 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const activeTaskCount = tasks.filter((t) => t.status !== "done").length;
+  const activeTaskCount = tasks.filter((t) => t.status !== "closed").length;
 
   return (
     <div className="flex h-screen flex-col bg-surface-0">
@@ -112,10 +112,7 @@ function App() {
 
           {/* Content — Terminal stays mounted to preserve xterm.js state */}
           {centerTab === "tasks" && (
-            <TaskBoard
-              repoId={activeRepoId}
-              onSwitchToTerminal={() => setCenterTab("terminal")}
-            />
+            <TaskBoard repoId={activeRepoId} />
           )}
           <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
             <Terminal />

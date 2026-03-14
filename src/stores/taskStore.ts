@@ -79,7 +79,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }
 
     // Link task to session and set running
-    await get().updateTaskStatus(taskId, "running", newSession.id);
+    await get().updateTaskStatus(taskId, "working", newSession.id);
 
     // Send task description to PTY as initial prompt.
     // Uses a 2s delay as pragmatic fallback for agent initialization.
@@ -126,11 +126,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   syncTaskWithSession: (sessionId: number, sessionStatus: string) => {
     const { tasks } = get();
     const task = tasks.find(
-      (t: Task) => t.session_id === sessionId && t.status === "running"
+      (t: Task) => t.session_id === sessionId && t.status === "working"
     );
     if (task && sessionStatus === "Completed") {
       get()
-        .updateTaskStatus(task.id, "review")
+        .updateTaskStatus(task.id, "closed")
         .catch((err) => set({ error: String(err) }));
     }
   },

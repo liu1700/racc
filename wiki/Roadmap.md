@@ -21,7 +21,7 @@
 | Zustand state management | Session store with 11 actions, `useShallow` optimization | Done |
 | AI assistant | Diff summary, risk triage, session queries via Pi Agent sidecar | Done |
 | File viewer & command palette | Cmd+P fuzzy search, terminal path click, Shiki highlighting overlay | Done |
-| Task Board | Kanban board for cognitive offloading + auto agent orchestration (Open→Running→Review→Done) | Done |
+| Task Board | Kanban board for cognitive offloading + auto agent orchestration (Open→Working→Closed) | Done |
 | Git diff viewer | View changes made by agents | **Next** |
 
 **Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see token usage per session, and review diffs before accepting changes.
