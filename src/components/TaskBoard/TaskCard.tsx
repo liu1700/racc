@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
+import { open } from "@tauri-apps/plugin-shell";
 import type { Task } from "../../types/task";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { FireTaskDialog } from "./FireTaskDialog";
+import { parsePrDisplay } from "../../utils/prUrl";
 
 interface Props {
   task: Task;
@@ -37,6 +39,11 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
     }
     return null;
   }, [task.session_id, repos]);
+
+  const prDisplay = useMemo(() => {
+    if (!linkedSession?.pr_url) return null;
+    return parsePrDisplay(linkedSession.pr_url);
+  }, [linkedSession?.pr_url]);
 
   const statusBorder = {
     open: "border-l-accent",
@@ -78,6 +85,17 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
                 {linkedSession?.branch ?? "session"}
                 {lastOutput ? ` — ${lastOutput}` : ""}
               </span>
+              {prDisplay && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    open(linkedSession!.pr_url!);
+                  }}
+                  className="ml-1 shrink-0 text-accent hover:underline"
+                >
+                  {prDisplay.label}
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
@@ -95,6 +113,17 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-zinc-500">
                 {linkedSession?.branch ?? "session"} · done {formatElapsed(task.updated_at)} ago
+                {prDisplay && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      open(linkedSession!.pr_url!);
+                    }}
+                    className="ml-1 text-accent hover:underline"
+                  >
+                    {prDisplay.label}
+                  </button>
+                )}
               </span>
               <button
                 onClick={handleMarkDone}
@@ -123,6 +152,17 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
         {task.status === "done" && (
           <div className="text-[10px] text-zinc-600">
             {linkedSession?.branch ?? "session"} · completed
+            {prDisplay && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  open(linkedSession!.pr_url!);
+                }}
+                className="ml-1 text-accent hover:underline"
+              >
+                {prDisplay.label}
+              </button>
+            )}
           </div>
         )}
       </div>
