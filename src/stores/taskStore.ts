@@ -41,9 +41,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   createTask: async (repoId: number, description: string) => {
-    const task = await invoke<Task>("create_task", { repoId, description });
-    set((state: TaskState) => ({ tasks: [task, ...state.tasks] }));
-    return task;
+    try {
+      const task = await invoke<Task>("create_task", { repoId, description });
+      set((state: TaskState) => ({ tasks: [task, ...state.tasks] }));
+      return task;
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
   },
 
   // NOTE: The spec lists fire_task as a Rust command, but per the spec's own
@@ -68,41 +73,54 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const afterRepo = afterRepos.find((r) => r.repo.id === repoId);
     const newSession = afterRepo?.sessions.find((s) => !beforeIds.has(s.id));
 
-    if (newSession) {
-      // Link task to session and set running
-      await get().updateTaskStatus(taskId, "running", newSession.id);
+    if (!newSession) {
+      set({ error: "fireTask: could not identify newly created session" });
+      return;
+    }
 
-      // Send task description to PTY as initial prompt.
-      // Uses a 2s delay as pragmatic fallback for agent initialization.
-      // Known limitation: if agent takes longer (cold start, large repo),
-      // the prompt may arrive too early. A signal-based approach would be
-      // more robust but is deferred to keep scope minimal.
-      const task = get().tasks.find((t: Task) => t.id === taskId);
-      if (task) {
-        const { writePty } = await import("../services/ptyManager");
-        setTimeout(() => {
-          writePty(newSession.id, task.description + "\n");
-        }, 2000);
-      }
+    // Link task to session and set running
+    await get().updateTaskStatus(taskId, "running", newSession.id);
+
+    // Send task description to PTY as initial prompt.
+    // Uses a 2s delay as pragmatic fallback for agent initialization.
+    // Known limitation: if agent takes longer (cold start, large repo),
+    // the prompt may arrive too early. A signal-based approach would be
+    // more robust but is deferred to keep scope minimal.
+    const task = get().tasks.find((t: Task) => t.id === taskId);
+    if (task) {
+      const { writePty } = await import("../services/ptyManager");
+      setTimeout(() => {
+        writePty(newSession.id, task.description + "\n");
+      }, 2000);
     }
   },
 
   updateTaskStatus: async (taskId: number, status: TaskStatus, sessionId?: number) => {
-    const task = await invoke<Task>("update_task_status", {
-      taskId,
-      status,
-      sessionId: sessionId ?? null,
-    });
-    set((state: TaskState) => ({
-      tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
-    }));
+    try {
+      const task = await invoke<Task>("update_task_status", {
+        taskId,
+        status,
+        sessionId: sessionId ?? null,
+      });
+      set((state: TaskState) => ({
+        tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
+      }));
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
   },
 
   deleteTask: async (taskId: number) => {
-    await invoke("delete_task", { taskId });
-    set((state: TaskState) => ({
-      tasks: state.tasks.filter((t: Task) => t.id !== taskId),
-    }));
+    try {
+      await invoke("delete_task", { taskId });
+      set((state: TaskState) => ({
+        tasks: state.tasks.filter((t: Task) => t.id !== taskId),
+      }));
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
   },
 
   syncTaskWithSession: (sessionId: number, sessionStatus: string) => {
@@ -111,7 +129,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       (t: Task) => t.session_id === sessionId && t.status === "running"
     );
     if (task && sessionStatus === "Completed") {
-      get().updateTaskStatus(task.id, "review");
+      get()
+        .updateTaskStatus(task.id, "review")
+        .catch((err) => set({ error: String(err) }));
     }
   },
 }));
