@@ -86,7 +86,7 @@ pub fn update_task_status(
     status: String,
     session_id: Option<i64>,
 ) -> Result<Task, String> {
-    let valid = ["open", "running", "review", "done"];
+    let valid = ["open", "working", "closed"];
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid status '{}'. Must be one of: {}", status, valid.join(", ")));
     }

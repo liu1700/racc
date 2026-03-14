@@ -196,6 +196,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       get().clearSessionLastOutput(sessionId);
       killPty(sessionId);
       await invoke("remove_session", { sessionId, deleteWorktree });
+
+      // Trigger batch analysis (session may have been running)
+      invoke("run_batch_analysis").catch(() => {});
+
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
       set({
