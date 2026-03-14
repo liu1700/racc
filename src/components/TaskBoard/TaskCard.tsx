@@ -19,13 +19,13 @@ function formatElapsed(createdAt: string): string {
 
 export function TaskCard({ task, onSwitchToTerminal }: Props) {
   const [fireOpen, setFireOpen] = useState(false);
-  const sessionActivities = useSessionStore((s) => s.sessionActivities);
+  const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const repos = useSessionStore((s) => s.repos);
   const updateTaskStatus = useTaskStore((s) => s.updateTaskStatus);
 
-  const activity = task.session_id
-    ? sessionActivities[task.session_id]
+  const lastOutput = task.session_id
+    ? sessionLastOutput[task.session_id] ?? null
     : null;
 
   // Find linked session for branch name display
@@ -72,17 +72,13 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
         {/* Running: show linked session + live activity + elapsed time */}
         {task.status === "running" && (
           <>
-            {activity && (
-              <div className="mb-1 flex items-center gap-1.5 text-[10px] text-status-running">
-                <span className="inline-block h-1 w-1 animate-status-pulse rounded-full bg-status-running" />
-                <span className="truncate">
-                  {linkedSession?.branch ?? "session"}
-                  {" — "}
-                  {activity.action}
-                  {activity.detail ? ` ${activity.detail}` : ""}
-                </span>
-              </div>
-            )}
+            <div className="mb-1 flex items-center gap-1.5 text-[10px] text-status-running">
+              <span className="inline-block h-1 w-1 animate-status-pulse rounded-full bg-status-running" />
+              <span className="truncate">
+                {linkedSession?.branch ?? "session"}
+                {lastOutput ? ` — ${lastOutput}` : ""}
+              </span>
+            </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
               <span>{formatElapsed(task.updated_at)}</span>
