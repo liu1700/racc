@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import type { Task } from "../../types/task";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useTaskStore } from "../../stores/taskStore";
 import { FireTaskDialog } from "./FireTaskDialog";
 
 interface Props {
@@ -17,8 +18,18 @@ function formatElapsed(createdAt: string): string {
 
 export function TaskCard({ task }: Props) {
   const [fireOpen, setFireOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(task.description);
+  const editRef = useRef<HTMLTextAreaElement>(null);
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const repos = useSessionStore((s) => s.repos);
+  const updateTaskDescription = useTaskStore((s) => s.updateTaskDescription);
+
+  useEffect(() => {
+    if (editing) {
+      editRef.current?.focus();
+    }
+  }, [editing]);
 
   const lastOutput = task.session_id
     ? sessionLastOutput[task.session_id] ?? null
@@ -40,6 +51,32 @@ export function TaskCard({ task }: Props) {
     closed: "border-l-status-completed",
   }[task.status];
 
+  const handleEditSave = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== task.description) {
+      updateTaskDescription(task.id, trimmed);
+    }
+    setEditing(false);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleEditSave();
+    }
+    if (e.key === "Escape") {
+      setEditValue(task.description);
+      setEditing(false);
+    }
+  };
+
+  const handleDescriptionClick = () => {
+    if (task.status === "open") {
+      setEditValue(task.description);
+      setEditing(true);
+    }
+  };
+
   return (
     <>
       <div
@@ -47,9 +84,26 @@ export function TaskCard({ task }: Props) {
           task.status === "closed" ? "opacity-50" : ""
         }`}
       >
-        <p className="mb-1 text-xs font-medium leading-snug text-zinc-200">
-          {task.description}
-        </p>
+        {editing ? (
+          <textarea
+            ref={editRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleEditKeyDown}
+            onBlur={handleEditSave}
+            rows={3}
+            className="mb-1 w-full resize-none rounded border border-accent bg-surface-2 px-1.5 py-1 text-xs font-medium leading-snug text-zinc-200 outline-none"
+          />
+        ) : (
+          <p
+            className={`mb-1 whitespace-pre-wrap text-xs font-medium leading-snug text-zinc-200 ${
+              task.status === "open" ? "cursor-text hover:text-white" : ""
+            }`}
+            onClick={handleDescriptionClick}
+          >
+            {task.description}
+          </p>
+        )}
 
         {/* Working: show linked session + live activity + elapsed time */}
         {task.status === "working" && (

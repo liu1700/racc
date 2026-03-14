@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Task, TaskStatus } from "../../types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskInput } from "./TaskInput";
@@ -16,14 +15,21 @@ interface Props {
   status: TaskStatus;
   tasks: Task[];
   onCreateTask?: (description: string) => void;
+  inputOpen?: boolean;
+  onInputOpenChange?: (open: boolean) => void;
+  draftValue?: string;
+  onDraftChange?: (value: string) => void;
 }
 
 export function TaskColumn({
   status,
   tasks,
   onCreateTask,
+  inputOpen = false,
+  onInputOpenChange,
+  draftValue = "",
+  onDraftChange,
 }: Props) {
-  const [inputOpen, setInputOpen] = useState(false);
   const config = COLUMN_CONFIG[status];
 
   return (
@@ -52,15 +58,20 @@ export function TaskColumn({
         <div className="px-1">
           {inputOpen ? (
             <TaskInput
+              value={draftValue}
+              onChange={(v) => onDraftChange?.(v)}
               onSubmit={(desc) => {
                 onCreateTask(desc);
-                setInputOpen(false);
+                onDraftChange?.("");
+                onInputOpenChange?.(false);
               }}
-              onCancel={() => setInputOpen(false)}
+              onCancel={() => {
+                onInputOpenChange?.(false);
+              }}
             />
           ) : (
             <button
-              onClick={() => setInputOpen(true)}
+              onClick={() => onInputOpenChange?.(true)}
               className="w-full rounded border border-dashed border-surface-3 py-1.5 text-center text-[10px] text-zinc-600 transition-colors hover:border-accent hover:text-accent"
             >
               + New Task
