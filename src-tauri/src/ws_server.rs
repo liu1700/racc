@@ -109,7 +109,7 @@ fn extract_event_type(event: &RaccEvent) -> &'static str {
 
 // --- Main server entry point ---
 
-pub async fn start(app_handle: AppHandle, db: Db) {
+pub async fn start(app_handle: AppHandle, db: Db, mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
     let addr = "127.0.0.1:9399";
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => {
@@ -134,22 +134,35 @@ pub async fn start(app_handle: AppHandle, db: Db) {
     let mut next_id: ConnId = 0;
 
     loop {
-        match listener.accept().await {
-            Ok((stream, addr)) => {
-                log::info!("New WebSocket connection from {}", addr);
-                let conn_id = next_id;
-                next_id += 1;
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, addr)) => {
+                        log::info!("New WebSocket connection from {}", addr);
+                        let conn_id = next_id;
+                        next_id += 1;
 
-                let pool_clone = pool.clone();
-                let handle_clone = app_handle.clone();
-                let db_clone = db.clone();
+                        let pool_clone = pool.clone();
+                        let handle_clone = app_handle.clone();
+                        let db_clone = db.clone();
 
-                tauri::async_runtime::spawn(async move {
-                    handle_connection(conn_id, stream, pool_clone, handle_clone, db_clone).await;
-                });
+                        tauri::async_runtime::spawn(async move {
+                            handle_connection(conn_id, stream, pool_clone, handle_clone, db_clone).await;
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("WebSocket accept error: {}", e);
+                    }
+                }
             }
-            Err(e) => {
-                log::error!("WebSocket accept error: {}", e);
+            _ = shutdown_rx.changed() => {
+                log::info!("WebSocket server shutting down");
+                // Send close frame to all connected clients
+                let pool_read = pool.read().await;
+                for (_, sender) in pool_read.iter() {
+                    let _ = sender.send(Message::Close(None));
+                }
+                break;
             }
         }
     }
