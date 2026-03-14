@@ -12,13 +12,11 @@ interface Props {
 }
 
 export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
-  const { tasks, loadTasks, createTask, loading, error } = useTaskStore();
+  const { tasks, createTask, loading, error } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
 
-  // Load tasks when repo changes
-  useEffect(() => {
-    if (repoId) loadTasks(repoId);
-  }, [repoId, loadTasks]);
+  // Note: loadTasks is called in App.tsx to support the tab badge.
+  // No duplicate load here.
 
   // Watch session status changes → sync running→review
   // Only check sessions linked to running tasks to avoid O(N*M) scan

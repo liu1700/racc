@@ -111,18 +111,17 @@ function App() {
             </button>
           </div>
 
-          {/* Content */}
-          {centerTab === "tasks" ? (
+          {/* Content — Terminal stays mounted to preserve xterm.js state */}
+          {centerTab === "tasks" && (
             <TaskBoard
               repoId={activeRepoId}
               onSwitchToTerminal={() => setCenterTab("terminal")}
             />
-          ) : (
-            <>
-              <Terminal />
-              <FileViewer />
-            </>
           )}
+          <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
+            <Terminal />
+            <FileViewer />
+          </div>
         </main>
 
         {/* Right Panel — Assistant Chat (~30%) */}
