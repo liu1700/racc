@@ -103,7 +103,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     if (task) {
       const { writePty } = await import("../services/ptyManager");
       setTimeout(() => {
-        writePty(newSession.id, task.description + "\n");
+        writePty(newSession.id, task.description + "\r");
       }, 2000);
     }
   },
