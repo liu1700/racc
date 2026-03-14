@@ -68,19 +68,15 @@ async fn broadcast_events(
     loop {
         match rx.recv().await {
             Ok(event) => {
-                let json = match serde_json::to_string(&event) {
+                // RaccEvent uses #[serde(tag = "event", content = "data")],
+                // so serializing directly produces {"event":"...", "data":{...}}
+                let msg_text = match serde_json::to_string(&event) {
                     Ok(j) => j,
                     Err(e) => {
                         log::error!("Failed to serialize event: {}", e);
                         continue;
                     }
                 };
-                // Wrap in push event envelope
-                let push = json!({
-                    "event": extract_event_type(&event),
-                    "data": serde_json::from_str::<Value>(&json).unwrap_or(Value::Null),
-                });
-                let msg_text = push.to_string();
                 let clients = pool.read().await;
                 for (id, sender) in clients.iter() {
                     if let Err(e) = sender.send(Message::text(msg_text.clone())) {
@@ -96,14 +92,6 @@ async fn broadcast_events(
                 break;
             }
         }
-    }
-}
-
-fn extract_event_type(event: &RaccEvent) -> &'static str {
-    match event {
-        RaccEvent::SessionStatusChanged { .. } => "session_status_changed",
-        RaccEvent::TaskStatusChanged { .. } => "task_status_changed",
-        RaccEvent::TaskDeleted { .. } => "task_deleted",
     }
 }
 
@@ -156,6 +144,7 @@ pub async fn start(app_handle: AppHandle, db: Db, mut shutdown_rx: tokio::sync::
                 }
             }
             _ = shutdown_rx.changed() => {
+                if !*shutdown_rx.borrow() { continue; }
                 log::info!("WebSocket server shutting down");
                 // Send close frame to all connected clients
                 let pool_read = pool.read().await;
