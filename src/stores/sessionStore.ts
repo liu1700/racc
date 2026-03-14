@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
@@ -87,6 +88,45 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     // Kill all PTYs on app close to avoid orphaned processes
     window.addEventListener("beforeunload", () => killAll());
+
+    // Listen for remotely-created sessions (from WebSocket API)
+    listen<{
+      session_id: number;
+      repo_id: number;
+      branch: string | null;
+      worktree_path: string;
+      agent: string;
+      source: string;
+      reattach?: boolean;
+    }>('racc://session-created', async (event) => {
+      const { session_id, worktree_path, source, reattach } = event.payload;
+      if (source !== 'remote') return;
+
+      // Refresh session list from DB
+      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      set({ repos });
+
+      // Spawn PTY for the remotely-created session
+      const agentCmd = reattach
+        ? 'claude --continue --dangerously-skip-permissions'
+        : 'claude --dangerously-skip-permissions';
+      spawnPty(session_id, worktree_path, 80, 24, agentCmd);
+      startTracking(session_id);
+    });
+
+    // Listen for remotely-stopped sessions
+    listen<{
+      session_id: number;
+      source: string;
+    }>('racc://session-stopped', async (event) => {
+      const { session_id, source } = event.payload;
+      if (source !== 'remote') return;
+
+      stopTracking(session_id);
+      killPty(session_id);
+      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      set({ repos });
+    });
   },
 
   importRepo: async (path) => {

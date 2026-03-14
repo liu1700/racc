@@ -48,7 +48,6 @@ export function Sidebar({ onNewTask }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
-  const stopSession = useSessionStore((s) => s.stopSession);
   const reattachSession = useSessionStore((s) => s.reattachSession);
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
