@@ -26,13 +26,16 @@ User clicks "Import Repo"
 
 ## Session Creation Flow
 
-Within an imported repo, users launch agent sessions via the NewAgentDialog:
+Within an imported repo, users create tasks and launch agent sessions through the Task Board. Clicking [+] on a repo in the sidebar switches to the Task Board with the new-task input ready. Sessions are created when a task is "fired":
 
 ```
-User clicks [+] on a repo
+User clicks [+] on a repo → Task Board opens with input focused
         |
         v
-[1] Configure session
+[1] Create task (type description, press Enter)
+        |
+        v
+[2] Fire task → Configure session
     - Select agent (currently Claude Code)
     - Skip permissions checkbox (default: on) — appends --dangerously-skip-permissions
     - Choose: "Run in repo" or "Create worktree"

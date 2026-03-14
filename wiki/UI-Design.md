@@ -82,7 +82,7 @@ Status uses a **single preattentive channel** (color hue) so problems pop out au
 - **Status sorting (implemented):** Within each repo, sessions are sorted by status priority: error (0) → disconnected (1) → running (2) → completed (3) — so "needs attention" items always appear at the top
 - **Running status pulse (implemented):** Running session dots use a subtle opacity animation (2s cycle) for ambient activity indication without distraction
 - **Hover transitions (implemented):** All interactive elements use `transition-colors duration-150` for smooth visual feedback
-- Quick actions per repo: [+] Launch new session, [×] Remove repo
+- Quick actions per repo: [+] New task (switches to Task Board with input ready), [×] Remove repo
 - Quick actions per session:
   - Running: [■] Stop session
   - Not running: [▶] Reattach session (re-spawn PTY with `claude --continue`), [×] Remove session (with confirmation dialog; worktree sessions offer optional `git worktree remove`)

@@ -40,7 +40,11 @@ function sortByStatus(sessions: Session[]): Session[] {
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  onNewTask?: () => void;
+}
+
+export function Sidebar({ onNewTask }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
@@ -164,9 +168,9 @@ export function Sidebar() {
                 {repo.name}
               </span>
               <button
-                onClick={() => setAgentDialogRepoId(repo.id)}
+                onClick={() => onNewTask?.()}
                 className="ml-1 hidden rounded px-1 text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
-                title="Launch agent"
+                title="New task"
               >
                 +
               </button>
