@@ -1,10 +1,12 @@
 mod commands;
+mod events;
 
 use std::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let db = commands::db::init_db().expect("Failed to initialize database");
+    let (event_tx, _event_rx) = events::create_event_bus();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -12,6 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_pty::init())
         .manage(Mutex::new(db))
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
+        .manage(event_tx)
         .setup(|app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
