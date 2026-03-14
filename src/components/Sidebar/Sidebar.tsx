@@ -146,18 +146,6 @@ export function Sidebar() {
                     <span className="text-[10px] tabular-nums text-zinc-600">
                       {formatElapsed(session.created_at)}
                     </span>
-                    {session.status === "Running" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          stopSession(session.id);
-                        }}
-                        className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
-                        title="Stop session"
-                      >
-                        ■
-                      </button>
-                    )}
                     {session.status !== "Running" && (
                       <button
                         onClick={(e) => {
