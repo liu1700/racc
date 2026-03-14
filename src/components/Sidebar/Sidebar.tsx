@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { open as openShell } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../stores/sessionStore";
-import { NewAgentDialog } from "./NewAgentDialog";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import { ResetDbDialog } from "./ResetDbDialog";
 import type { Session, SessionStatus } from "../../types/session";
@@ -48,14 +47,12 @@ export function Sidebar({ onNewTask }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
-  const stopSession = useSessionStore((s) => s.stopSession);
   const reattachSession = useSessionStore((s) => s.reattachSession);
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
   const importRepo = useSessionStore((s) => s.importRepo);
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
-  const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
@@ -269,14 +266,6 @@ export function Sidebar({ onNewTask }: SidebarProps) {
           Reset Database
         </button>
       </div>
-
-      {agentDialogRepoId !== null && (
-        <NewAgentDialog
-          repoId={agentDialogRepoId}
-          open={true}
-          onClose={() => setAgentDialogRepoId(null)}
-        />
-      )}
 
       {removeDialogSession !== null && (
         <RemoveSessionDialog
