@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
 use tauri::Manager;
@@ -151,7 +151,7 @@ fn resolve_session_path(conn: &Connection, session_id: i64) -> Result<String, St
 
 #[tauri::command]
 pub async fn get_assistant_config(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<AssistantConfig, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
 
@@ -173,7 +173,7 @@ pub async fn get_assistant_config(
 
 #[tauri::command]
 pub async fn set_assistant_config(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     provider: String,
     api_key: String,
     model: String,
@@ -199,7 +199,7 @@ pub async fn set_assistant_config(
 
 #[tauri::command]
 pub async fn save_assistant_message(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     role: String,
     content: String,
     tool_name: Option<String>,
@@ -234,7 +234,7 @@ pub async fn save_assistant_message(
 
 #[tauri::command]
 pub async fn get_assistant_messages(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     limit: i64,
 ) -> Result<Vec<AssistantMessage>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
@@ -269,7 +269,7 @@ pub async fn get_assistant_messages(
 
 #[tauri::command]
 pub async fn get_all_sessions_for_assistant(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<Vec<SessionInfo>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
 
@@ -323,7 +323,7 @@ pub async fn get_all_sessions_for_assistant(
 
 #[tauri::command]
 pub async fn get_session_diff_for_assistant(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<String, String> {
     let path = {
@@ -343,7 +343,7 @@ pub async fn get_session_diff_for_assistant(
 
 #[tauri::command]
 pub async fn get_session_costs_for_assistant(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<String, String> {
     let path = {
@@ -358,7 +358,7 @@ pub async fn get_session_costs_for_assistant(
 
 #[tauri::command]
 pub async fn read_file_for_assistant(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: Option<i64>,
     repo_id: Option<i64>,
     file_path: String,
@@ -376,7 +376,7 @@ pub async fn read_file_for_assistant(
 pub async fn assistant_send_message(
     app: tauri::AppHandle,
     sidecar: tauri::State<'_, tokio::sync::Mutex<SidecarState>>,
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     content: String,
 ) -> Result<(), String> {
     let mut sidecar_state = sidecar.lock().await;
@@ -465,7 +465,7 @@ pub async fn assistant_send_message(
 #[tauri::command]
 pub async fn assistant_read_response(
     sidecar: tauri::State<'_, tokio::sync::Mutex<SidecarState>>,
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<String, String> {
     let mut sidecar_state = sidecar.lock().await;
 

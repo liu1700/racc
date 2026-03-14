@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 pub fn db_path() -> Result<PathBuf, String> {
@@ -102,7 +102,7 @@ pub fn init_db() -> Result<Connection, String> {
 }
 
 #[tauri::command]
-pub fn reset_db(db: State<'_, Mutex<Connection>>) -> Result<(), String> {
+pub fn reset_db(db: State<'_, Arc<Mutex<Connection>>>) -> Result<(), String> {
     let path = db_path()?;
 
     // Close current connection by replacing it with a fresh one

@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 // --- Types ---
 
@@ -125,7 +125,7 @@ fn get_current_branch(repo_path: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn import_repo(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     path: String,
 ) -> Result<Repo, String> {
     let git_dir = std::path::Path::new(&path).join(".git");
@@ -170,7 +170,7 @@ pub async fn import_repo(
 
 #[tauri::command]
 pub async fn list_repos(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
     query_repos_with_sessions(&conn)
@@ -178,7 +178,7 @@ pub async fn list_repos(
 
 #[tauri::command]
 pub async fn remove_repo(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     repo_id: i64,
 ) -> Result<(), String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
@@ -203,7 +203,7 @@ pub async fn remove_repo(
 
 #[tauri::command]
 pub async fn create_session(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     repo_id: i64,
     use_worktree: bool,
     branch: Option<String>,
@@ -296,7 +296,7 @@ pub async fn create_session(
 
 #[tauri::command]
 pub async fn stop_session(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<(), String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
@@ -311,7 +311,7 @@ pub async fn stop_session(
 
 #[tauri::command]
 pub async fn remove_session(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
     delete_worktree: bool,
 ) -> Result<(), String> {
@@ -368,7 +368,7 @@ pub async fn remove_session(
 
 #[tauri::command]
 pub async fn reattach_session(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<Session, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
@@ -421,7 +421,7 @@ pub async fn reattach_session(
 
 #[tauri::command]
 pub async fn reconcile_sessions(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
 
@@ -439,7 +439,7 @@ pub async fn reconcile_sessions(
 
 #[tauri::command]
 pub async fn update_session_pr_url(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
     pr_url: String,
 ) -> Result<(), String> {
