@@ -55,6 +55,7 @@ pub fn run() {
             commands::git::delete_worktree,
             commands::git::get_diff,
             commands::cost::get_project_costs,
+            commands::cost::get_global_costs,
             commands::assistant::get_assistant_config,
             commands::assistant::set_assistant_config,
             commands::assistant::save_assistant_message,

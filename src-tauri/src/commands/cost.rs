@@ -134,7 +134,7 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-// --- Tauri command ---
+// --- Tauri commands ---
 
 #[tauri::command]
 pub async fn get_project_costs(worktree_path: String) -> Result<ProjectCosts, String> {
@@ -181,6 +181,67 @@ pub async fn get_project_costs(worktree_path: String) -> Result<ProjectCosts, St
 
     Ok(ProjectCosts {
         sessions,
+        total_input_tokens: total_input,
+        total_output_tokens: total_output,
+        total_cache_creation_tokens: total_cache_creation,
+        total_cache_read_tokens: total_cache_read,
+        week_input_tokens: week_input,
+        week_output_tokens: week_output,
+    })
+}
+
+#[tauri::command]
+pub async fn get_global_costs() -> Result<ProjectCosts, String> {
+    let home = home_dir().ok_or("Could not find home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+
+    if !projects_dir.exists() {
+        return Ok(ProjectCosts::default());
+    }
+
+    let mut all_sessions: Vec<SessionCost> = Vec::new();
+
+    // Iterate over all project directories
+    if let Ok(project_entries) = fs::read_dir(&projects_dir) {
+        for project_entry in project_entries.flatten() {
+            let project_path = project_entry.path();
+            if !project_path.is_dir() {
+                continue;
+            }
+            if let Ok(entries) = fs::read_dir(&project_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                        all_sessions.push(parse_jsonl_file(&path));
+                    }
+                }
+            }
+        }
+    }
+
+    let total_input: u64 = all_sessions.iter().map(|s| s.input_tokens).sum();
+    let total_output: u64 = all_sessions.iter().map(|s| s.output_tokens).sum();
+    let total_cache_creation: u64 = all_sessions.iter().map(|s| s.cache_creation_tokens).sum();
+    let total_cache_read: u64 = all_sessions.iter().map(|s| s.cache_read_tokens).sum();
+
+    let week_ago = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_secs()
+        .saturating_sub(7 * 24 * 3600);
+    let week_input: u64 = all_sessions
+        .iter()
+        .filter(|s| s.modified_at >= week_ago)
+        .map(|s| s.input_tokens)
+        .sum();
+    let week_output: u64 = all_sessions
+        .iter()
+        .filter(|s| s.modified_at >= week_ago)
+        .map(|s| s.output_tokens)
+        .sum();
+
+    Ok(ProjectCosts {
+        sessions: all_sessions,
         total_input_tokens: total_input,
         total_output_tokens: total_output,
         total_cache_creation_tokens: total_cache_creation,

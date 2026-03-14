@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useShallow } from "zustand/react/shallow";
 import type { SessionStatus } from "../../types/session";
 import type { ProjectCosts } from "../../types/cost";
 
@@ -15,24 +14,15 @@ const COST_POLL_INTERVAL_MS = 10_000;
 
 export function StatusBar() {
   const repos = useSessionStore((s) => s.repos);
-  const active = useSessionStore(useShallow((s) => s.getActiveSession()));
-  const worktreePath = active?.session.worktree_path ?? active?.repo.path;
   const allSessions = repos.flatMap((r) => r.sessions);
   const [costs, setCosts] = useState<ProjectCosts | null>(null);
 
   useEffect(() => {
-    if (!worktreePath) {
-      setCosts(null);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchCosts = async () => {
       try {
-        const data = await invoke<ProjectCosts>("get_project_costs", {
-          worktreePath,
-        });
+        const data = await invoke<ProjectCosts>("get_global_costs");
         if (!cancelled) setCosts(data);
       } catch {
         // Silent fail — cost tracking is non-critical
@@ -45,7 +35,7 @@ export function StatusBar() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [worktreePath]);
+  }, []);
 
   const counts: Record<SessionStatus, number> = {
     Running: 0,
@@ -96,10 +86,6 @@ export function StatusBar() {
             {formatTokens((costs?.week_input_tokens ?? 0) + (costs?.week_output_tokens ?? 0))}
           </span>
         </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="h-1.5 w-1.5 rounded-full bg-status-running" />
-        <span>Connected</span>
       </div>
     </footer>
   );
