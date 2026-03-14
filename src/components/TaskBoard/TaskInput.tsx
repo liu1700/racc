@@ -15,7 +15,7 @@ export function TaskInput({ value, onChange, onSubmit, onCancel }: Props) {
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && value.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && value.trim()) {
       e.preventDefault();
       onSubmit(value.trim());
     }

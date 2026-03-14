@@ -66,7 +66,7 @@ export function CommandPalette() {
       return;
     }
 
-    if (e.key === "Enter" && searchResults.length > 0) {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing && searchResults.length > 0) {
       e.preventDefault();
       selectFile(searchResults[selectedIndex].relative_path);
       return;
