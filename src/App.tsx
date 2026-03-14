@@ -75,7 +75,7 @@ function App() {
           setCenterTab("tasks");
           useTaskStore.getState().setDraftInputOpen(true);
           useTaskStore.getState().setDraftValue("");
-        }} />
+        }} onSessionSelect={() => setCenterTab("terminal")} />
 
         {/* Center — Tasks / Terminal (~55%) */}
         <main className="relative flex flex-1 flex-col border-x border-surface-3">
