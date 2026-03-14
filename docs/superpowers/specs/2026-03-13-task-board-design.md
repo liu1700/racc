@@ -205,6 +205,12 @@ The center panel gets a tab bar: `Tasks | Terminal`
 | **Information scent** (Pirolli & Card) | Running cards show real-time agent activity — judge progress without context switch |
 | **Calm technology** (Weiser & Brown) | Board provides ambient awareness; terminal provides deep focus when needed |
 
+## Implementation Notes
+
+- **Agent/skip-permissions are frontend concerns.** The existing `create_session` Rust command only accepts `(repo_id, use_worktree, branch)`. Agent selection and `--dangerously-skip-permissions` are handled in `sessionStore.ts` when constructing the PTY command. `fire_task` on the Rust side should call `create_session` internally; the frontend `FireTaskDialog` handles PTY command construction, same as `NewAgentDialog`.
+- **Sending task description to PTY.** After spawning the PTY, the frontend writes the task description as the initial prompt via `ptyManager.write(sessionId, description)`. This is a new behavior — current sessions wait for manual user input.
+- **Session status casing.** The Rust backend writes `"Completed"` (capitalized). The taskStore watcher that transitions tasks from running→review must match against `"Completed"`, not `"completed"`.
+
 ## Out of Scope
 
 - Task priority / ordering
