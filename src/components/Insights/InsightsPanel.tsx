@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useInsightsStore } from "../../stores/insightsStore";
+import { useAssistantStore } from "../../stores/assistantStore";
 import { InsightCard } from "./InsightCard";
 import { AssistantSetup } from "../Assistant/AssistantSetup";
 
@@ -28,14 +29,20 @@ export function InsightsPanel() {
   const toggleExpand = useInsightsStore((s) => s.toggleExpand);
   const dismissInsight = useInsightsStore((s) => s.dismissInsight);
   const applyInsight = useInsightsStore((s) => s.applyInsight);
+  const config = useAssistantStore((s) => s.config);
+  const loadConfig = useAssistantStore((s) => s.loadConfig);
   const [showSettings, setShowSettings] = useState(false);
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
     initialize();
-  }, [initialize]);
+    loadConfig().then(() => setConfigLoaded(true));
+  }, [initialize, loadConfig]);
 
-  if (showSettings) {
-    return <AssistantSetup onBack={() => setShowSettings(false)} />;
+  const needsSetup = configLoaded && (!config || !config.api_key);
+
+  if (showSettings || needsSetup) {
+    return <AssistantSetup onBack={needsSetup ? undefined : () => setShowSettings(false)} />;
   }
 
   return (
