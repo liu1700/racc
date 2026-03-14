@@ -42,6 +42,7 @@ pub struct Session {
     pub status: SessionStatus,
     pub created_at: String,
     pub updated_at: String,
+    pub pr_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,7 +73,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
 
     let mut session_stmt = conn
         .prepare(
-            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
+            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at, pr_url
              FROM sessions WHERE repo_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -91,6 +92,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
                     status: SessionStatus::from_str(&status_str),
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    pr_url: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -288,6 +290,7 @@ pub async fn create_session(
         status: SessionStatus::Running,
         created_at,
         updated_at,
+        pr_url: None,
     })
 }
 
@@ -390,11 +393,11 @@ pub async fn reattach_session(
     )
     .map_err(|e| e.to_string())?;
 
-    let (agent, branch, created_at, updated_at): (String, Option<String>, String, String) = conn
+    let (agent, branch, created_at, updated_at, pr_url): (String, Option<String>, String, String, Option<String>) = conn
         .query_row(
-            "SELECT agent, branch, created_at, updated_at FROM sessions WHERE id = ?1",
+            "SELECT agent, branch, created_at, updated_at, pr_url FROM sessions WHERE id = ?1",
             [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|e| e.to_string())?;
 
@@ -407,6 +410,7 @@ pub async fn reattach_session(
         status: SessionStatus::Running,
         created_at,
         updated_at,
+        pr_url,
     })
 }
 
@@ -426,4 +430,19 @@ pub async fn reconcile_sessions(
     .map_err(|e| e.to_string())?;
 
     query_repos_with_sessions(&conn)
+}
+
+#[tauri::command]
+pub async fn update_session_pr_url(
+    db: tauri::State<'_, Mutex<Connection>>,
+    session_id: i64,
+    pr_url: String,
+) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE sessions SET pr_url = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![pr_url, session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }

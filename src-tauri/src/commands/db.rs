@@ -158,6 +158,18 @@ pub fn init_db() -> Result<Connection, String> {
         .map_err(|e| format!("Migration v4 failed: {e}"))?;
     }
 
+    if version < 5 {
+        conn.execute_batch(
+            "
+        BEGIN;
+        ALTER TABLE sessions ADD COLUMN pr_url TEXT;
+        PRAGMA user_version = 5;
+        COMMIT;
+        ",
+        )
+        .map_err(|e| format!("Migration v5 failed: {e}"))?;
+    }
+
     Ok(conn)
 }
 
