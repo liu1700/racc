@@ -65,12 +65,18 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onKeyDown={handleKeyDown}
+      onClick={onClose}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="fire-task-title"
     >
       <form
         onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
         className="w-80 rounded-lg border border-surface-3 bg-surface-1 p-5 shadow-2xl"
       >
-        <h2 className="mb-4 text-sm font-semibold text-zinc-200">
+        <h2 id="fire-task-title" className="mb-4 text-sm font-semibold text-zinc-200">
           Fire Task
         </h2>
 

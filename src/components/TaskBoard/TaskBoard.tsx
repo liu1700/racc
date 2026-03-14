@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
-  const { tasks, loadTasks, createTask } = useTaskStore();
+  const { tasks, loadTasks, createTask, loading, error } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
 
   // Load tasks when repo changes
@@ -21,11 +21,21 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
   }, [repoId, loadTasks]);
 
   // Watch session status changes → sync running→review
+  // Only check sessions linked to running tasks to avoid O(N*M) scan
   useEffect(() => {
-    const syncTaskWithSession = useTaskStore.getState().syncTaskWithSession;
+    const { syncTaskWithSession, tasks: currentTasks } = useTaskStore.getState();
+    const runningSessionIds = new Set(
+      currentTasks
+        .filter((t) => t.status === "running" && t.session_id)
+        .map((t) => t.session_id!)
+    );
+    if (runningSessionIds.size === 0) return;
+
     for (const repo of repos) {
       for (const session of repo.sessions) {
-        syncTaskWithSession(session.id, session.status);
+        if (runningSessionIds.has(session.id)) {
+          syncTaskWithSession(session.id, session.status);
+        }
       }
     }
   }, [repos]);
@@ -34,6 +44,22 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-zinc-600">
         Select a repo to view tasks
+      </div>
+    );
+  }
+
+  if (loading && tasks.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+        Loading tasks...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-red-400">
+        {error}
       </div>
     );
   }
