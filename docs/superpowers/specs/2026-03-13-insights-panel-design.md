@@ -69,7 +69,7 @@ Six insight types, ordered by detection complexity:
 **Source: Enhanced `ptyOutputParser`**
 
 The existing parser already detects Read/Edit/Write/Bash/Permission patterns. We extend it to also capture:
-- **User prompts**: Extract text after Claude Code's input prompt markers (`❯`, `>`, or the human turn delimiter). These are already echoed in PTY output as complete lines, avoiding the raw keystroke buffering problem.
+- **User prompts**: Extract text after Claude Code's input prompt markers (`❯`, `>`, or the human turn delimiter). Strategy: the parser accumulates a line buffer from PTY output chunks. When a newline arrives after a recognized prompt marker, the buffered line is emitted as a complete `user_input` event. Individual keystroke echoes (which arrive as single characters without newlines) are accumulated but not emitted until the line is complete. This avoids the raw keystroke buffering problem while handling PTY chunk boundaries correctly.
 - **Session start sequences**: The first N user inputs after a session begins, tagged with ordinal position.
 
 **New service: `eventCapture.ts`**
@@ -83,14 +83,14 @@ Subscribes to ptyOutputParser callbacks and sessionStore changes. Normalizes raw
 ```typescript
 interface SessionEvent {
   id?: number;              // assigned by SQLite
-  sessionId: string;
+  sessionId: number;        // matches sessions.id (INTEGER) in existing schema
   eventType: 'user_input' | 'permission_request' | 'file_operation' | 'cost_update' | 'session_meta';
   payload: Record<string, unknown>;
   // payload examples:
   //   user_input:         { text: "use TDD approach", position: 3 }
   //   permission_request: { permissionType: "bash", count: 1 }
   //   file_operation:     { operation: "edit", filePath: "src/utils/api.ts" }
-  //   cost_update:        { cost: 0.42, windowMinutes: 10 }
+  //   cost_update:        { totalTokens: 52000, estimatedCostUsd: 0.42 }
   //   session_meta:       { branch: "feat/auth", agent: "claude", description: "..." }
   createdAt: number;        // Unix timestamp ms
 }
@@ -103,10 +103,10 @@ interface SessionEvent {
 ```sql
 CREATE TABLE session_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL,
   payload TEXT NOT NULL,  -- JSON
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at INTEGER NOT NULL  -- Unix timestamp ms (matches frontend createdAt)
 );
 CREATE INDEX idx_events_session ON session_events(session_id);
 CREATE INDEX idx_events_type ON session_events(event_type);
@@ -122,11 +122,15 @@ CREATE TABLE insights (
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
   detail_json TEXT NOT NULL,   -- full evidence + suggested action, JSON
+  fingerprint TEXT NOT NULL,   -- hash of evidence for deduplication (e.g. sorted session IDs + matched text)
   status TEXT NOT NULL DEFAULT 'active',  -- active | applied | dismissed | expired
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  resolved_at TIMESTAMP
+  created_at INTEGER NOT NULL,  -- Unix timestamp ms
+  resolved_at INTEGER           -- Unix timestamp ms, nullable
 );
+CREATE UNIQUE INDEX idx_insights_fingerprint ON insights(fingerprint) WHERE status = 'active';
 ```
+
+The `fingerprint` column prevents duplicate insights across batch runs. Before emitting, the analysis engine computes a fingerprint from the evidence (e.g., sorted session IDs + normalized matched text hash) and checks for an existing active/dismissed insight with the same fingerprint. The unique partial index on active status enforces this at the DB level.
 
 ### Analysis Engine
 
@@ -136,17 +140,17 @@ These run on every relevant event, no batch delay:
 
 1. **File Conflict (#5)**: Maintain `Map<filePath, Set<sessionId>>`. On each `file_operation` event with operation=edit|write, update the map. If a file has >1 session, emit insight. Clear entries when sessions complete.
 
-2. **Cost Anomaly (#4)**: On each `cost_update`, compare current 10-min window cost against the session's running average. If current > 3× average and absolute value > $0.50 (to avoid noise on tiny amounts), emit insight.
+2. **Cost Anomaly (#4)**: The frontend polls cost data via `invoke('get_project_costs')` every 60 seconds (this command already reads Claude Code's JSONL usage files from `~/.claude/usage/`). It converts raw token counts to estimated USD using per-model pricing constants (stored in a frontend config map). Each poll result is compared against the previous poll to compute a delta cost for the interval. The `eventCapture` service emits a `cost_update` event with `{ totalTokens, estimatedCostUsd }`. The real-time rule maintains a rolling window of the last 10 cost deltas per session. If the latest delta > 3× the rolling average and absolute value > $0.50, emit insight.
 
 3. **Repeated Permission (#3)**: Per-session counter `Map<sessionId, Map<permissionType, number>>`. On each `permission_request`, increment. If count ≥ 3 for same type in same session, emit insight.
 
-**Rust batch analysis (triggered every 5 minutes + on session end):**
+**Rust batch analysis (scheduling: frontend calls `invoke('run_batch_analysis')` via `setInterval` every 5 minutes, and also on session end via sessionStore subscription):**
 
-4. **Repeated Prompt (#1)**: Query all `user_input` events from the last 7 days. Normalize (lowercase, trim, remove punctuation). Group by normalized text using Levenshtein distance with threshold 0.7. If a cluster has entries from ≥3 distinct sessions, emit insight. Call LLM to generate a suggested CLAUDE.md entry from the cluster.
+4. **Repeated Prompt (#1)**: Query all `user_input` events from the last 7 days. Normalize (lowercase, trim, remove punctuation). Group by normalized text using normalized Levenshtein similarity ≥ 0.7 (where similarity = 1 − edit_distance / max(len_a, len_b)). Uses the `strsim` Rust crate for string distance computation. If a cluster has entries from ≥3 distinct sessions, compute a fingerprint (sorted session IDs + normalized text hash), check for existing active insight with same fingerprint, and emit insight only if new. Call LLM to generate a suggested CLAUDE.md entry from the cluster.
 
-5. **Startup Pattern (#2)**: For each session, take the first 5 `user_input` events (position ≤ 5). Compare sequences across sessions using Longest Common Subsequence. If ≥3 sessions share ≥3 commands in common, emit insight.
+5. **Startup Pattern (#2)**: For each session, take the first 5 `user_input` events (position ≤ 5). Compare sequences across sessions using Longest Common Subsequence (also via `strsim` crate). If ≥3 sessions share ≥3 commands in common, emit insight.
 
-6. **Similar Sessions (#8)**: For active sessions, compare pairwise:
+6. **Similar Sessions (#6)**: For active sessions, compare pairwise:
    - Branch name similarity (edit distance on branch name)
    - File set overlap (Jaccard index on files touched)
    - Initial prompt similarity (edit distance on first user_input)
@@ -158,19 +162,24 @@ These run on every relevant event, no batch delay:
 
 ```rust
 #[tauri::command]
-fn record_session_events(db: State<Database>, events: Vec<SessionEvent>) -> Result<(), String>
+fn record_session_events(db: State<Mutex<Connection>>, events: Vec<SessionEvent>) -> Result<(), String>
 
 #[tauri::command]
-fn get_insights(db: State<Database>, status: Option<String>) -> Result<Vec<Insight>, String>
+fn get_insights(db: State<Mutex<Connection>>, status: Option<String>) -> Result<Vec<Insight>, String>
 
 #[tauri::command]
-fn update_insight_status(db: State<Database>, id: i64, status: String) -> Result<(), String>
+fn update_insight_status(db: State<Mutex<Connection>>, id: i64, status: String) -> Result<(), String>
 
 #[tauri::command]
-fn run_batch_analysis(app: AppHandle, db: State<Database>) -> Result<(), String>
+fn run_batch_analysis(app: AppHandle, db: State<Mutex<Connection>>) -> Result<(), String>
 
 #[tauri::command]
-fn generate_insight_suggestion(config: State<AssistantConfig>, insight_id: i64, prompt_cluster: Vec<String>) -> Result<String, String>
+fn generate_insight_suggestion(db: State<Mutex<Connection>>, insight_id: i64, prompt_cluster: Vec<String>) -> Result<String, String>
+// Reads API config from assistant_config table in SQLite, same as existing assistant commands
+
+#[tauri::command]
+fn append_to_file(path: String, content: String) -> Result<(), String>
+// Appends content to a file (used by "Add to CLAUDE.md" action). Creates file if it doesn't exist.
 ```
 
 ### LLM Usage
@@ -201,9 +210,11 @@ Uses the user's existing assistant API config (provider + API key + model). Fall
 | File | Change |
 |------|--------|
 | `src/App.tsx` | Replace `<AssistantPanel />` with `<InsightsPanel />` |
-| `src/services/ptyOutputParser.ts` | Add user prompt extraction pattern |
+| `src/services/ptyOutputParser.ts` | Add user prompt extraction pattern + line buffer accumulation |
+| `src/stores/fileViewerStore.ts` | Add `openConflictView(filePath, diffs)` method for cross-session diff display |
 | `src-tauri/src/commands/db.rs` | Add migration v4 (session_events + insights tables) |
 | `src-tauri/src/lib.rs` | Register new commands |
+| `src-tauri/Cargo.toml` | Add `strsim` crate dependency for string distance algorithms |
 
 ### Files to Delete (or keep for reference)
 
@@ -281,10 +292,10 @@ Note: `AssistantSetup.tsx` should be preserved — the user still needs to confi
 | Similar Sessions | `Switch to session` | `Dismiss` |
 
 **Action implementations:**
-- `Add to CLAUDE.md`: `invoke('append_to_file', { path: "<repo>/CLAUDE.md", content })` — appends the suggestion text
+- `Add to CLAUDE.md`: `invoke('append_to_file', { path: "<repo>/CLAUDE.md", content })` — new Rust command (see New Rust Commands section), appends the suggestion text with a newline separator
 - `Copy allowlist rule`: `navigator.clipboard.writeText(rule)`
 - `Switch to session`: `sessionStore.setActiveSession(sessionId)`
-- `View Diff`: `fileViewerStore.openDiff(filePath, sessionA, sessionB)`
+- `View Diff`: Calls the existing `invoke('get_diff', { worktreePath })` Rust command for each involved session's worktree, then opens the `FileViewer` overlay with the diff content. Note: the current `get_diff` returns a git diff string per worktree. For cross-session conflicts, we show each session's diff side by side in the FileViewer (requires extending `fileViewerStore` with a `openConflictView(filePath, diffs: {sessionId, diff}[])` method).
 - `Dismiss`: `invoke('update_insight_status', { id, status: 'dismissed' })`
 
 ## Empty & Edge States
