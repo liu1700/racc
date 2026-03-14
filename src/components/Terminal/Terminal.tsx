@@ -91,8 +91,25 @@ export function Terminal() {
         },
       });
 
+      // Debounce fitAddon.fit() to prevent rapid resize events
+      // from resetting the terminal scroll position (especially in Tauri WebView)
+      let rafId: number | null = null;
+      let lastCols = xterm.cols;
+      let lastRows = xterm.rows;
+
       const resizeObserver = new ResizeObserver(() => {
-        if (!disposed) fitAddon.fit();
+        if (disposed || !xterm) return;
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (disposed || !xterm) return;
+          fitAddon.fit();
+          // Only apply resize if dimensions actually changed
+          if (xterm.cols !== lastCols || xterm.rows !== lastRows) {
+            lastCols = xterm.cols;
+            lastRows = xterm.rows;
+          }
+        });
       });
       resizeObserver.observe(el);
 
@@ -101,6 +118,7 @@ export function Terminal() {
 
       return () => {
         resizeObserver.disconnect();
+        if (rafId !== null) cancelAnimationFrame(rafId);
       };
     };
 
@@ -142,7 +160,7 @@ export function Terminal() {
       <div
         ref={terminalRef}
         onClick={handleClick}
-        className="h-full bg-surface-1 p-1"
+        className="h-full overflow-hidden bg-surface-1 p-1"
         style={{ visibility: sessionId ? "visible" : "hidden" }}
       />
     </div>

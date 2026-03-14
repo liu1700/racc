@@ -22,6 +22,8 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
       for (const chunk of buffer) {
         terminal.write(chunk);
       }
+      // Scroll to bottom after all buffered data is processed
+      terminal.write('', () => terminal.scrollToBottom());
       prevSessionRef.current = sessionId;
     }
 
