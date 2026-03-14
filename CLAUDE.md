@@ -43,7 +43,7 @@ No test framework is configured yet.
 
 ## Key Conventions
 
-- **Session = PTY process + git worktree.** Each session spawns a native PTY via `tauri-plugin-pty`.
+- **Session = PTY process + git worktree.** Sessions are created through tasks (fireTask), not directly. Each session spawns a native PTY via `tauri-plugin-pty`.
 - **Agent-agnostic:** Communication via native PTY read/write (works with any terminal agent)
 - **Tailwind custom tokens:** `surface-{0,1,2,3}` for backgrounds, `accent` for interactive elements, `status-{running,waiting,paused,error,disconnected,completed}` for session states — defined in `tailwind.config.ts`
 - **Path alias:** `@/*` maps to `src/*` in TypeScript (tsconfig only, not Vite — use relative imports)

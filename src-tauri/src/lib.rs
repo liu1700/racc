@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_pty::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(db_arc.clone())
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
         .manage(event_tx)

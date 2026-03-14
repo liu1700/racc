@@ -3,6 +3,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { useShallow } from "zustand/react/shallow";
 import { usePtyBridge } from "../../hooks/usePtyBridge";
+import { TaskOverlay } from "./TaskOverlay";
 import type { Terminal as XTermType } from "@xterm/xterm";
 
 export function Terminal() {
@@ -159,12 +160,13 @@ export function Terminal() {
 
   return (
     <div className="relative flex-1" style={{ minHeight: 0 }}>
+      {sessionId && <TaskOverlay />}
       {!sessionId && (
         <div className="absolute inset-0 flex items-center justify-center text-zinc-500 z-10">
           <div className="text-center">
             <p className="text-lg font-medium">No active session</p>
             <p className="mt-1 text-sm">
-              Create a new session from the sidebar to get started.
+              Create a task to start a new session.
             </p>
           </div>
         </div>

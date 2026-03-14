@@ -9,6 +9,10 @@
     "shell:allow-execute",
     "dialog:default",
     "dialog:allow-open",
-    "pty:default"
+    "pty:default",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted"
   ]
 }

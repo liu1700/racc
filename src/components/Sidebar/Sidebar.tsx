@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { open as openShell } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../stores/sessionStore";
-import { NewAgentDialog } from "./NewAgentDialog";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import { ResetDbDialog } from "./ResetDbDialog";
 import type { Session, SessionStatus } from "../../types/session";
@@ -42,9 +41,10 @@ function sortByStatus(sessions: Session[]): Session[] {
 
 interface SidebarProps {
   onNewTask?: () => void;
+  onSessionSelect?: () => void;
 }
 
-export function Sidebar({ onNewTask }: SidebarProps) {
+export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
@@ -54,7 +54,6 @@ export function Sidebar({ onNewTask }: SidebarProps) {
   const importRepo = useSessionStore((s) => s.importRepo);
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
-  const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
@@ -192,6 +191,7 @@ export function Sidebar({ onNewTask }: SidebarProps) {
                     } else {
                       reattachSession(session.id);
                     }
+                    onSessionSelect?.();
                   }}
                   className={`group ml-4 cursor-pointer rounded px-2 py-1 transition-colors duration-150 ${
                     session.id === activeSessionId
@@ -268,14 +268,6 @@ export function Sidebar({ onNewTask }: SidebarProps) {
           Reset Database
         </button>
       </div>
-
-      {agentDialogRepoId !== null && (
-        <NewAgentDialog
-          repoId={agentDialogRepoId}
-          open={true}
-          onClose={() => setAgentDialogRepoId(null)}
-        />
-      )}
 
       {removeDialogSession !== null && (
         <RemoveSessionDialog
