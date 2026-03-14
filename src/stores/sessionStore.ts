@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
 
 interface SessionState {
@@ -74,6 +75,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       invoke("update_session_pr_url", { sessionId, prUrl }).then(() => {
         get().updateSessionPrUrl(sessionId, prUrl);
       }).catch((e) => console.warn("[sessionStore] Failed to save PR URL:", e));
+
+      // Send system notification
+      try {
+        sendNotification({
+          title: "New PR Created",
+          body: `${current?.branch ?? "Session"} — ${prUrl}`,
+        });
+      } catch (e) {
+        console.warn("[sessionStore] Failed to send notification:", e);
+      }
     });
 
 
