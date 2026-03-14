@@ -23,6 +23,8 @@ export function Terminal() {
     const init = async () => {
       const { Terminal: XTerm } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
+      const { WebLinksAddon } = await import("@xterm/addon-web-links");
+      const { open } = await import("@tauri-apps/plugin-shell");
 
       if (disposed) return;
 
@@ -41,6 +43,9 @@ export function Terminal() {
 
       const fitAddon = new FitAddon();
       xterm.loadAddon(fitAddon);
+      xterm.loadAddon(new WebLinksAddon((_e, uri) => {
+        open(uri);
+      }));
       xterm.open(el);
       fitAddon.fit();
 
