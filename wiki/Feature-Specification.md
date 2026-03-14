@@ -84,12 +84,11 @@ An actionable insights feed that replaces the previous AI assistant chat panel. 
 
 A kanban-style task board integrated into the center panel for cognitive offloading and automated agent orchestration. Users write task descriptions (the act of writing IS the cognitive offload) and "fire" them to automatically spawn agent sessions.
 
-**Lifecycle:** Open → Running → Review → Done
+**Lifecycle:** Open → Working → Closed
 
 - **Open:** User writes a task description via inline input — zero-config, minimal friction
-- **Running:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
-- **Review:** Agent completes → task moves to Review column for batched evaluation. Click card to switch to terminal for review
-- **Done:** User confirms result, task archived
+- **Working:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
+- **Closed:** Session completes or is removed → task automatically moves to Closed
 
 **Fire Dialog:** Reuses NewAgentDialog pattern — agent selection, skip-permissions, worktree (ON by default), auto-generated branch name (`task/keywords` from description).
 

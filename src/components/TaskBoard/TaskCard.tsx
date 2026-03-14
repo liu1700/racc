@@ -1,12 +1,10 @@
 import { useState, useMemo } from "react";
 import type { Task } from "../../types/task";
 import { useSessionStore } from "../../stores/sessionStore";
-import { useTaskStore } from "../../stores/taskStore";
 import { FireTaskDialog } from "./FireTaskDialog";
 
 interface Props {
   task: Task;
-  onSwitchToTerminal: () => void;
 }
 
 function formatElapsed(createdAt: string): string {
@@ -17,12 +15,10 @@ function formatElapsed(createdAt: string): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-export function TaskCard({ task, onSwitchToTerminal }: Props) {
+export function TaskCard({ task }: Props) {
   const [fireOpen, setFireOpen] = useState(false);
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
-  const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const repos = useSessionStore((s) => s.repos);
-  const updateTaskStatus = useTaskStore((s) => s.updateTaskStatus);
 
   const lastOutput = task.session_id
     ? sessionLastOutput[task.session_id] ?? null
@@ -40,37 +36,23 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
 
   const statusBorder = {
     open: "border-l-accent",
-    running: "border-l-status-running",
-    review: "border-l-status-waiting",
-    done: "border-l-status-completed",
+    working: "border-l-status-running",
+    closed: "border-l-status-completed",
   }[task.status];
-
-  const handleReviewClick = () => {
-    if (task.session_id) {
-      setActiveSession(task.session_id);
-      onSwitchToTerminal();
-    }
-  };
-
-  const handleMarkDone = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    updateTaskStatus(task.id, "done");
-  };
 
   return (
     <>
       <div
         className={`rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
-          task.status === "done" ? "opacity-50" : ""
-        } ${task.status === "review" ? "cursor-pointer" : ""}`}
-        onClick={task.status === "review" ? handleReviewClick : undefined}
+          task.status === "closed" ? "opacity-50" : ""
+        }`}
       >
         <p className="mb-1 text-xs font-medium leading-snug text-zinc-200">
           {task.description}
         </p>
 
-        {/* Running: show linked session + live activity + elapsed time */}
-        {task.status === "running" && (
+        {/* Working: show linked session + live activity + elapsed time */}
+        {task.status === "working" && (
           <>
             <div className="mb-1 flex items-center gap-1.5 text-[10px] text-status-running">
               <span className="inline-block h-1 w-1 animate-status-pulse rounded-full bg-status-running" />
@@ -82,26 +64,6 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
               <span>{formatElapsed(task.updated_at)}</span>
-            </div>
-          </>
-        )}
-
-        {/* Review: show diff summary hint + done button */}
-        {task.status === "review" && (
-          <>
-            <div className="mb-1 text-[10px] italic text-zinc-500">
-              Click to review in terminal
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-zinc-500">
-                {linkedSession?.branch ?? "session"} · done {formatElapsed(task.updated_at)} ago
-              </span>
-              <button
-                onClick={handleMarkDone}
-                className="rounded bg-status-completed/15 px-1.5 py-0.5 text-[10px] text-status-completed hover:bg-status-completed/25"
-              >
-                Done
-              </button>
             </div>
           </>
         )}
@@ -119,10 +81,10 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
           </div>
         )}
 
-        {/* Done: minimal meta */}
-        {task.status === "done" && (
+        {/* Closed: minimal meta */}
+        {task.status === "closed" && (
           <div className="text-[10px] text-zinc-600">
-            {linkedSession?.branch ?? "session"} · completed
+            {linkedSession?.branch ?? "session"} · closed
           </div>
         )}
       </div>
