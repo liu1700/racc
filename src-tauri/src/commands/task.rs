@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -15,6 +16,7 @@ pub struct Task {
 
 #[tauri::command]
 pub fn create_task(
+    app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     repo_id: i64,
     description: String,
@@ -44,6 +46,14 @@ pub fn create_task(
             },
         )
         .map_err(|e| format!("Failed to fetch created task: {e}"))?;
+
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::TaskStatusChanged {
+            task_id: task.id,
+            status: "open".to_string(),
+            session_id: None,
+        });
+    }
 
     Ok(task)
 }
@@ -81,6 +91,7 @@ pub fn list_tasks(
 
 #[tauri::command]
 pub fn update_task_status(
+    app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     task_id: i64,
     status: String,
@@ -125,6 +136,14 @@ pub fn update_task_status(
         )
         .map_err(|e| format!("Failed to fetch updated task: {e}"))?;
 
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::TaskStatusChanged {
+            task_id: task.id,
+            status: task.status.clone(),
+            session_id: task.session_id,
+        });
+    }
+
     Ok(task)
 }
 
@@ -163,7 +182,11 @@ pub fn update_task_description(
 }
 
 #[tauri::command]
-pub fn delete_task(db: tauri::State<'_, Arc<Mutex<Connection>>>, task_id: i64) -> Result<(), String> {
+pub fn delete_task(
+    app_handle: tauri::AppHandle,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    task_id: i64,
+) -> Result<(), String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
     let affected = conn
         .execute("DELETE FROM tasks WHERE id = ?1", [task_id])
@@ -171,5 +194,10 @@ pub fn delete_task(db: tauri::State<'_, Arc<Mutex<Connection>>>, task_id: i64) -
     if affected == 0 {
         return Err(format!("Task {} not found", task_id));
     }
+
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::TaskDeleted { task_id });
+    }
+
     Ok(())
 }

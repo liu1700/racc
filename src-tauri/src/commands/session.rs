@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 // --- Types ---
 
@@ -203,6 +204,7 @@ pub async fn remove_repo(
 
 #[tauri::command]
 pub async fn create_session(
+    app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     repo_id: i64,
     use_worktree: bool,
@@ -281,7 +283,7 @@ pub async fn create_session(
         )
         .map_err(|e| e.to_string())?;
 
-    Ok(Session {
+    let session = Session {
         id,
         repo_id,
         agent: "claude-code".to_string(),
@@ -291,11 +293,23 @@ pub async fn create_session(
         created_at,
         updated_at,
         pr_url: None,
-    })
+    };
+
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::SessionStatusChanged {
+            session_id: session.id,
+            status: "Running".to_string(),
+            pr_url: None,
+            source: "local".to_string(),
+        });
+    }
+
+    Ok(session)
 }
 
 #[tauri::command]
 pub async fn stop_session(
+    app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<(), String> {
@@ -305,6 +319,15 @@ pub async fn stop_session(
         [session_id],
     )
     .map_err(|e| e.to_string())?;
+
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::SessionStatusChanged {
+            session_id,
+            status: "Completed".to_string(),
+            pr_url: None,
+            source: "local".to_string(),
+        });
+    }
 
     Ok(())
 }
@@ -368,6 +391,7 @@ pub async fn remove_session(
 
 #[tauri::command]
 pub async fn reattach_session(
+    app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: i64,
 ) -> Result<Session, String> {
@@ -406,7 +430,7 @@ pub async fn reattach_session(
         )
         .map_err(|e| e.to_string())?;
 
-    Ok(Session {
+    let session = Session {
         id: session_id,
         repo_id,
         agent,
@@ -416,7 +440,18 @@ pub async fn reattach_session(
         created_at,
         updated_at,
         pr_url,
-    })
+    };
+
+    if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
+        let _: Result<_, _> = tx.send(crate::events::RaccEvent::SessionStatusChanged {
+            session_id: session.id,
+            status: "Running".to_string(),
+            pr_url: None,
+            source: "local".to_string(),
+        });
+    }
+
+    Ok(session)
 }
 
 #[tauri::command]
