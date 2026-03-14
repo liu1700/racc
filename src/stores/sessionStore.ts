@@ -34,6 +34,7 @@ interface SessionState {
   stopSession: (sessionId: number) => Promise<void>;
   removeSession: (sessionId: number, deleteWorktree?: boolean) => Promise<void>;
   setActiveSession: (id: number) => void;
+  resetDb: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -219,6 +220,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   setActiveSession: (id) => set({ activeSessionId: id }),
+
+  resetDb: async () => {
+    set({ error: null });
+    try {
+      killAll();
+      await invoke("reset_db");
+      set({
+        repos: [],
+        activeSessionId: null,
+        sessionActivities: {},
+        activityPanelOpen: false,
+        activityPanelDismissed: false,
+      });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
+    }
+  },
 
   clearError: () => set({ error: null }),
 

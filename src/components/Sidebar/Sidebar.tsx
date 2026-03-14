@@ -3,6 +3,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { ImportRepoDialog } from "./ImportRepoDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
+import { ResetDbDialog } from "./ResetDbDialog";
 import type { Session, SessionStatus } from "../../types/session";
 
 const statusColor: Record<SessionStatus, string> = {
@@ -48,6 +49,7 @@ export function Sidebar() {
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const [agentDialogRepoId, setAgentDialogRepoId] = useState<number | null>(null);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const toggleRepo = (repoId: number) => {
     setExpandedRepos((prev) => {
@@ -181,6 +183,15 @@ export function Sidebar() {
         ))}
       </div>
 
+      <div className="border-t border-surface-3 px-3 py-2">
+        <button
+          onClick={() => setResetDialogOpen(true)}
+          className="w-full rounded px-2 py-1.5 text-xs text-zinc-500 transition-colors duration-150 hover:bg-surface-2 hover:text-red-400"
+        >
+          Reset Database
+        </button>
+      </div>
+
       {agentDialogRepoId !== null && (
         <NewAgentDialog
           repoId={agentDialogRepoId}
@@ -196,6 +207,11 @@ export function Sidebar() {
           onClose={() => setRemoveDialogSession(null)}
         />
       )}
+
+      <ResetDbDialog
+        open={resetDialogOpen}
+        onClose={() => setResetDialogOpen(false)}
+      />
     </aside>
   );
 }

@@ -67,6 +67,7 @@ pub fn run() {
             commands::assistant::assistant_shutdown,
             commands::file::read_file,
             commands::file::search_files,
+            commands::db::reset_db,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
