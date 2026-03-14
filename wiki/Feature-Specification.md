@@ -55,23 +55,30 @@ When an agent completes a round of work, provide a proper review experience. Des
 
 **Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
 
-### 4. AI Assistant — Diff Summary & Risk Triage (implemented)
+### 4. Insights Panel — Cross-Session Pattern Detection (implemented)
 
-A global AI assistant ("butler") that helps developers understand and review what their coding agents have done, without requiring them to read every line of every diff.
+An actionable insights feed that replaces the previous AI assistant chat panel. Instead of a generic chat, it automatically detects patterns across sessions and surfaces one-click suggestions to accelerate development workflows.
 
-**Capabilities (v1):**
-- Summarizes diffs across any session, categorizing files by review priority (HIGH: security/config/DB, MEDIUM: business logic/API, LOW: tests/types/formatting)
-- Flags specific risks (unparameterized SQL, hardcoded secrets, missing error handling, breaking API changes)
-- Answers questions about any session's work, token usage, and status
-- Maintains a persistent conversation across app restarts
+**Six insight types:**
 
-**Architecture:** Runs as a Tauri sidecar binary (TypeScript compiled with `bun build --compile`), powered by `@mariozechner/pi-ai` (OpenRouter provider) and `@mariozechner/pi-agent-core` (agent runtime with tool calling). Communicates with Rust backend via stdin/stdout JSON lines protocol.
+| Type | Trigger | Severity |
+|------|---------|----------|
+| Repeated Prompt | Same/similar instruction in ≥3 sessions | Warning (amber) |
+| Startup Pattern | ≥3 sessions begin with same command sequence | Warning (amber) |
+| Repeated Permission | Same permission type requested ≥3 times in one session | Warning (amber) |
+| Cost Anomaly | 10-min cost > 3× session's historical average | Alert (red) |
+| File Conflict | Same file written/edited in ≥2 active sessions | Alert (red) |
+| Similar Sessions | Two sessions share overlapping file sets | Suggestion (green) |
 
-**Tools:** `get_all_sessions` (global awareness), `get_session_diff` (git diff per session), `get_session_costs` (token usage data per session), `read_file` (read source files with 200-line preview limit). Tool calls are relayed to Rust for git/SQLite operations.
+**Architecture:** Hybrid frontend/backend analysis. Frontend runs real-time rules (file conflicts, cost anomalies, permission repeats) on structured events captured from PTY output. Rust backend runs batch analysis every 5 minutes (repeated prompt clustering via Levenshtein similarity, startup pattern detection, similar session detection via Jaccard index). LLM is used only for generating suggestion text (e.g., CLAUDE.md entries), never for detection.
 
-**Why this replaces the Activity Log:** The original Activity Log aimed to show which files agents read, which commands they ran. The AI assistant provides higher-value intelligence — it doesn't just list changes, it triages them by risk and summarizes what matters. Structured event tracking is deferred; the assistant provides more value than raw event lists.
+**Event capture:** `ptyOutputParser.ts` is extended to extract user prompts (❯ marker detection). `eventCapture.ts` buffers events and flushes to SQLite every 30 seconds. Events are also fed to real-time rules in the `insightsStore`.
 
-**Current status:** Fully implemented. Components: `AssistantPanel.tsx`, `AssistantSetup.tsx`, `AssistantChat.tsx`, `AssistantMessage.tsx`. State: `assistantStore.ts`. Backend: `assistant.rs`. Sidecar: `sidecar/` project.
+**UI:** Chronological timeline feed with severity-colored dots. Cards expand inline to show evidence (matched prompts, conflicting files, etc.) and action buttons. Actions include: "Add to CLAUDE.md", "Copy allowlist rule", "Switch to session", "View File", "Dismiss".
+
+**Deduplication:** Insights have a fingerprint column with a unique partial index on active status, preventing duplicate detections across batch runs.
+
+**Current status:** Fully implemented. Components: `InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`. State: `insightsStore.ts`. Services: `eventCapture.ts`. Backend: `insights.rs` (event recording, insight CRUD, batch analysis). Settings gear opens `AssistantSetup.tsx` for LLM API key configuration (used for generating suggestion text).
 
 ### 5. File Viewer & Command Palette (implemented)
 
@@ -107,7 +114,7 @@ These features significantly enhance the product but are not required for initia
 | **Tiered Notification System** | Five-tier alerts (ambient → critical) with anti-fatigue design: deduplication, notification budgets, user thresholds. Audio channel for Tier 3+ per Wickens' Multiple Resource Theory | Session status tracking |
 | **Cross-Machine Session Management** | Connect to remote agent sessions via Tailscale, manage from one dashboard | Tailscale integration |
 | **Portless Integration** | Auto-assign named URLs per worktree, embed preview window in IDE | Portless setup |
-| **Multi-Agent Conflict Detection** | Warn when multiple agents modify the same file | File change tracking |
+| **Multi-Agent Conflict Detection** | ~~Warn when multiple agents modify the same file~~ **Implemented** via Insights Panel file conflict detection | ~~File change tracking~~ Done |
 
 ---
 
