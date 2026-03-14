@@ -44,17 +44,25 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
     // Bypass IME for Shift+punctuation keys so characters like "?" work
     // with Chinese input methods active (IME consumes Shift for mode switching)
     terminal.attachCustomKeyEventHandler((event) => {
-      if (
-        event.type === 'keydown' &&
-        event.shiftKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        !event.altKey &&
-        event.key.length === 1
-      ) {
-        writePty(sessionId, event.key);
-        return false;
+      if (event.type !== 'keydown' || event.ctrlKey || event.metaKey || event.altKey) {
+        return true;
       }
+
+      if (event.shiftKey) {
+        // Shift+Enter: send kitty keyboard protocol sequence so TUI apps
+        // (Claude Code, etc.) receive it as a distinct key from plain Enter
+        if (event.key === 'Enter') {
+          writePty(sessionId, '\x1b[13;2u');
+          return false;
+        }
+
+        // Shift+single-char: bypass IME mode-switching
+        if (event.key.length === 1) {
+          writePty(sessionId, event.key);
+          return false;
+        }
+      }
+
       return true;
     });
 
