@@ -17,9 +17,6 @@ pub fn init_db() -> Result<Connection, String> {
     let path = db_path()?;
     let conn = Connection::open(&path).map_err(|e| format!("Failed to open database: {e}"))?;
 
-    conn.execute_batch("PRAGMA foreign_keys = ON;")
-        .map_err(|e| format!("Failed to enable foreign keys: {e}"))?;
-
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|e| format!("Failed to read user_version: {e}"))?;
@@ -27,68 +24,26 @@ pub fn init_db() -> Result<Connection, String> {
     if version < 1 {
         conn.execute_batch(
             "
-            CREATE TABLE IF NOT EXISTS repos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                path TEXT NOT NULL UNIQUE,
-                name TEXT NOT NULL,
-                added_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+        CREATE TABLE repos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            added_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
 
-            CREATE TABLE IF NOT EXISTS sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
-                tmux_session_name TEXT NOT NULL UNIQUE,
-                agent TEXT NOT NULL DEFAULT 'claude-code',
-                worktree_path TEXT,
-                branch TEXT,
-                status TEXT NOT NULL DEFAULT 'Running',
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+        CREATE TABLE sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo_id INTEGER NOT NULL,
+            agent TEXT NOT NULL DEFAULT 'claude-code',
+            worktree_path TEXT,
+            branch TEXT,
+            status TEXT NOT NULL DEFAULT 'Running',
+            pr_url TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
 
-            PRAGMA user_version = 1;
-            ",
-        )
-        .map_err(|e| format!("Migration v1 failed: {e}"))?;
-    }
-
-    if version < 2 {
-        conn.execute_batch(
-            "
-            BEGIN;
-
-            CREATE TABLE sessions_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
-                agent TEXT NOT NULL DEFAULT 'claude-code',
-                worktree_path TEXT,
-                branch TEXT,
-                status TEXT NOT NULL DEFAULT 'Running',
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            INSERT INTO sessions_new (id, repo_id, agent, worktree_path, branch, status, created_at, updated_at)
-                SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-                FROM sessions;
-
-            DROP TABLE sessions;
-            ALTER TABLE sessions_new RENAME TO sessions;
-
-            PRAGMA user_version = 2;
-
-            COMMIT;
-            ",
-        )
-        .map_err(|e| format!("Migration v2 failed: {e}"))?;
-    }
-
-    if version < 3 {
-        conn.execute_batch(
-            "
-        BEGIN;
-
-        CREATE TABLE IF NOT EXISTS assistant_messages (
+        CREATE TABLE assistant_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -97,45 +52,32 @@ pub fn init_db() -> Result<Connection, String> {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE IF NOT EXISTS assistant_config (
+        CREATE TABLE assistant_config (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
 
-        PRAGMA user_version = 3;
-
-        COMMIT;
-        ",
-        )
-        .map_err(|e| format!("Migration v3 failed: {e}"))?;
-    }
-
-    if version < 4 {
-        conn.execute_batch(
-            "
-        BEGIN;
-
-        CREATE TABLE IF NOT EXISTS tasks (
+        CREATE TABLE tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+            repo_id INTEGER NOT NULL,
             description TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','working','closed')),
-            session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            session_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE IF NOT EXISTS session_events (
+        CREATE TABLE session_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            session_id INTEGER NOT NULL,
             event_type TEXT NOT NULL,
             payload TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_events_session ON session_events(session_id);
-        CREATE INDEX IF NOT EXISTS idx_events_type ON session_events(event_type);
+        CREATE INDEX idx_events_session ON session_events(session_id);
+        CREATE INDEX idx_events_type ON session_events(event_type);
 
-        CREATE TABLE IF NOT EXISTS insights (
+        CREATE TABLE insights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             insight_type TEXT NOT NULL,
             severity TEXT NOT NULL,
@@ -147,27 +89,13 @@ pub fn init_db() -> Result<Connection, String> {
             created_at INTEGER NOT NULL,
             resolved_at INTEGER
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_insights_fingerprint
+        CREATE UNIQUE INDEX idx_insights_fingerprint
             ON insights(fingerprint) WHERE status = 'active';
 
-        PRAGMA user_version = 4;
-
-        COMMIT;
+        PRAGMA user_version = 1;
         ",
         )
-        .map_err(|e| format!("Migration v4 failed: {e}"))?;
-    }
-
-    if version < 5 {
-        conn.execute_batch(
-            "
-        BEGIN;
-        ALTER TABLE sessions ADD COLUMN pr_url TEXT;
-        PRAGMA user_version = 5;
-        COMMIT;
-        ",
-        )
-        .map_err(|e| format!("Migration v5 failed: {e}"))?;
+        .map_err(|e| format!("Migration failed: {e}"))?;
     }
 
     Ok(conn)
