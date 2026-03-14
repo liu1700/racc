@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions, SessionActivity } from "../types/session";
 import { startTracking, stopTracking, setActivityCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
+import { initEventCapture, recordEvent } from "../services/eventCapture";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -61,7 +62,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Wire up the PTY output parser callback
     setActivityCallback((sessionId, activity) => {
       get().updateSessionActivity(sessionId, activity);
+
+      // Emit structured events for insights
+      if (activity.action === "Editing" || activity.action === "Writing") {
+        recordEvent(sessionId, "file_operation", {
+          operation: activity.action === "Editing" ? "edit" : "write",
+          filePath: activity.detail || "unknown",
+        });
+      } else if (activity.action === "Waiting for approval") {
+        recordEvent(sessionId, "permission_request", {
+          permissionType: "general",
+        });
+      }
     });
+
+    // Initialize event capture for insights
+    initEventCapture();
 
     set({ loading: true, error: null });
     try {
@@ -138,6 +154,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Start tracking PTY output for activity panel
       startTracking(session.id, session.agent);
 
+      // Record session metadata for insights
+      recordEvent(session.id, "session_meta", {
+        branch: session.branch || null,
+        agent: session.agent,
+      });
+
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });
     } catch (e) {
@@ -188,6 +210,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       });
       killPty(sessionId);
       await invoke("stop_session", { sessionId });
+
+      // Trigger batch analysis when a session ends
+      invoke("run_batch_analysis").catch(() => {});
+
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
       set({
