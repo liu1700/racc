@@ -4,35 +4,46 @@ import { useTaskStore } from "../../stores/taskStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { TaskColumn } from "./TaskColumn";
 
-const COLUMNS: TaskStatus[] = ["open", "running", "review", "done"];
+const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
 interface Props {
   repoId: number | null;
-  onSwitchToTerminal: () => void;
 }
 
-export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
-  const { tasks, createTask, loading, error } = useTaskStore();
+export function TaskBoard({ repoId }: Props) {
+  const { tasks, createTask, loading, error, draftInputOpen, draftValue, setDraftInputOpen, setDraftValue } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
 
   // Note: loadTasks is called in App.tsx to support the tab badge.
   // No duplicate load here.
 
-  // Watch session status changes → sync running→review
-  // Only check sessions linked to running tasks to avoid O(N*M) scan
+  // Watch session status changes → sync working→closed
+  // Also detect orphaned working tasks whose session no longer exists
   useEffect(() => {
-    const { syncTaskWithSession, tasks: currentTasks } = useTaskStore.getState();
-    const runningSessionIds = new Set(
-      currentTasks
-        .filter((t) => t.status === "running" && t.session_id)
-        .map((t) => t.session_id!)
-    );
-    if (runningSessionIds.size === 0) return;
+    const { syncTaskWithSession, updateTaskStatus, tasks: currentTasks } = useTaskStore.getState();
+    const runningTasks = currentTasks.filter((t) => t.status === "working" && t.session_id);
+    if (runningTasks.length === 0) return;
 
+    // Build set of all existing session IDs
+    const allSessionIds = new Set<number>();
     for (const repo of repos) {
       for (const session of repo.sessions) {
-        if (runningSessionIds.has(session.id)) {
-          syncTaskWithSession(session.id, session.status);
+        allSessionIds.add(session.id);
+      }
+    }
+
+    for (const task of runningTasks) {
+      if (!allSessionIds.has(task.session_id!)) {
+        // Session was removed — mark task as closed
+        updateTaskStatus(task.id, "closed").catch(() => {});
+      } else {
+        // Session still exists — check if it completed
+        for (const repo of repos) {
+          const session = repo.sessions.find((s) => s.id === task.session_id);
+          if (session) {
+            syncTaskWithSession(session.id, session.status);
+            break;
+          }
         }
       }
     }
@@ -67,7 +78,7 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
   ) as Record<TaskStatus, typeof tasks>;
 
   return (
-    <div className="grid flex-1 grid-cols-4 gap-2 overflow-x-auto p-3">
+    <div className="grid flex-1 grid-cols-3 gap-2 overflow-x-auto p-3">
       {COLUMNS.map((status) => (
         <TaskColumn
           key={status}
@@ -78,7 +89,10 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
               ? (desc) => createTask(repoId, desc)
               : undefined
           }
-          onSwitchToTerminal={onSwitchToTerminal}
+          inputOpen={status === "open" ? draftInputOpen : false}
+          onInputOpenChange={status === "open" ? setDraftInputOpen : undefined}
+          draftValue={status === "open" ? draftValue : ""}
+          onDraftChange={status === "open" ? setDraftValue : undefined}
         />
       ))}
     </div>

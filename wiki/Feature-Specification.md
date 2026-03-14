@@ -84,12 +84,11 @@ An actionable insights feed that replaces the previous AI assistant chat panel. 
 
 A kanban-style task board integrated into the center panel for cognitive offloading and automated agent orchestration. Users write task descriptions (the act of writing IS the cognitive offload) and "fire" them to automatically spawn agent sessions.
 
-**Lifecycle:** Open → Running → Review → Done
+**Lifecycle:** Open → Working → Closed
 
-- **Open:** User writes a task description via inline input — zero-config, minimal friction
-- **Running:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
-- **Review:** Agent completes → task moves to Review column for batched evaluation. Click card to switch to terminal for review
-- **Done:** User confirms result, task archived
+- **Open:** User writes a task description via inline textarea (multiline, wraps) — zero-config, minimal friction. Open tasks are editable: click the description to inline-edit before firing
+- **Working:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
+- **Closed:** Session completes or is removed → task automatically moves to Closed
 
 **Fire Dialog:** Reuses NewAgentDialog pattern — agent selection, skip-permissions, worktree (ON by default), auto-generated branch name (`task/keywords` from description).
 
@@ -98,12 +97,13 @@ A kanban-style task board integrated into the center panel for cognitive offload
 - Terminal stays mounted via CSS `hidden` to preserve xterm.js state
 - Firing a task keeps user on Task Board; clicking sidebar session switches to Terminal
 - Task count badge on Tasks tab
+- Draft input state (open/closed + text) persists across tab switches via Zustand store
 
 **Cognitive design rationale:** Based on Risko & Gilbert's cognitive offloading research — externalizing working memory to the task board reduces cognitive load. Batched evaluation (Review column) supports 60–90 minute work cycles per the cognitive research. Preattentive color coding (green=running, amber=review, blue=done) for <200ms status recognition.
 
 **Data model:** `tasks` table (SQLite v4) with FK to `repos` (CASCADE) and `sessions` (SET NULL). Status CHECK constraint enforces valid values.
 
-**Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, delete).
+**Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, update_description, delete).
 
 ### 6. File Viewer & Command Palette (implemented)
 
