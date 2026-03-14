@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
-import { startTracking, stopTracking, setOutputCallback } from "../services/ptyOutputParser";
+import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
 import { initEventCapture, recordEvent } from "../services/eventCapture";
 
@@ -58,6 +58,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Wire up the PTY output callback
     setOutputCallback((sessionId, lastLine) => {
       get().updateSessionLastOutput(sessionId, lastLine);
+    });
+
+    // Wire up PR URL detection callback
+    setPrUrlCallback((sessionId, prUrl) => {
+      // Check if pr_url changed to avoid redundant DB writes
+      const current = get().repos
+        .flatMap((r) => r.sessions)
+        .find((s) => s.id === sessionId);
+      if (current?.pr_url === prUrl) return;
+
+      // Persist to DB then update local state
+      invoke("update_session_pr_url", { sessionId, prUrl }).then(() => {
+        get().updateSessionPrUrl(sessionId, prUrl);
+      }).catch((e) => console.warn("[sessionStore] Failed to save PR URL:", e));
     });
 
     // Initialize event capture for insights
