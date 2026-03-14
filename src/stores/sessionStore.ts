@@ -15,6 +15,7 @@ interface SessionState {
 
   updateSessionLastOutput: (sessionId: number, line: string) => void;
   clearSessionLastOutput: (sessionId: number) => void;
+  updateSessionPrUrl: (sessionId: number, prUrl: string) => void;
 
   getActiveSession: () => { session: Session; repo: Repo } | null;
 
@@ -237,5 +238,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSessionLastOutput: (sessionId) => {
     const { [sessionId]: _, ...rest } = get().sessionLastOutput;
     set({ sessionLastOutput: rest });
+  },
+
+  updateSessionPrUrl: (sessionId, prUrl) => {
+    set({
+      repos: get().repos.map((rws) => ({
+        ...rws,
+        sessions: rws.sessions.map((s) =>
+          s.id === sessionId ? { ...s, pr_url: prUrl } : s,
+        ),
+      })),
+    });
   },
 }));
