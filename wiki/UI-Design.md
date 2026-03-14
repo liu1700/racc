@@ -108,18 +108,19 @@ The center panel has a tab bar switching between **Tasks** (default) and **Termi
 
 ### Task Board Mode (default — Planning & Monitoring)
 
-A kanban-style board for cognitive offloading and agent orchestration. Four columns: Open, Running, Review, Done.
+A kanban-style board for cognitive offloading and agent orchestration. Three columns: Open, Working, Closed.
 
 - **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
-- **Running column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display
-- **Review column:** Agent completed — task queued for batched evaluation. Click card to auto-switch to Terminal tab and activate the linked session. "Done" button to confirm
-- **Done column:** Archived tasks at reduced opacity
+- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates
+- **Closed column:** Session completed or removed — archived tasks at reduced opacity
 
 **Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
 
-**Tab badge:** Tasks tab shows count of non-done tasks in a rounded badge.
+**Tab badge:** Tasks tab shows count of non-closed tasks in a rounded badge.
 
-**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=running, amber=review, blue=done). Batched evaluation via Review column supports 60–90 minute work cycles.
+**Layout stability:** Task board uses CSS Grid (`grid-cols-3`) instead of flexbox for column layout, ensuring columns maintain fixed equal widths regardless of content changes. Each card uses `overflow-hidden` and `min-w-0` to prevent live output text from pushing column boundaries. This eliminates width glitching caused by rapid `sessionLastOutput` updates in working cards.
+
+**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=working, muted=closed).
 
 ### Terminal Mode (Deep Work)
 - Full xterm.js 5.5 terminal rendering the active agent session
@@ -231,7 +232,7 @@ Each session item in the sidebar shows a second line with the latest terminal ou
 **Design:**
 - Status color dot + branch name + elapsed time (first row)
 - Truncated latest terminal output in muted text (second row, `text-[10px] text-zinc-600`)
-- Only shown when output exists for that session
+- Running sessions always reserve a fixed-height line (`h-3.5`) for output to prevent height jumps when output starts/stops
 
 **PTY output capture:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and captures the last non-empty line (truncated to 120 chars). Stored as `sessionLastOutput: Record<number, string>` in the Zustand store.
 

@@ -91,7 +91,7 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 **Schema (v4):**
 - `repos` table: id, path, name, added_at
 - `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|running|review|done), session_id (FK SET NULL), created_at, updated_at
+- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|working|closed), session_id (FK SET NULL), created_at, updated_at
 - `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
 - `assistant_config` table: key, value
 - `session_events` table: id, session_id (FK→sessions), event_type, payload (JSON), created_at (Unix ms)
@@ -175,9 +175,9 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
 | `insightsStore.ts` | Store | Insights state, real-time detection rules — **disabled for MVP** |
 | `eventCapture.ts` | Service | Event normalization, buffering — **disabled for MVP** |
-| `TaskBoard.tsx` | Center panel | 4-column kanban (Open/Running/Review/Done) with session sync |
+| `TaskBoard.tsx` | Center panel | 3-column kanban (Open/Working/Closed) with session sync |
 | `TaskColumn.tsx` | Center panel | Single kanban column with header, cards, and new-task input |
-| `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, review action |
+| `TaskCard.tsx` | Center panel | Status-dependent card with live activity and fire button |
 | `TaskInput.tsx` | Center panel | Inline task creation input (Enter/Esc) |
 | `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
 | `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
