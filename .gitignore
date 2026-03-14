@@ -19,6 +19,9 @@ tsconfig.tsbuildinfo
 .env
 .env.local
 
+# Superpowers specs/plans (local only)
+docs/superpowers/
+
 # Sidecar binaries and build artifacts
 src-tauri/binaries/racc-assistant-*
 sidecar/node_modules/
