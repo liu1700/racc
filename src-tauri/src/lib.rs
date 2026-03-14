@@ -70,6 +70,7 @@ pub fn run() {
             commands::task::create_task,
             commands::task::list_tasks,
             commands::task::update_task_status,
+            commands::task::update_task_description,
             commands::task::delete_task,
             commands::db::reset_db,
             commands::insights::record_session_events,

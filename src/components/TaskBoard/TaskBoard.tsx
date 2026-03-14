@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
-  const { tasks, createTask, loading, error } = useTaskStore();
+  const { tasks, createTask, loading, error, draftInputOpen, draftValue, setDraftInputOpen, setDraftValue } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
 
   // Note: loadTasks is called in App.tsx to support the tab badge.
@@ -79,6 +79,10 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
               : undefined
           }
           onSwitchToTerminal={onSwitchToTerminal}
+          inputOpen={status === "open" ? draftInputOpen : false}
+          onInputOpenChange={status === "open" ? setDraftInputOpen : undefined}
+          draftValue={status === "open" ? draftValue : ""}
+          onDraftChange={status === "open" ? setDraftValue : undefined}
         />
       ))}
     </div>

@@ -1,22 +1,23 @@
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 
 interface Props {
+  value: string;
+  onChange: (value: string) => void;
   onSubmit: (description: string) => void;
   onCancel: () => void;
 }
 
-export function TaskInput({ onSubmit, onCancel }: Props) {
-  const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+export function TaskInput({ value, onChange, onSubmit, onCancel }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    textareaRef.current?.focus();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && value.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && value.trim()) {
+      e.preventDefault();
       onSubmit(value.trim());
-      setValue("");
     }
     if (e.key === "Escape") {
       onCancel();
@@ -24,15 +25,14 @@ export function TaskInput({ onSubmit, onCancel }: Props) {
   };
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
+    <textarea
+      ref={textareaRef}
       value={value}
-      onChange={(e) => setValue(e.target.value)}
+      onChange={(e) => onChange(e.target.value)}
       onKeyDown={handleKeyDown}
-      onBlur={onCancel}
       placeholder="Describe your task..."
-      className="w-full rounded border border-accent bg-surface-2 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-accent-hover"
+      rows={3}
+      className="w-full resize-none rounded border border-accent bg-surface-2 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-accent-hover"
     />
   );
 }

@@ -6,7 +6,11 @@ interface TaskState {
   tasks: Task[];
   loading: boolean;
   error: string | null;
+  draftInputOpen: boolean;
+  draftValue: string;
 
+  setDraftInputOpen: (open: boolean) => void;
+  setDraftValue: (value: string) => void;
   loadTasks: (repoId: number) => Promise<void>;
   createTask: (repoId: number, description: string) => Promise<Task>;
   fireTask: (
@@ -21,6 +25,7 @@ interface TaskState {
     status: TaskStatus,
     sessionId?: number
   ) => Promise<void>;
+  updateTaskDescription: (taskId: number, description: string) => Promise<void>;
   deleteTask: (taskId: number) => Promise<void>;
   syncTaskWithSession: (sessionId: number, sessionStatus: string) => void;
 }
@@ -29,6 +34,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   loading: false,
   error: null,
+  draftInputOpen: false,
+  draftValue: "",
+
+  setDraftInputOpen: (open: boolean) => set({ draftInputOpen: open }),
+  setDraftValue: (value: string) => set({ draftValue: value }),
 
   loadTasks: async (repoId: number) => {
     set({ loading: true, error: null });
@@ -101,6 +111,21 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         taskId,
         status,
         sessionId: sessionId ?? null,
+      });
+      set((state: TaskState) => ({
+        tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
+      }));
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
+  },
+
+  updateTaskDescription: async (taskId: number, description: string) => {
+    try {
+      const task = await invoke<Task>("update_task_description", {
+        taskId,
+        description,
       });
       set((state: TaskState) => ({
         tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
