@@ -86,6 +86,11 @@ pub fn update_task_status(
     status: String,
     session_id: Option<i64>,
 ) -> Result<Task, String> {
+    let valid = ["open", "running", "review", "done"];
+    if !valid.contains(&status.as_str()) {
+        return Err(format!("Invalid status '{}'. Must be one of: {}", status, valid.join(", ")));
+    }
+
     let conn = db.lock().map_err(|e| e.to_string())?;
 
     if let Some(sid) = session_id {
@@ -126,7 +131,11 @@ pub fn update_task_status(
 #[tauri::command]
 pub fn delete_task(db: tauri::State<'_, Mutex<Connection>>, task_id: i64) -> Result<(), String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM tasks WHERE id = ?1", [task_id])
+    let affected = conn
+        .execute("DELETE FROM tasks WHERE id = ?1", [task_id])
         .map_err(|e| format!("Failed to delete task: {e}"))?;
+    if affected == 0 {
+        return Err(format!("Task {} not found", task_id));
+    }
     Ok(())
 }
