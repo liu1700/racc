@@ -94,20 +94,27 @@ export function Terminal() {
       // Debounce fitAddon.fit() to prevent rapid resize events
       // from resetting the terminal scroll position (especially in Tauri WebView)
       let rafId: number | null = null;
-      let lastCols = xterm.cols;
-      let lastRows = xterm.rows;
+      let lastWidth = el.clientWidth;
+      let lastHeight = el.clientHeight;
 
       const resizeObserver = new ResizeObserver(() => {
         if (disposed || !xterm) return;
+        // Skip if pixel dimensions haven't actually changed
+        const width = el.clientWidth;
+        const height = el.clientHeight;
+        if (width === lastWidth && height === lastHeight) return;
+        lastWidth = width;
+        lastHeight = height;
         if (rafId !== null) cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           rafId = null;
           if (disposed || !xterm) return;
+          // Remember if user was following output (viewport at bottom)
+          const wasAtBottom = xterm.buffer.active.viewportY >= xterm.buffer.active.baseY;
           fitAddon.fit();
-          // Only apply resize if dimensions actually changed
-          if (xterm.cols !== lastCols || xterm.rows !== lastRows) {
-            lastCols = xterm.cols;
-            lastRows = xterm.rows;
+          // Restore scroll position after fit() to prevent jump-to-top
+          if (wasAtBottom) {
+            xterm.scrollToBottom();
           }
         });
       });
