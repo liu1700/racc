@@ -71,7 +71,11 @@ function App() {
       {/* Main Content */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left Sidebar — Session List (~15%) */}
-        <Sidebar />
+        <Sidebar onNewTask={() => {
+          setCenterTab("tasks");
+          useTaskStore.getState().setDraftInputOpen(true);
+          useTaskStore.getState().setDraftValue("");
+        }} />
 
         {/* Center — Tasks / Terminal (~55%) */}
         <main className="relative flex flex-1 flex-col border-x border-surface-3">
