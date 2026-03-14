@@ -42,16 +42,16 @@ function App() {
       activeSessionId &&
       activeSessionId !== prevSessionRef.current
     ) {
-      // Don't auto-switch if this session was just fired from a task
-      const isFromFire = tasks.some(
-        (t) => t.session_id === activeSessionId && t.status === "working"
-      );
-      if (!isFromFire) {
+      // Don't auto-switch if fireTask just created this session
+      const skip = useSessionStore.getState()._skipTerminalSwitch;
+      if (skip) {
+        useSessionStore.setState({ _skipTerminalSwitch: false });
+      } else {
         setCenterTab("terminal");
       }
     }
     prevSessionRef.current = activeSessionId;
-  }, [activeSessionId, tasks]);
+  }, [activeSessionId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
