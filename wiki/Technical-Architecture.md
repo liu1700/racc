@@ -26,7 +26,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  | (ptyOutputParser.ts)|  |     |  | (db.rs)                 | | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  |  | UI Components       |  |     |                               | |
-|  |  | Sidebar/ActivityPanel|  |     |                               | |
+|  |  | Sidebar             |  |     |                               | |
 |  |  +---------------------+  |     |  +-------------------------+ | |
 |  +---------------------------+     +-------------------------------+ |
 |                                                                      |
@@ -149,7 +149,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `read_file_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, file reading relay, sidecar process management |
 | `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `delete_task` | Task CRUD for Task Board — create, list by repo, update status with optional session linking, delete with existence guard |
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
-| `db.rs` | (internal) | SQLite initialization, schema migrations (v1→v4) |
+| `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
 
 ### Frontend Component Architecture
 
@@ -160,6 +160,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
 | `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
 | `RemoveSessionDialog.tsx` | Modal | Removal confirmation with optional worktree cleanup checkbox |
+| `ResetDbDialog.tsx` | Modal | Database reset confirmation — wipes all repos, sessions, and assistant history |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
 | `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token usage breakdown |
 | `AssistantPanel.tsx` | Right panel | AI assistant container — switches between setup and chat views |

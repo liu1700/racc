@@ -3,7 +3,6 @@ import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
 import { AssistantPanel } from "./components/Assistant/AssistantPanel";
 import { StatusBar } from "./components/Dashboard/StatusBar";
-import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { FileViewer } from "./components/FileViewer/FileViewer";
 import { CommandPalette } from "./components/FileViewer/CommandPalette";
 import { TaskBoard } from "./components/TaskBoard/TaskBoard";
@@ -129,9 +128,6 @@ function App() {
           <AssistantPanel />
         </aside>
       </div>
-
-      {/* Activity Panel — session activity monitor */}
-      <ActivityPanel />
 
       {/* Global Status Bar */}
       <StatusBar />
