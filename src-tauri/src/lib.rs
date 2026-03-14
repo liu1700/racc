@@ -67,6 +67,12 @@ pub fn run() {
             commands::assistant::assistant_shutdown,
             commands::file::read_file,
             commands::file::search_files,
+            commands::insights::record_session_events,
+            commands::insights::get_insights,
+            commands::insights::update_insight_status,
+            commands::insights::save_insight,
+            commands::insights::get_session_events,
+            commands::insights::append_to_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
