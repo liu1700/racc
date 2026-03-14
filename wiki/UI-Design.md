@@ -102,11 +102,26 @@ Designed to align with color psychology research — reserving high-arousal red 
 
 **Constraint:** Status is communicated via color hue alone (single preattentive channel). Shape, size, and position encode other dimensions — never combined with color to indicate status.
 
-## Center Main Area — Terminal (implemented)
+## Center Main Area — Tasks / Terminal (implemented)
 
-Currently terminal-only mode:
+The center panel has a tab bar switching between **Tasks** (default) and **Terminal** views. Terminal stays mounted via CSS `hidden` to preserve xterm.js state across tab switches.
 
-### Terminal Mode (default — Deep Work)
+### Task Board Mode (default — Planning & Monitoring)
+
+A kanban-style board for cognitive offloading and agent orchestration. Four columns: Open, Running, Review, Done.
+
+- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
+- **Running column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display
+- **Review column:** Agent completed — task queued for batched evaluation. Click card to auto-switch to Terminal tab and activate the linked session. "Done" button to confirm
+- **Done column:** Archived tasks at reduced opacity
+
+**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
+
+**Tab badge:** Tasks tab shows count of non-done tasks in a rounded badge.
+
+**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=running, amber=review, blue=done). Batched evaluation via Review column supports 60–90 minute work cycles.
+
+### Terminal Mode (Deep Work)
 - Full xterm.js 5.5 terminal rendering the active agent session
 - Dark theme: background `#1a1a1f`, foreground `#d4d4d8`, cursor `#6366f1` (indigo accent)
 - FitAddon for responsive sizing with ResizeObserver

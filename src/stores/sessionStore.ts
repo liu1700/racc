@@ -204,9 +204,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({
         repos: [],
         activeSessionId: null,
-        sessionActivities: {},
-        activityPanelOpen: false,
-        activityPanelDismissed: false,
+        sessionLastOutput: {},
       });
     } catch (e) {
       set({ error: String(e) });

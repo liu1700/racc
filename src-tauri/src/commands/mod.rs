@@ -4,3 +4,4 @@ pub mod db;
 pub mod file;
 pub mod git;
 pub mod session;
+pub mod task;

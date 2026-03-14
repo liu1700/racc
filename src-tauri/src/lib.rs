@@ -67,6 +67,10 @@ pub fn run() {
             commands::assistant::assistant_shutdown,
             commands::file::read_file,
             commands::file::search_files,
+            commands::task::create_task,
+            commands::task::list_tasks,
+            commands::task::update_task_status,
+            commands::task::delete_task,
             commands::db::reset_db,
         ])
         .run(tauri::generate_context!())
