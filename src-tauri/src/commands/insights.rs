@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use strsim::normalized_levenshtein;
 use tauri::State;
 
@@ -29,7 +29,7 @@ pub struct Insight {
 
 #[tauri::command]
 pub async fn record_session_events(
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
     events: Vec<SessionEvent>,
 ) -> Result<(), String> {
     let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
@@ -45,7 +45,7 @@ pub async fn record_session_events(
 
 #[tauri::command]
 pub async fn get_insights(
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
     status: Option<String>,
 ) -> Result<Vec<Insight>, String> {
     let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
@@ -83,7 +83,7 @@ pub async fn get_insights(
 
 #[tauri::command]
 pub async fn update_insight_status(
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
     id: i64,
     status: String,
 ) -> Result<(), String> {
@@ -103,7 +103,7 @@ pub async fn update_insight_status(
 
 #[tauri::command]
 pub async fn save_insight(
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
     insight_type: String,
     severity: String,
     title: String,
@@ -139,7 +139,7 @@ pub async fn save_insight(
 
 #[tauri::command]
 pub async fn get_session_events(
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
     event_type: Option<String>,
     since: Option<i64>,
 ) -> Result<Vec<SessionEvent>, String> {
@@ -455,7 +455,7 @@ fn detect_similar_sessions(conn: &Connection) -> Vec<DetectedInsight> {
 #[tauri::command]
 pub async fn run_batch_analysis(
     app: tauri::AppHandle,
-    db: State<'_, Mutex<Connection>>,
+    db: State<'_, Arc<Mutex<Connection>>>,
 ) -> Result<(), String> {
     // Run detection under lock, then release before insert loop
     let all_detected = {

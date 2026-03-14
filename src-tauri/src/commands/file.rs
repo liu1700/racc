@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const MAX_LINES_DEFAULT: usize = 10_000;
 
@@ -151,7 +151,7 @@ pub fn read_file_core(
 
 #[tauri::command]
 pub async fn read_file(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: Option<i64>,
     repo_id: Option<i64>,
     file_path: String,
@@ -163,7 +163,7 @@ pub async fn read_file(
 
 #[tauri::command]
 pub async fn search_files(
-    db: tauri::State<'_, Mutex<Connection>>,
+    db: tauri::State<'_, Arc<Mutex<Connection>>>,
     session_id: Option<i64>,
     repo_id: Option<i64>,
     query: String,

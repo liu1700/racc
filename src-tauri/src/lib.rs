@@ -1,19 +1,26 @@
 mod commands;
+mod events;
+mod ws_server;
 
-use std::sync::Mutex;
+use rusqlite::Connection;
+use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let db = commands::db::init_db().expect("Failed to initialize database");
+    let db_arc: Arc<Mutex<Connection>> = Arc::new(Mutex::new(db));
+    let (event_tx, _event_rx) = events::create_event_bus();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(Mutex::new(db))
+        .manage(db_arc.clone())
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
-        .setup(|app| {
+        .manage(event_tx)
+        .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
             let app_menu = SubmenuBuilder::new(app, "Racc")
@@ -40,7 +47,19 @@ pub fn run() {
                 .build()?;
 
             app.set_menu(menu)?;
+
+            let app_handle = app.handle().clone();
+            let db_for_ws = db_arc.clone();
+            tauri::async_runtime::spawn(async move {
+                ws_server::start(app_handle, db_for_ws, shutdown_rx).await;
+            });
+
             Ok(())
+        })
+        .on_window_event(move |_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                let _ = shutdown_tx.send(true);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::session::import_repo,

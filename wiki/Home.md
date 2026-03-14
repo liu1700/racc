@@ -23,6 +23,7 @@ Racc is a standalone desktop application (Tauri) for individual developers who u
 | [Cognitive Design Research](Cognitive-Design-Research.md) | Neuroscience and human factors research informing UI decisions |
 | [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
 | [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
+| [WebSocket Remote API](WebSocket-Remote-API.md) | External client integration via WebSocket |
 | [Competitive Analysis](Competitive-Analysis.md) | How Racc differs from Cursor, Windsurf, Claude Squad |
 | [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
