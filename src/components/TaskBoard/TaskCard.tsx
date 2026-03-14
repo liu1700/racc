@@ -25,6 +25,7 @@ export function TaskCard({ task }: Props) {
   const editRef = useRef<HTMLTextAreaElement>(null);
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const repos = useSessionStore((s) => s.repos);
+  const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const updateTaskDescription = useTaskStore((s) => s.updateTaskDescription);
 
   useEffect(() => {
@@ -89,7 +90,12 @@ export function TaskCard({ task }: Props) {
       <div
         className={`min-w-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
           task.status === "closed" ? "opacity-50" : ""
-        }`}
+        } ${task.status === "working" ? "cursor-pointer" : ""}`}
+        onClick={
+          task.status === "working" && task.session_id
+            ? () => setActiveSession(task.session_id!)
+            : undefined
+        }
       >
         {editing ? (
           <textarea
