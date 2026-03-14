@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Repo, Session, RepoWithSessions, SessionActivity } from "../types/session";
-import { startTracking, stopTracking, setActivityCallback } from "../services/ptyOutputParser";
+import type { Repo, Session, RepoWithSessions } from "../types/session";
+import { startTracking, stopTracking, setOutputCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
 
 interface SessionState {
@@ -10,14 +10,10 @@ interface SessionState {
   loading: boolean;
   error: string | null;
 
-  sessionActivities: Record<number, SessionActivity>;
-  activityPanelOpen: boolean;
-  activityPanelDismissed: boolean;
+  sessionLastOutput: Record<number, string>;
 
-  updateSessionActivity: (sessionId: number, activity: SessionActivity) => void;
-  removeSessionActivity: (sessionId: number) => void;
-  setActivityPanelOpen: (open: boolean) => void;
-  dismissActivityPanel: () => void;
+  updateSessionLastOutput: (sessionId: number, line: string) => void;
+  clearSessionLastOutput: (sessionId: number) => void;
 
   getActiveSession: () => { session: Session; repo: Repo } | null;
 
@@ -44,9 +40,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   loading: false,
   error: null,
 
-  sessionActivities: {},
-  activityPanelOpen: false,
-  activityPanelDismissed: false,
+  sessionLastOutput: {},
 
   getActiveSession: () => {
     const { repos, activeSessionId } = get();
@@ -59,9 +53,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   initialize: async () => {
-    // Wire up the PTY output parser callback
-    setActivityCallback((sessionId, activity) => {
-      get().updateSessionActivity(sessionId, activity);
+    // Wire up the PTY output callback
+    setOutputCallback((sessionId, lastLine) => {
+      get().updateSessionLastOutput(sessionId, lastLine);
     });
 
     set({ loading: true, error: null });
@@ -127,17 +121,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Build agent command with optional flags
       const agentCmd = skipPermissions ? "claude --dangerously-skip-permissions" : "claude";
 
-      // Reset panel dismissed state if this is the first running session
-      const runningSessions = get().repos.flatMap((r) => r.sessions).filter((s) => s.status === "Running");
-      if (runningSessions.length === 0) {
-        set({ activityPanelDismissed: false });
-      }
-
       // Spawn PTY in the session's working directory
       spawnPty(session.id, cwd, 80, 24, agentCmd);
 
-      // Start tracking PTY output for activity panel
-      startTracking(session.id, session.agent);
+      // Start tracking PTY output
+      startTracking(session.id);
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });
@@ -159,15 +147,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const flags = skipPermissions ? " --dangerously-skip-permissions" : "";
       const agentCmd = `claude --continue${flags}`;
 
-      // Reset panel dismissed state if this is the first running session
-      const runningSessions = get().repos.flatMap((r) => r.sessions).filter((s) => s.status === "Running");
-      if (runningSessions.length === 0) {
-        set({ activityPanelDismissed: false });
-      }
-
       spawnPty(session.id, cwd, 80, 24, agentCmd);
 
-      startTracking(session.id, session.agent);
+      startTracking(session.id);
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });
@@ -180,13 +162,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   stopSession: async (sessionId) => {
     try {
       stopTracking(sessionId);
-      // Update activity to show completion before removing
-      get().updateSessionActivity(sessionId, {
-        sessionId,
-        action: "Completed",
-        detail: null,
-        timestamp: Date.now(),
-      });
       killPty(sessionId);
       await invoke("stop_session", { sessionId });
       const repos = await invoke<RepoWithSessions[]>("list_repos");
@@ -204,7 +179,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   removeSession: async (sessionId, deleteWorktree = false) => {
     try {
       stopTracking(sessionId);
-      get().removeSessionActivity(sessionId);
+      get().clearSessionLastOutput(sessionId);
       killPty(sessionId);
       await invoke("remove_session", { sessionId, deleteWorktree });
       const repos = await invoke<RepoWithSessions[]>("list_repos");
@@ -241,32 +216,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
-  updateSessionActivity: (sessionId, activity) => {
-    const current = get().sessionActivities[sessionId];
-    // De-duplicate: skip set() if action + detail unchanged
-    if (current && current.action === activity.action && current.detail === activity.detail) {
-      return;
-    }
-    const { activityPanelOpen, activityPanelDismissed } = get();
+  updateSessionLastOutput: (sessionId, line) => {
     set({
-      sessionActivities: { ...get().sessionActivities, [sessionId]: activity },
-      // Auto-open panel if not user-dismissed
-      ...(!activityPanelOpen && !activityPanelDismissed ? { activityPanelOpen: true } : {}),
+      sessionLastOutput: { ...get().sessionLastOutput, [sessionId]: line },
     });
   },
 
-  removeSessionActivity: (sessionId) => {
-    const { [sessionId]: _, ...rest } = get().sessionActivities;
-    const hasRemaining = Object.keys(rest).length > 0;
-    set({
-      sessionActivities: rest,
-      // Auto-close when no remaining activities
-      ...(!hasRemaining ? { activityPanelOpen: false } : {}),
-    });
+  clearSessionLastOutput: (sessionId) => {
+    const { [sessionId]: _, ...rest } = get().sessionLastOutput;
+    set({ sessionLastOutput: rest });
   },
-
-  setActivityPanelOpen: (open) => set({ activityPanelOpen: open }),
-
-  dismissActivityPanel: () =>
-    set({ activityPanelOpen: false, activityPanelDismissed: true }),
 }));

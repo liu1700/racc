@@ -15,7 +15,7 @@ The main interface showing all active agent sessions as status cards. Designed a
 - Current task description / micro-summary
 - Runtime duration and progress indicator
 - Token consumption (input/output breakdown)
-- Current operation via Activity Panel (reading file / executing command / waiting for approval) — **implemented**: real-time PTY output parsing with per-session action summaries
+- Latest terminal output (truncated) displayed inline in the sidebar — **implemented**: real-time PTY output capture per session
 - Associated git branch and worktree path
 
 **Categorical grouping:** Sessions are ordered by status priority (error/blocked → running → completed) so "needs attention" items always surface first. When 10 agents are grouped into 3 status categories, the developer holds 3 chunks rather than 10.
