@@ -41,9 +41,10 @@ function sortByStatus(sessions: Session[]): Session[] {
 
 interface SidebarProps {
   onNewTask?: () => void;
+  onSessionSelect?: () => void;
 }
 
-export function Sidebar({ onNewTask }: SidebarProps) {
+export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
@@ -190,6 +191,7 @@ export function Sidebar({ onNewTask }: SidebarProps) {
                     } else {
                       reattachSession(session.id);
                     }
+                    onSessionSelect?.();
                   }}
                   className={`group ml-4 cursor-pointer rounded px-2 py-1 transition-colors duration-150 ${
                     session.id === activeSessionId
