@@ -11,15 +11,15 @@ Three-panel layout, left to right:
 ```
 +----------------+------------------------------------+----------------------+
 |                |                                    |                      |
-|  Left Sidebar  |         Center Main Area           |   Right Panel        |
-|  (~15%)        |         (~55%)                     |   (~30%)             |
-|                |                                    |                      |
-|  Session List  |  Tasks / Terminal (tab switching)   |  Insights Panel      |
-|  + Inline      |  ── or ──                          |  (pattern detection) |
-|    Activity    |  Diff Review View                  |                      |
-|  + Quick       |  (switchable)                      |                      |
-|    Actions     |                                    |                      |
-|                |                                    |                      |
+|  Left Sidebar  |              Center Main Area                            |
+|  (~15%)        |              (~85%)                                       |
+|                |                                                          |
+|  Session List  |  Tasks / Terminal (tab switching)                         |
+|  + Inline      |  ── or ──                                                 |
+|    Activity    |  Diff Review View                                         |
+|  + Quick       |  (switchable)                                             |
+|    Actions     |                                                           |
+|                |                                                           |
 +----------------+------------------------------------+----------------------+
 |                        Global Status Bar                                   |
 |  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
@@ -170,9 +170,14 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 - Full side-by-side review UI planned for P1
 - **Batched review design:** When agents complete work, diffs queue for review. The developer enters review mode on their own schedule — no forced interruption of deep work. Aligns with research showing optimal review at 200–400 lines per session, with effectiveness dropping after 60–90 minutes.
 
-## Right Panel — Insights Panel (implemented)
+## Right Panel — Insights Panel (hidden for MVP)
 
-An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Replaces the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
+> **Status:** UI hidden and all event capture/analysis disabled for MVP. Code is preserved in the codebase (`InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`, `insightsStore.ts`, `eventCapture.ts`, `insights.rs`) for future re-enablement. The center panel now takes the full remaining width after the sidebar.
+
+An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Designed to replace the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
+
+<details>
+<summary>Full design (collapsed — not active in MVP)</summary>
 
 ### Timeline Feed
 - Chronological list of detected insights, newest first
@@ -216,6 +221,8 @@ Settings gear (⚙) in the panel header opens `AssistantSetup.tsx` for configuri
 
 ### Deduplication
 Each insight has a fingerprint (e.g., sorted session IDs + matched text hash). A unique partial index (`WHERE status = 'active'`) prevents duplicate insights at the database level.
+
+</details>
 
 ## Inline Session Activity (implemented)
 

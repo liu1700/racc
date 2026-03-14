@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
-import { initEventCapture, recordEvent } from "../services/eventCapture";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -58,9 +57,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     setOutputCallback((sessionId, lastLine) => {
       get().updateSessionLastOutput(sessionId, lastLine);
     });
-
-    // Initialize event capture for insights
-    initEventCapture();
 
     set({ loading: true, error: null });
     try {
@@ -130,12 +126,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       // Start tracking PTY output
       startTracking(session.id);
-
-      // Record session metadata for insights
-      recordEvent(session.id, "session_meta", {
-        branch: session.branch || null,
-        agent: session.agent,
-      });
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });

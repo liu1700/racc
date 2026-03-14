@@ -55,30 +55,11 @@ When an agent completes a round of work, provide a proper review experience. Des
 
 **Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
 
-### 4. Insights Panel — Cross-Session Pattern Detection (implemented)
+### 4. Insights Panel — Cross-Session Pattern Detection (hidden for MVP)
 
-An actionable insights feed that replaces the previous AI assistant chat panel. Instead of a generic chat, it automatically detects patterns across sessions and surfaces one-click suggestions to accelerate development workflows.
+> **Status:** UI hidden and all event capture/analysis disabled for MVP. Code is preserved in the codebase for future re-enablement. See [UI Design — Insights Panel](UI-Design#right-panel--insights-panel-hidden-for-mvp) for full design details.
 
-**Six insight types:**
-
-| Type | Trigger | Severity |
-|------|---------|----------|
-| Repeated Prompt | Same/similar instruction in ≥3 sessions | Warning (amber) |
-| Startup Pattern | ≥3 sessions begin with same command sequence | Warning (amber) |
-| Repeated Permission | Same permission type requested ≥3 times in one session | Warning (amber) |
-| Cost Anomaly | 10-min cost > 3× session's historical average | Alert (red) |
-| File Conflict | Same file written/edited in ≥2 active sessions | Alert (red) |
-| Similar Sessions | Two sessions share overlapping file sets | Suggestion (green) |
-
-**Architecture:** Hybrid frontend/backend analysis. Frontend runs real-time rules (file conflicts, cost anomalies, permission repeats) on structured events captured from PTY output. Rust backend runs batch analysis every 5 minutes (repeated prompt clustering via Levenshtein similarity, startup pattern detection, similar session detection via Jaccard index). LLM is used only for generating suggestion text (e.g., CLAUDE.md entries), never for detection.
-
-**Event capture:** `ptyOutputParser.ts` is extended to extract user prompts (❯ marker detection). `eventCapture.ts` buffers events and flushes to SQLite every 30 seconds. Events are also fed to real-time rules in the `insightsStore`.
-
-**UI:** Chronological timeline feed with severity-colored dots. Cards expand inline to show evidence (matched prompts, conflicting files, etc.) and action buttons. Actions include: "Add to CLAUDE.md", "Copy allowlist rule", "Switch to session", "View File", "Dismiss".
-
-**Deduplication:** Insights have a fingerprint column with a unique partial index on active status, preventing duplicate detections across batch runs.
-
-**Current status:** Fully implemented. Components: `InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`. State: `insightsStore.ts`. Services: `eventCapture.ts`. Backend: `insights.rs` (event recording, insight CRUD, batch analysis). Settings gear opens `AssistantSetup.tsx` for LLM API key configuration (used for generating suggestion text).
+An actionable insights feed designed to detect patterns across sessions and surface one-click suggestions. Six insight types (repeated prompts, startup patterns, repeated permissions, cost anomalies, file conflicts, similar sessions) with hybrid frontend real-time + Rust batch analysis architecture. Full implementation exists but is disconnected from the app to keep the MVP focused.
 
 ### 5. Task Board — Cognitive Offloading & Agent Orchestration (implemented)
 
