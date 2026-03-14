@@ -1,4 +1,5 @@
 import { subscribe } from "./ptyManager";
+import { detectPrUrl } from "../utils/prUrl";
 
 // Strip ANSI escape sequences from terminal output
 function stripAnsi(str: string): string {
@@ -33,9 +34,17 @@ let onOutputUpdate: OutputCallback | null = null;
 type PromptCallback = (sessionId: number, text: string, position: number) => void;
 let onPromptDetected: PromptCallback | null = null;
 
+type PrUrlCallback = (sessionId: number, prUrl: string) => void;
+let onPrUrlDetected: PrUrlCallback | null = null;
+
 /** Set the callback that receives user prompt detections. */
 export function setPromptCallback(cb: PromptCallback): void {
   onPromptDetected = cb;
+}
+
+/** Set the callback that receives PR URL detections. */
+export function setPrUrlCallback(cb: PrUrlCallback): void {
+  onPrUrlDetected = cb;
 }
 
 /** Set the callback that receives output updates. Call once at app init. */
@@ -64,6 +73,14 @@ function handlePtyData(sessionId: number, data: Uint8Array): void {
   }
   if (meaningful) {
     onOutputUpdate(sessionId, meaningful);
+  }
+
+  // Detect PR/MR URLs from terminal output
+  if (onPrUrlDetected) {
+    const prUrl = detectPrUrl(decoded);
+    if (prUrl) {
+      onPrUrlDetected(sessionId, prUrl);
+    }
   }
 
   // Detect user prompts from PTY output (for insights event capture)

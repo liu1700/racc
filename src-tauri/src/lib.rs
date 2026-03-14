@@ -50,6 +50,7 @@ pub fn run() {
             commands::session::remove_session,
             commands::session::reattach_session,
             commands::session::reconcile_sessions,
+            commands::session::update_session_pr_url,
             commands::git::create_worktree,
             commands::git::delete_worktree,
             commands::git::get_diff,

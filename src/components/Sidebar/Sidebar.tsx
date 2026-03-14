@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/plugin-shell";
 import { useSessionStore } from "../../stores/sessionStore";
 import { ImportRepoDialog } from "./ImportRepoDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import { ResetDbDialog } from "./ResetDbDialog";
 import type { Session, SessionStatus } from "../../types/session";
+import { parsePrDisplay } from "../../utils/prUrl";
 
 const statusColor: Record<SessionStatus, string> = {
   Running: "bg-status-running",
@@ -184,6 +186,21 @@ export function Sidebar() {
                       {sessionLastOutput[session.id] ?? "\u00A0"}
                     </p>
                   )}
+                  {session.pr_url && (() => {
+                    const pr = parsePrDisplay(session.pr_url);
+                    return pr ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          open(session.pr_url!);
+                        }}
+                        className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-accent hover:underline"
+                        title={session.pr_url}
+                      >
+                        {pr.label}
+                      </button>
+                    ) : null;
+                  })()}
                 </div>
               ))}
           </div>

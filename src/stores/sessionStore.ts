@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
-import { startTracking, stopTracking, setOutputCallback } from "../services/ptyOutputParser";
+import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
 
 interface SessionState {
@@ -14,6 +14,7 @@ interface SessionState {
 
   updateSessionLastOutput: (sessionId: number, line: string) => void;
   clearSessionLastOutput: (sessionId: number) => void;
+  updateSessionPrUrl: (sessionId: number, prUrl: string) => void;
 
   getActiveSession: () => { session: Session; repo: Repo } | null;
 
@@ -57,6 +58,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     setOutputCallback((sessionId, lastLine) => {
       get().updateSessionLastOutput(sessionId, lastLine);
     });
+
+    // Wire up PR URL detection callback
+    setPrUrlCallback((sessionId, prUrl) => {
+      // Check if pr_url changed to avoid redundant DB writes
+      const current = get().repos
+        .flatMap((r) => r.sessions)
+        .find((s) => s.id === sessionId);
+      if (current?.pr_url === prUrl) return;
+
+      // Persist to DB then update local state
+      invoke("update_session_pr_url", { sessionId, prUrl }).then(() => {
+        get().updateSessionPrUrl(sessionId, prUrl);
+      }).catch((e) => console.warn("[sessionStore] Failed to save PR URL:", e));
+    });
+
 
     set({ loading: true, error: null });
     try {
@@ -231,5 +247,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSessionLastOutput: (sessionId) => {
     const { [sessionId]: _, ...rest } = get().sessionLastOutput;
     set({ sessionLastOutput: rest });
+  },
+
+  updateSessionPrUrl: (sessionId, prUrl) => {
+    set({
+      repos: get().repos.map((rws) => ({
+        ...rws,
+        sessions: rws.sessions.map((s) =>
+          s.id === sessionId ? { ...s, pr_url: prUrl } : s,
+        ),
+      })),
+    });
   },
 }));
