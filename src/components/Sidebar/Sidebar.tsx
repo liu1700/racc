@@ -180,9 +180,9 @@ export function Sidebar() {
                       </>
                     )}
                   </div>
-                  {sessionLastOutput[session.id] && (
-                    <p className="mt-0.5 truncate text-[10px] text-zinc-600 leading-tight pl-3.5">
-                      {sessionLastOutput[session.id]}
+                  {session.status === "Running" && (
+                    <p className="mt-0.5 h-3.5 truncate text-[10px] text-zinc-600 leading-tight pl-3.5">
+                      {sessionLastOutput[session.id] ?? "\u00A0"}
                     </p>
                   )}
                 </div>

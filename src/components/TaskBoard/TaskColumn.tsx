@@ -30,7 +30,7 @@ export function TaskColumn({
   const config = COLUMN_CONFIG[status];
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
       {/* Column header */}
       <div className="mb-1 flex items-center gap-2 px-2 py-1">
         <span className={`h-1.5 w-1.5 rounded-full ${config.dotColor}`} />

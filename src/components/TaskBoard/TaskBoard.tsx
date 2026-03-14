@@ -67,7 +67,7 @@ export function TaskBoard({ repoId, onSwitchToTerminal }: Props) {
   ) as Record<TaskStatus, typeof tasks>;
 
   return (
-    <div className="flex flex-1 gap-2 overflow-x-auto p-3">
+    <div className="grid flex-1 grid-cols-4 gap-2 overflow-x-auto p-3">
       {COLUMNS.map((status) => (
         <TaskColumn
           key={status}

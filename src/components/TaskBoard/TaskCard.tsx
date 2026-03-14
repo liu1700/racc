@@ -60,7 +60,7 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
   return (
     <>
       <div
-        className={`rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
+        className={`min-w-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
           task.status === "done" ? "opacity-50" : ""
         } ${task.status === "review" ? "cursor-pointer" : ""}`}
         onClick={task.status === "review" ? handleReviewClick : undefined}
@@ -72,12 +72,16 @@ export function TaskCard({ task, onSwitchToTerminal }: Props) {
         {/* Running: show linked session + live activity + elapsed time */}
         {task.status === "running" && (
           <>
-            <div className="mb-1 flex items-center gap-1.5 text-[10px] text-status-running">
-              <span className="inline-block h-1 w-1 animate-status-pulse rounded-full bg-status-running" />
+            <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[10px] text-status-running">
+              <span className="inline-block h-1 w-1 flex-shrink-0 animate-status-pulse rounded-full bg-status-running" />
               <span className="truncate">
                 {linkedSession?.branch ?? "session"}
-                {lastOutput ? ` — ${lastOutput}` : ""}
               </span>
+              {lastOutput && (
+                <span className="min-w-0 flex-1 truncate text-status-running/60">
+                  — {lastOutput}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span className="rounded bg-surface-2 px-1.5 py-0.5">claude</span>
