@@ -2,13 +2,19 @@ import { subscribe } from "./ptyManager";
 
 // Strip ANSI escape sequences from terminal output
 function stripAnsi(str: string): string {
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  return str
+    .replace(/\x1b\[[\x20-\x3f]*[\x40-\x7e]/g, "")   // CSI sequences (includes ?/>/= private modes)
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") // OSC sequences
+    .replace(/\x1b[\x20-\x2f]*[\x30-\x7e]/g, "");      // Other ESC sequences (e.g. \x1b(B, \x1b=)
 }
 
 // Claude Code prompt markers — user input follows these
 // Only match the Unicode prompt character ❯ (U+276F) to avoid false positives from > in diffs/markdown
 const PROMPT_MARKER_PATTERN = /^❯\s+(.+)/;
 const HUMAN_TURN_PATTERN = /^\s*Human:\s*$/;
+
+// Lines to EXCLUDE — tool output, dividers, control lines, and other noise
+const NOISE_PATTERN = /^[└├│┌┐…❯›▸►▶⏵➤⟩>»]|^──|bypass permissions|esc to interrupt|shift\+tab to cycle|\(No output\)|^\+\d+ lines/;
 
 type OutputCallback = (sessionId: number, lastLine: string) => void;
 
@@ -44,12 +50,21 @@ function handlePtyData(sessionId: number, data: Uint8Array): void {
   const decoded = stripAnsi(entry.decoder.decode(data, { stream: true }));
   if (!decoded.trim()) return;
 
-  // Get the last non-empty line from this chunk
   const lines = decoded.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return;
 
-  const lastLine = lines[lines.length - 1].trim().slice(0, 120);
-  onOutputUpdate(sessionId, lastLine);
+  // Find the last meaningful line: exclude tool output noise, keep Claude's messages.
+  // Scan all lines (last match wins since it's most recent).
+  let meaningful: string | null = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length < 3) continue;
+    if (NOISE_PATTERN.test(trimmed)) continue;
+    meaningful = trimmed.slice(0, 120);
+  }
+  if (meaningful) {
+    onOutputUpdate(sessionId, meaningful);
+  }
 
   // Detect user prompts from PTY output (for insights event capture)
   if (onPromptDetected) {

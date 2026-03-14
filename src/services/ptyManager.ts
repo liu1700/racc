@@ -28,7 +28,7 @@ export function spawnPty(
   if (entries.has(sessionId)) return;
 
   console.log("[ptyManager] spawnPty called:", { sessionId, cwd, cols, rows, agentCmd });
-  const pty = spawn(DEFAULT_SHELL, [], {
+  const pty = spawn(DEFAULT_SHELL, ["--login"], {
     cols,
     rows,
     cwd,
@@ -46,7 +46,10 @@ export function spawnPty(
     exitCode: null,
   };
 
-  const dataDisposable = pty.onData((data: Uint8Array) => {
+  const dataDisposable = pty.onData((rawData: Uint8Array | number[]) => {
+    // tauri-pty returns Vec<u8> via JSON IPC as a plain number[],
+    // but xterm.js requires Uint8Array (calls .subarray() internally).
+    const data = rawData instanceof Uint8Array ? rawData : new Uint8Array(rawData);
     console.log("[ptyManager] onData for session", sessionId, "bytes:", data.length, "listeners:", entry.listeners.size);
     // Accumulate in buffer
     entry.buffer.push(data);
