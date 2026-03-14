@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 import { spawnPty, killPty, killAll } from "../services/ptyManager";
-import { initEventCapture, recordEvent } from "../services/eventCapture";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -74,8 +73,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }).catch((e) => console.warn("[sessionStore] Failed to save PR URL:", e));
     });
 
-    // Initialize event capture for insights
-    initEventCapture();
 
     set({ loading: true, error: null });
     try {
@@ -146,12 +143,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Start tracking PTY output
       startTracking(session.id);
 
-      // Record session metadata for insights
-      recordEvent(session.id, "session_meta", {
-        branch: session.branch || null,
-        agent: session.agent,
-      });
-
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos: updatedRepos, activeSessionId: session.id });
     } catch (e) {
@@ -211,6 +202,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       get().clearSessionLastOutput(sessionId);
       killPty(sessionId);
       await invoke("remove_session", { sessionId, deleteWorktree });
+
+      // Trigger batch analysis (session may have been running)
+      invoke("run_batch_analysis").catch(() => {});
+
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       const { activeSessionId } = get();
       set({

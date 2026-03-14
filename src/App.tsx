@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
-import { InsightsPanel } from "./components/Insights/InsightsPanel";
+
 import { StatusBar } from "./components/Dashboard/StatusBar";
 import { FileViewer } from "./components/FileViewer/FileViewer";
 import { CommandPalette } from "./components/FileViewer/CommandPalette";
@@ -44,7 +44,7 @@ function App() {
     ) {
       // Don't auto-switch if this session was just fired from a task
       const isFromFire = tasks.some(
-        (t) => t.session_id === activeSessionId && t.status === "running"
+        (t) => t.session_id === activeSessionId && t.status === "working"
       );
       if (!isFromFire) {
         setCenterTab("terminal");
@@ -64,7 +64,7 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const activeTaskCount = tasks.filter((t) => t.status !== "done").length;
+  const activeTaskCount = tasks.filter((t) => t.status !== "closed").length;
 
   return (
     <div className="flex h-screen flex-col bg-surface-0">
@@ -112,10 +112,7 @@ function App() {
 
           {/* Content — Terminal stays mounted to preserve xterm.js state */}
           {centerTab === "tasks" && (
-            <TaskBoard
-              repoId={activeRepoId}
-              onSwitchToTerminal={() => setCenterTab("terminal")}
-            />
+            <TaskBoard repoId={activeRepoId} />
           )}
           <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
             <Terminal />
@@ -123,10 +120,7 @@ function App() {
           </div>
         </main>
 
-        {/* Right Panel — Insights (~30%) */}
-        <aside className="flex w-80 flex-col overflow-hidden">
-          <InsightsPanel />
-        </aside>
+
       </div>
 
       {/* Global Status Bar */}

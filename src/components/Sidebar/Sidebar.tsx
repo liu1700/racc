@@ -146,7 +146,7 @@ export function Sidebar() {
                     <span className="text-[10px] tabular-nums text-zinc-600">
                       {formatElapsed(session.created_at)}
                     </span>
-                    {session.status === "Running" ? (
+                    {session.status === "Running" && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -157,34 +157,33 @@ export function Sidebar() {
                       >
                         ■
                       </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            reattachSession(session.id);
-                          }}
-                          className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
-                          title="Reattach session"
-                        >
-                          ▶
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRemoveDialogSession(session);
-                          }}
-                          className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
-                          title="Remove session"
-                        >
-                          ×
-                        </button>
-                      </>
                     )}
+                    {session.status !== "Running" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          reattachSession(session.id);
+                        }}
+                        className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-accent group-hover:block"
+                        title="Reattach session"
+                      >
+                        ▶
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemoveDialogSession(session);
+                      }}
+                      className="hidden text-xs text-zinc-500 transition-colors duration-150 hover:text-red-400 group-hover:block"
+                      title="Remove session"
+                    >
+                      ×
+                    </button>
                   </div>
-                  {sessionLastOutput[session.id] && (
-                    <p className="mt-0.5 truncate text-[10px] text-zinc-600 leading-tight pl-3.5">
-                      {sessionLastOutput[session.id]}
+                  {session.status === "Running" && (
+                    <p className="mt-0.5 h-3.5 truncate text-[10px] text-zinc-600 leading-tight pl-3.5">
+                      {sessionLastOutput[session.id] ?? "\u00A0"}
                     </p>
                   )}
                   {session.pr_url && (() => {

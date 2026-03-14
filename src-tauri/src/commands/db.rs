@@ -119,7 +119,7 @@ pub fn init_db() -> Result<Connection, String> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
             description TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','running','review','done')),
+            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','working','closed')),
             session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))

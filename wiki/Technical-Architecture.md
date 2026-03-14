@@ -50,7 +50,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 | **Backend** | Rust (Tauri commands) | Session CRUD, git worktrees, token usage tracking |
 | **Terminal I/O** | `tauri-plugin-pty` | Spawn/kill PTY processes, stream data to xterm.js |
 | **Persistence** | SQLite | Repos and sessions stored in `~/.racc/racc.db` |
-| **Insights Engine** | Frontend real-time rules + Rust batch analysis | Cross-session pattern detection (file conflicts, repeated prompts, cost anomalies, similar sessions) |
+| **Insights Engine** | Frontend real-time rules + Rust batch analysis | Cross-session pattern detection — **hidden for MVP**, code preserved |
 | **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
 | **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
 | **Agent Runtime** | Claude Code / Aider / Codex | Pluggable — IDE does not bind to a specific agent |
@@ -91,7 +91,7 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 **Schema (v4):**
 - `repos` table: id, path, name, added_at
 - `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|running|review|done), session_id (FK SET NULL), created_at, updated_at
+- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|working|closed), session_id (FK SET NULL), created_at, updated_at
 - `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
 - `assistant_config` table: key, value
 - `session_events` table: id, session_id (FK→sessions), event_type, payload (JSON), created_at (Unix ms)
@@ -158,7 +158,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `App.tsx` | Root layout | Three-panel layout orchestrator with Tasks/Terminal tab switching, calls `initialize()` on mount |
+| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal tab switching, calls `initialize()` on mount. Right panel (Insights) hidden for MVP |
 | `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
 | `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
@@ -166,18 +166,18 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `ResetDbDialog.tsx` | Modal | Database reset confirmation — wipes all repos, sessions, and assistant history |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
 | `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token usage breakdown |
-| `InsightsPanel.tsx` | Right panel | Insights timeline feed — replaces previous AssistantPanel |
-| `InsightCard.tsx` | Right panel | Single insight card with collapsed/expanded states and evidence display |
-| `InsightActions.tsx` | Right panel | Per-type action buttons (Add to CLAUDE.md, View File, Switch session, etc.) |
-| `AssistantSetup.tsx` | Right panel | API key configuration — accessed via settings gear in InsightsPanel |
+| `InsightsPanel.tsx` | Right panel | Insights timeline feed — **hidden for MVP**, code preserved |
+| `InsightCard.tsx` | Right panel | Single insight card — **hidden for MVP** |
+| `InsightActions.tsx` | Right panel | Per-type action buttons — **hidden for MVP** |
+| `AssistantSetup.tsx` | Right panel | API key configuration — **hidden for MVP** |
 | `FileViewer.tsx` | Center panel (overlay) | Full file viewer with Shiki syntax highlighting, Cmd+F search, Ctrl+G jump-to-line |
 | `CommandPalette.tsx` | Global overlay | Fuzzy file search (Cmd+P), keyboard navigation, debounced search |
 | `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
-| `insightsStore.ts` | Store | Insights state, real-time detection rules (file conflicts, cost anomalies, permissions), Tauri event listener |
-| `eventCapture.ts` | Service | Event normalization, buffering, 30s batch flush to SQLite, real-time listener dispatch |
-| `TaskBoard.tsx` | Center panel | 4-column kanban (Open/Running/Review/Done) with session sync |
+| `insightsStore.ts` | Store | Insights state, real-time detection rules — **disabled for MVP** |
+| `eventCapture.ts` | Service | Event normalization, buffering — **disabled for MVP** |
+| `TaskBoard.tsx` | Center panel | 3-column kanban (Open/Working/Closed) with session sync |
 | `TaskColumn.tsx` | Center panel | Single kanban column with header, cards, and new-task input |
-| `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, review action |
+| `TaskCard.tsx` | Center panel | Status-dependent card with live activity and fire button |
 | `TaskInput.tsx` | Center panel | Inline task creation input (Enter/Esc) |
 | `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
 | `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |

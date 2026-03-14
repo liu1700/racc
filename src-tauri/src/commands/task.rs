@@ -86,7 +86,7 @@ pub fn update_task_status(
     status: String,
     session_id: Option<i64>,
 ) -> Result<Task, String> {
-    let valid = ["open", "running", "review", "done"];
+    let valid = ["open", "working", "closed"];
     if !valid.contains(&status.as_str()) {
         return Err(format!("Invalid status '{}'. Must be one of: {}", status, valid.join(", ")));
     }
@@ -106,6 +106,40 @@ pub fn update_task_status(
         )
         .map_err(|e| format!("Failed to update task: {e}"))?;
     }
+
+    let task = conn
+        .query_row(
+            "SELECT id, repo_id, description, status, session_id, created_at, updated_at FROM tasks WHERE id = ?1",
+            [task_id],
+            |row| {
+                Ok(Task {
+                    id: row.get(0)?,
+                    repo_id: row.get(1)?,
+                    description: row.get(2)?,
+                    status: row.get(3)?,
+                    session_id: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Failed to fetch updated task: {e}"))?;
+
+    Ok(task)
+}
+
+#[tauri::command]
+pub fn update_task_description(
+    db: tauri::State<'_, Mutex<Connection>>,
+    task_id: i64,
+    description: String,
+) -> Result<Task, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tasks SET description = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![description, task_id],
+    )
+    .map_err(|e| format!("Failed to update task description: {e}"))?;
 
     let task = conn
         .query_row(

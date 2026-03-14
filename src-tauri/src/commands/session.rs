@@ -325,8 +325,13 @@ pub async fn remove_session(
         )
         .map_err(|e| format!("Session not found: {e}"))?;
 
+    // If still running, mark as completed first
     if status == "Running" {
-        return Err("Cannot remove a running session. Stop it first.".to_string());
+        conn.execute(
+            "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
+            [session_id],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     // Remove worktree via git if requested

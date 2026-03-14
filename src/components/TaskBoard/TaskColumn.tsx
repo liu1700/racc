@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Task, TaskStatus } from "../../types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskInput } from "./TaskInput";
@@ -8,29 +7,33 @@ const COLUMN_CONFIG: Record<
   { label: string; dotColor: string }
 > = {
   open: { label: "Open", dotColor: "bg-accent" },
-  running: { label: "Running", dotColor: "bg-status-running" },
-  review: { label: "Review", dotColor: "bg-status-waiting" },
-  done: { label: "Done", dotColor: "bg-status-completed" },
+  working: { label: "Working", dotColor: "bg-status-running" },
+  closed: { label: "Closed", dotColor: "bg-status-completed" },
 };
 
 interface Props {
   status: TaskStatus;
   tasks: Task[];
   onCreateTask?: (description: string) => void;
-  onSwitchToTerminal: () => void;
+  inputOpen?: boolean;
+  onInputOpenChange?: (open: boolean) => void;
+  draftValue?: string;
+  onDraftChange?: (value: string) => void;
 }
 
 export function TaskColumn({
   status,
   tasks,
   onCreateTask,
-  onSwitchToTerminal,
+  inputOpen = false,
+  onInputOpenChange,
+  draftValue = "",
+  onDraftChange,
 }: Props) {
-  const [inputOpen, setInputOpen] = useState(false);
   const config = COLUMN_CONFIG[status];
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
       {/* Column header */}
       <div className="mb-1 flex items-center gap-2 px-2 py-1">
         <span className={`h-1.5 w-1.5 rounded-full ${config.dotColor}`} />
@@ -46,7 +49,6 @@ export function TaskColumn({
           <TaskCard
             key={task.id}
             task={task}
-            onSwitchToTerminal={onSwitchToTerminal}
           />
         ))}
       </div>
@@ -56,15 +58,20 @@ export function TaskColumn({
         <div className="px-1">
           {inputOpen ? (
             <TaskInput
+              value={draftValue}
+              onChange={(v) => onDraftChange?.(v)}
               onSubmit={(desc) => {
                 onCreateTask(desc);
-                setInputOpen(false);
+                onDraftChange?.("");
+                onInputOpenChange?.(false);
               }}
-              onCancel={() => setInputOpen(false)}
+              onCancel={() => {
+                onInputOpenChange?.(false);
+              }}
             />
           ) : (
             <button
-              onClick={() => setInputOpen(true)}
+              onClick={() => onInputOpenChange?.(true)}
               className="w-full rounded border border-dashed border-surface-3 py-1.5 text-center text-[10px] text-zinc-600 transition-colors hover:border-accent hover:text-accent"
             >
               + New Task

@@ -11,15 +11,15 @@ Three-panel layout, left to right:
 ```
 +----------------+------------------------------------+----------------------+
 |                |                                    |                      |
-|  Left Sidebar  |         Center Main Area           |   Right Panel        |
-|  (~15%)        |         (~55%)                     |   (~30%)             |
-|                |                                    |                      |
-|  Session List  |  Tasks / Terminal (tab switching)   |  Insights Panel      |
-|  + Inline      |  ── or ──                          |  (pattern detection) |
-|    Activity    |  Diff Review View                  |                      |
-|  + Quick       |  (switchable)                      |                      |
-|    Actions     |                                    |                      |
-|                |                                    |                      |
+|  Left Sidebar  |              Center Main Area                            |
+|  (~15%)        |              (~85%)                                       |
+|                |                                                          |
+|  Session List  |  Tasks / Terminal (tab switching)                         |
+|  + Inline      |  ── or ──                                                 |
+|    Activity    |  Diff Review View                                         |
+|  + Quick       |  (switchable)                                             |
+|    Actions     |                                                           |
+|                |                                                           |
 +----------------+------------------------------------+----------------------+
 |                        Global Status Bar                                   |
 |  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
@@ -108,18 +108,19 @@ The center panel has a tab bar switching between **Tasks** (default) and **Termi
 
 ### Task Board Mode (default — Planning & Monitoring)
 
-A kanban-style board for cognitive offloading and agent orchestration. Four columns: Open, Running, Review, Done.
+A kanban-style board for cognitive offloading and agent orchestration. Three columns: Open, Working, Closed.
 
 - **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
-- **Running column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display
-- **Review column:** Agent completed — task queued for batched evaluation. Click card to auto-switch to Terminal tab and activate the linked session. "Done" button to confirm
-- **Done column:** Archived tasks at reduced opacity
+- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates
+- **Closed column:** Session completed or removed — archived tasks at reduced opacity
 
 **Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
 
-**Tab badge:** Tasks tab shows count of non-done tasks in a rounded badge.
+**Tab badge:** Tasks tab shows count of non-closed tasks in a rounded badge.
 
-**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=running, amber=review, blue=done). Batched evaluation via Review column supports 60–90 minute work cycles.
+**Layout stability:** Task board uses CSS Grid (`grid-cols-3`) instead of flexbox for column layout, ensuring columns maintain fixed equal widths regardless of content changes. Each card uses `overflow-hidden` and `min-w-0` to prevent live output text from pushing column boundaries. This eliminates width glitching caused by rapid `sessionLastOutput` updates in working cards.
+
+**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=working, muted=closed).
 
 ### Terminal Mode (Deep Work)
 - Full xterm.js 5.5 terminal rendering the active agent session
@@ -170,9 +171,14 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 - Full side-by-side review UI planned for P1
 - **Batched review design:** When agents complete work, diffs queue for review. The developer enters review mode on their own schedule — no forced interruption of deep work. Aligns with research showing optimal review at 200–400 lines per session, with effectiveness dropping after 60–90 minutes.
 
-## Right Panel — Insights Panel (implemented)
+## Right Panel — Insights Panel (hidden for MVP)
 
-An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Replaces the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
+> **Status:** UI hidden and all event capture/analysis disabled for MVP. Code is preserved in the codebase (`InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`, `insightsStore.ts`, `eventCapture.ts`, `insights.rs`) for future re-enablement. The center panel now takes the full remaining width after the sidebar.
+
+An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Designed to replace the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
+
+<details>
+<summary>Full design (collapsed — not active in MVP)</summary>
 
 ### Timeline Feed
 - Chronological list of detected insights, newest first
@@ -217,6 +223,8 @@ Settings gear (⚙) in the panel header opens `AssistantSetup.tsx` for configuri
 ### Deduplication
 Each insight has a fingerprint (e.g., sorted session IDs + matched text hash). A unique partial index (`WHERE status = 'active'`) prevents duplicate insights at the database level.
 
+</details>
+
 ## Inline Session Activity (implemented)
 
 Each session item in the sidebar shows a second line with the latest terminal output, providing at-a-glance awareness of what each agent is doing without a separate panel.
@@ -224,7 +232,7 @@ Each session item in the sidebar shows a second line with the latest terminal ou
 **Design:**
 - Status color dot + branch name + elapsed time (first row)
 - Truncated latest terminal output in muted text (second row, `text-[10px] text-zinc-600`)
-- Only shown when output exists for that session
+- Running sessions always reserve a fixed-height line (`h-3.5`) for output to prevent height jumps when output starts/stops
 
 **PTY output capture:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and captures the last non-empty line (truncated to 120 chars). Stored as `sessionLastOutput: Record<number, string>` in the Zustand store.
 
