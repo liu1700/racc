@@ -702,7 +702,7 @@ Modify `src/hooks/usePtyBridge.ts` to:
 ```typescript
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ptyManager } from "@/services/ptyManager";
+import { ptyManager } from "../services/ptyManager";
 import type { Terminal } from "@xterm/xterm";
 
 export function usePtyBridge(
@@ -898,32 +898,37 @@ SSH connection management, servers table, and frontend server CRUD UI.
 **Files:**
 - Modify: `src-tauri/src/commands/db.rs`
 
-- [ ] **Step 1: Add servers table creation**
+- [ ] **Step 1: Add servers table via versioned migration**
 
-Add to `init_db()` after existing table creations:
+**Important:** Task 7 (Chunk 1) already established the migration to version 2 (adding `server_id` to sessions). This migration should be version 3, placed after the `if version < 2` block in `init_db()`:
+
 ```rust
-conn.execute(
-    "CREATE TABLE IF NOT EXISTS servers (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        host TEXT NOT NULL,
-        port INTEGER DEFAULT 22,
-        username TEXT NOT NULL,
-        auth_method TEXT NOT NULL,
-        key_path TEXT,
-        ssh_config_host TEXT,
-        setup_status TEXT DEFAULT 'pending',
-        setup_details TEXT,
-        ai_provider TEXT,
-        ai_api_key TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    )",
-    [],
-)?;
+// Migration v2 → v3: create servers table
+if version < 3 {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER DEFAULT 22,
+            username TEXT NOT NULL,
+            auth_method TEXT NOT NULL,
+            key_path TEXT,
+            ssh_config_host TEXT,
+            setup_status TEXT DEFAULT 'pending',
+            setup_details TEXT,
+            ai_provider TEXT,
+            ai_api_key TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+    conn.pragma_update(None, "user_version", 3)?;
+}
 ```
 
-Note: `ai_provider` and `ai_api_key` store the optional LLM API key for the setup agent.
+Note: `ai_provider` and `ai_api_key` store the optional LLM API key for the setup agent. Stored in plaintext for MVP — encryption is a post-MVP concern.
 
 - [ ] **Step 2: Verify it compiles**
 
@@ -1069,13 +1074,16 @@ pub async fn list_servers(db: State<'_, DbPool>) -> Result<Vec<Server>, String> 
 }
 ```
 
-- [ ] **Step 2: Add uuid and chrono dependencies**
+- [ ] **Step 2: Add uuid, chrono, and dirs dependencies**
 
 ```toml
 # src-tauri/Cargo.toml
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
 ```
+
+`dirs` is needed by `ssh/config_parser.rs` for `dirs::home_dir()`.
 
 - [ ] **Step 3: Register module and commands**
 
@@ -1135,6 +1143,8 @@ pub struct SshHostConfig {
 }
 
 /// Parse ~/.ssh/config and return all Host aliases.
+/// Note: `ssh2-config` crate only resolves specific hosts, it cannot enumerate all
+/// Host blocks. We parse the file manually with a simple regex-based approach.
 pub fn list_ssh_hosts() -> Result<Vec<SshHostConfig>, String> {
     let config_path = dirs::home_dir()
         .ok_or("Cannot find home directory")?
@@ -1147,14 +1157,40 @@ pub fn list_ssh_hosts() -> Result<Vec<SshHostConfig>, String> {
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read SSH config: {}", e))?;
 
-    let config = SshConfig::default()
-        .parse_str(&content, ParseRule::ALLOW_UNKNOWN_FIELDS)
-        .map_err(|e| format!("Failed to parse SSH config: {}", e))?;
+    // Manual parsing: extract Host blocks and their key fields
+    let mut hosts = Vec::new();
+    let mut current: Option<SshHostConfig> = None;
 
-    // Extract hosts from config
-    // Note: exact API depends on ssh2-config version
-    // This is a skeleton — adjust based on actual crate API
-    todo!("Parse hosts from SshConfig")
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+
+        let parts: Vec<&str> = trimmed.splitn(2, |c: char| c.is_whitespace() || c == '=').collect();
+        if parts.len() < 2 { continue; }
+        let key = parts[0].to_lowercase();
+        let value = parts[1].trim().to_string();
+
+        match key.as_str() {
+            "host" => {
+                if let Some(h) = current.take() {
+                    if !h.host.contains('*') { hosts.push(h); } // skip wildcard entries
+                }
+                current = Some(SshHostConfig {
+                    host: value, hostname: None, port: None, user: None, identity_file: None,
+                });
+            }
+            "hostname" => if let Some(ref mut h) = current { h.hostname = Some(value); },
+            "port" => if let Some(ref mut h) = current { h.port = value.parse().ok(); },
+            "user" => if let Some(ref mut h) = current { h.user = Some(value); },
+            "identityfile" => if let Some(ref mut h) = current { h.identity_file = Some(PathBuf::from(value)); },
+            _ => {}
+        }
+    }
+    if let Some(h) = current {
+        if !h.host.contains('*') { hosts.push(h); }
+    }
+
+    Ok(hosts)
 }
 
 /// Resolve a host alias to connection parameters.
@@ -1172,6 +1208,7 @@ pub fn resolve_host(alias: &str) -> Result<SshHostConfig, String> {
 // src-tauri/src/ssh/mod.rs
 pub mod config_parser;
 
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1243,12 +1280,18 @@ impl SshManager {
     }
 
     /// Open an interactive channel (for tmux attach).
+    /// Returns the Channel object (not just ChannelId) for bidirectional I/O.
     pub async fn open_shell(
         &self,
         server_id: &str,
         cols: u16,
         rows: u16,
-    ) -> Result<russh::ChannelId, String> {
+    ) -> Result<russh::Channel<russh::client::Msg>, String> {
+        // 1. Get connection from HashMap
+        // 2. client.channel_open_session()
+        // 3. channel.request_pty(false, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+        // 4. channel.shell()
+        // 5. Return channel object (not just its ID)
         todo!("Implement interactive shell channel")
     }
 
@@ -1275,23 +1318,43 @@ pub struct CommandOutput {
 }
 ```
 
-- [ ] **Step 4: Register SshManager as managed state**
+- [ ] **Step 4: Register SshManager as managed state (wrapped in Arc)**
+
+Tauri's `State<T>` provides shared immutable access, but `SshTmuxTransport` needs an owned `Arc<SshManager>` to hold across its lifetime. Wrap SshManager in Arc before managing:
 
 Modify `src-tauri/src/lib.rs`:
 ```rust
 mod ssh;
 
 // In setup:
-let ssh_manager = ssh::SshManager::new();
+let ssh_manager = std::sync::Arc::new(ssh::SshManager::new());
 // ...
 .manage(ssh_manager)
 ```
 
-- [ ] **Step 5: Add connect/disconnect/test/exec server commands**
+Tauri commands will use `State<'_, Arc<SshManager>>` and can `.clone()` the Arc to pass into transports.
+
+- [ ] **Step 5: Add helper to read server by ID, then add connect/disconnect/test/exec commands**
 
 Add to `src-tauri/src/commands/server.rs`:
 ```rust
 use crate::ssh::SshManager;
+
+/// Helper to read a single server from DB by ID.
+fn get_server_by_id(db: &DbPool, server_id: &str) -> Result<Server, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.query_row(
+        "SELECT id, name, host, port, username, auth_method, key_path, ssh_config_host, setup_status, setup_details, ai_provider, ai_api_key, created_at, updated_at FROM servers WHERE id=?1",
+        params![server_id],
+        |row| Ok(Server {
+            id: row.get(0)?, name: row.get(1)?, host: row.get(2)?, port: row.get(3)?,
+            username: row.get(4)?, auth_method: row.get(5)?, key_path: row.get(6)?,
+            ssh_config_host: row.get(7)?, setup_status: row.get(8)?, setup_details: row.get(9)?,
+            ai_provider: row.get(10)?, ai_api_key: row.get(11)?,
+            created_at: row.get(12)?, updated_at: row.get(13)?,
+        }),
+    ).map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 pub async fn connect_server(
@@ -1324,8 +1387,19 @@ pub async fn test_connection(
     db: State<'_, DbPool>,
     ssh: State<'_, SshManager>,
 ) -> Result<String, String> {
-    connect_server(server_id.clone(), db, ssh.clone()).await?;
+    // IMPORTANT: Do NOT call connect_server() here — Tauri State is not Clone.
+    // Directly call ssh.connect() instead.
+    let server = get_server_by_id(&db, &server_id)?;
+    ssh.connect(
+        &server_id,
+        &server.host,
+        server.port as u16,
+        &server.username,
+        &server.auth_method,
+        server.key_path.as_deref(),
+    ).await?;
     let result = ssh.exec(&server_id, "echo ok").await?;
+    ssh.disconnect(&server_id).await?;
     Ok(result.stdout)
 }
 
@@ -1433,7 +1507,7 @@ export interface SshConfigHost {
 // src/stores/serverStore.ts
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Server, ServerConfig, SshConfigHost } from "@/types/server";
+import type { Server, ServerConfig, SshConfigHost } from "../types/server";
 
 interface ServerState {
   servers: Server[];
@@ -2000,10 +2074,12 @@ if let Some(ref sid) = server_id {
     )).await.map_err(|e| format!("Failed to create worktree: {}", e))?;
 
     // 3. Spawn SshTmuxTransport
+    // SshManager is managed as Arc<SshManager> (see Task 10 Step 4),
+    // so ssh_manager: State<'_, Arc<SshManager>> — clone the Arc to pass into transport.
     let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree);
     let transport = SshTmuxTransport::spawn(
         session_id, sid, &agent_cmd, 80, 24,
-        ssh_manager_arc.clone(), app.clone(), transport_manager.buffer_sender(),
+        (*ssh_manager).clone(), app.clone(), transport_manager.buffer_sender(),
     ).await.map_err(|e| e.to_string())?;
     transport_manager.insert(session_id, Box::new(transport)).await;
 } else {
@@ -2098,7 +2174,7 @@ git commit -m "feat: update reconcile_sessions to probe remote tmux sessions"
 ### Task 21: Status bar connection indicators
 
 **Files:**
-- Modify: `src/components/StatusBar/StatusBar.tsx` (or wherever status bar lives)
+- Modify: `src/components/Dashboard/StatusBar.tsx` (or wherever status bar lives)
 
 - [ ] **Step 1: Add server connection status to status bar**
 
@@ -2112,7 +2188,7 @@ Use `useServerStore` to read server list and connection status. Subscribe to con
 - [ ] **Step 2: Commit**
 
 ```bash
-git add src/components/StatusBar/
+git add src/components/Dashboard/StatusBar.tsx
 git commit -m "feat: show server connection status in status bar"
 ```
 
