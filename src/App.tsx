@@ -116,7 +116,7 @@ function App() {
 
           {/* Content — Terminal stays mounted to preserve xterm.js state */}
           {centerTab === "tasks" && (
-            <TaskBoard repoId={activeRepoId} />
+            <TaskBoard repoId={activeRepoId} onSessionSelect={() => setCenterTab("terminal")} />
           )}
           <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
             <Terminal />

@@ -8,6 +8,7 @@ import { parsePrDisplay } from "../../utils/prUrl";
 
 interface Props {
   task: Task;
+  onSessionSelect?: () => void;
 }
 
 function formatElapsed(createdAt: string): string {
@@ -18,7 +19,7 @@ function formatElapsed(createdAt: string): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-export function TaskCard({ task }: Props) {
+export function TaskCard({ task, onSessionSelect }: Props) {
   const [fireOpen, setFireOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.description);
@@ -93,7 +94,10 @@ export function TaskCard({ task }: Props) {
         } ${task.status === "working" ? "cursor-pointer" : ""}`}
         onClick={
           task.status === "working" && task.session_id
-            ? () => setActiveSession(task.session_id!)
+            ? () => {
+                setActiveSession(task.session_id!);
+                onSessionSelect?.();
+              }
             : undefined
         }
       >

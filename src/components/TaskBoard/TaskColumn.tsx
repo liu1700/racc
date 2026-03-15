@@ -14,6 +14,7 @@ const COLUMN_CONFIG: Record<
 interface Props {
   status: TaskStatus;
   tasks: Task[];
+  onSessionSelect?: () => void;
   onCreateTask?: (description: string) => void;
   inputOpen?: boolean;
   onInputOpenChange?: (open: boolean) => void;
@@ -24,6 +25,7 @@ interface Props {
 export function TaskColumn({
   status,
   tasks,
+  onSessionSelect,
   onCreateTask,
   inputOpen = false,
   onInputOpenChange,
@@ -49,6 +51,7 @@ export function TaskColumn({
           <TaskCard
             key={task.id}
             task={task}
+            onSessionSelect={onSessionSelect}
           />
         ))}
       </div>

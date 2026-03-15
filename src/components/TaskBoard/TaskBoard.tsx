@@ -9,9 +9,10 @@ const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
 interface Props {
   repoId: number | null;
+  onSessionSelect?: () => void;
 }
 
-export function TaskBoard({ repoId }: Props) {
+export function TaskBoard({ repoId, onSessionSelect }: Props) {
   const { tasks, createTask, loading, error, draftInputOpen, draftValue, setDraftInputOpen, setDraftValue } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
 
@@ -95,6 +96,7 @@ export function TaskBoard({ repoId }: Props) {
           key={status}
           status={status}
           tasks={tasksByStatus[status]}
+          onSessionSelect={onSessionSelect}
           onCreateTask={
             status === "open"
               ? (desc) => createTask(repoId, desc)
