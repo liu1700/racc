@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 interface Props {
   value: string;
@@ -9,13 +10,14 @@ interface Props {
 
 export function TaskInput({ value, onChange, onSubmit, onCancel }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { isComposingRef, compositionProps } = useIMEComposition();
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && value.trim()) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && value.trim()) {
       e.preventDefault();
       onSubmit(value.trim());
     }
@@ -31,6 +33,7 @@ export function TaskInput({ value, onChange, onSubmit, onCancel }: Props) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        {...compositionProps}
         placeholder="Describe your task..."
         rows={3}
         className="w-full resize-none rounded border border-accent bg-surface-2 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-accent-hover"
