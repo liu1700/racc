@@ -1,5 +1,6 @@
 pub mod local_pty;
 pub mod manager;
+pub mod ssh_tmux;
 
 use async_trait::async_trait;
 use std::collections::VecDeque;
