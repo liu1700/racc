@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from "react";
 import { open as openShell } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../stores/sessionStore";
+import { useServerStore } from "../../stores/serverStore";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import { ResetDbDialog } from "./ResetDbDialog";
+import { ServerList } from "./ServerList";
 import type { Session, SessionStatus } from "../../types/session";
 import { parsePrDisplay } from "../../utils/prUrl";
 
@@ -58,6 +60,11 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load servers on mount
+  useEffect(() => {
+    useServerStore.getState().loadServers();
+  }, []);
 
   const activeRepo = repos.find((r) =>
     r.sessions.some((s) => s.id === activeSessionId)
@@ -147,8 +154,11 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-1 py-1">
+      <div className="flex-1 overflow-y-auto">
+        <ServerList />
+        <div className="border-b border-surface-3" />
 
+        <div className="px-1 py-1">
         {repos.map(({ repo, sessions }) => (
           <div key={repo.id} className="mb-1">
             <div className="group flex items-center rounded px-2 py-1.5 transition-colors duration-150 hover:bg-surface-2">
@@ -258,6 +268,7 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
               ))}
           </div>
         ))}
+        </div>
       </div>
 
       <div className="border-t border-surface-3 px-3 py-2">
