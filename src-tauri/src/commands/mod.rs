@@ -4,6 +4,7 @@ pub mod db;
 pub mod file;
 pub mod git;
 pub mod insights;
+pub mod server;
 pub mod session;
 pub mod task;
 pub mod transport;

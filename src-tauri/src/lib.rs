@@ -108,6 +108,10 @@ pub fn run() {
             commands::transport::transport_write,
             commands::transport::transport_resize,
             commands::transport::transport_get_buffer,
+            commands::server::add_server,
+            commands::server::update_server,
+            commands::server::remove_server,
+            commands::server::list_servers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
