@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { ptyManager } from "../services/ptyManager";
 import type { Terminal } from "@xterm/xterm";
-import { subscribe, getBuffer, writePty, resizePty } from "../services/ptyManager";
 
 interface UsePtyBridgeOptions {
   sessionId: number | null;
@@ -8,57 +9,64 @@ interface UsePtyBridgeOptions {
 }
 
 export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
-  const prevSessionRef = useRef<number | null>(null);
-
-  // Connect PTY output to xterm
+  // Output: listen for transport:data events
   useEffect(() => {
-    console.log("[usePtyBridge] output effect:", { sessionId, hasTerminal: !!terminal });
-    if (sessionId === null || !terminal) return;
+    if (!terminal || sessionId == null) return;
 
-    // On session switch: clear terminal and replay buffer
-    if (sessionId !== prevSessionRef.current) {
-      terminal.reset();
-      const buffer = getBuffer(sessionId);
-      for (const chunk of buffer) {
-        terminal.write(chunk);
+    // Replay buffer on session switch
+    terminal.reset();
+    ptyManager
+      .getBuffer(sessionId)
+      .then((buffer) => {
+        if (buffer.length > 0) {
+          terminal.write(buffer);
+        }
+        // Scroll to bottom after all buffered data is processed
+        terminal.write("", () => terminal.scrollToBottom());
+      })
+      .catch(() => {}); // Buffer may not exist yet
+
+    // Listen for live output
+    const unlisten = listen<{ session_id: number; data: number[] }>(
+      "transport:data",
+      (event) => {
+        if (event.payload.session_id === sessionId) {
+          terminal.write(new Uint8Array(event.payload.data));
+        }
       }
-      // Scroll to bottom after all buffered data is processed
-      terminal.write('', () => terminal.scrollToBottom());
-      prevSessionRef.current = sessionId;
-    }
-
-    // Subscribe to live output
-    const unsub = subscribe(sessionId, (data) => {
-      terminal.write(data);
-    });
+    );
 
     return () => {
-      unsub?.();
+      unlisten.then((fn) => fn());
     };
   }, [sessionId, terminal]);
 
-  // Forward keyboard input to PTY
+  // Input: forward keyboard to transport
   useEffect(() => {
-    if (sessionId === null || !terminal) return;
+    if (!terminal || sessionId == null) return;
 
-    // Bypass IME for Shift+punctuation keys so characters like "?" work
-    // with Chinese input methods active (IME consumes Shift for mode switching)
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown' || event.ctrlKey || event.metaKey || event.altKey) {
+    const onData = terminal.onData((data) => {
+      ptyManager.write(sessionId, data);
+    });
+
+    // IMPORTANT: Must use attachCustomKeyEventHandler (fires BEFORE xterm processes
+    // the key) not onKey (fires AFTER). Using onKey would double-send the keystroke.
+    terminal.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || e.ctrlKey || e.metaKey || e.altKey) {
         return true;
       }
 
-      if (event.shiftKey) {
+      if (e.shiftKey) {
         // Shift+Enter: send kitty keyboard protocol sequence so TUI apps
         // (Claude Code, etc.) receive it as a distinct key from plain Enter
-        if (event.key === 'Enter') {
-          writePty(sessionId, '\x1b[13;2u');
+        if (e.key === "Enter") {
+          e.preventDefault();
+          ptyManager.write(sessionId, "\x1b[13;2u");
           return false;
         }
 
         // Shift+single-char: bypass IME mode-switching
-        if (event.key.length === 1) {
-          writePty(sessionId, event.key);
+        if (e.key.length === 1) {
           return false;
         }
       }
@@ -66,24 +74,21 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
       return true;
     });
 
-    const disposable = terminal.onData((data: string) => {
-      writePty(sessionId, data);
-    });
-
     return () => {
       terminal.attachCustomKeyEventHandler(() => true);
-      disposable.dispose();
+      onData.dispose();
     };
   }, [sessionId, terminal]);
 
-  // Sync terminal size to PTY
+  // Resize: sync terminal dimensions to transport
   useEffect(() => {
-    if (sessionId === null || !terminal) return;
+    if (!terminal || sessionId == null) return;
 
-    resizePty(sessionId, terminal.cols, terminal.rows);
+    // Send initial size
+    ptyManager.resize(sessionId, terminal.cols, terminal.rows);
 
     const disposable = terminal.onResize(({ cols, rows }) => {
-      resizePty(sessionId, cols, rows);
+      ptyManager.resize(sessionId, cols, rows);
     });
 
     return () => disposable.dispose();

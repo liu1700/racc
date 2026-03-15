@@ -101,9 +101,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // more robust but is deferred to keep scope minimal.
     const task = get().tasks.find((t: Task) => t.id === taskId);
     if (task) {
-      const { writePty } = await import("../services/ptyManager");
+      const { ptyManager } = await import("../services/ptyManager");
       setTimeout(() => {
-        writePty(newSession.id, task.description + "\r");
+        ptyManager.write(newSession.id, task.description + "\r");
       }, 2000);
     }
   },

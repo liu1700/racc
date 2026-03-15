@@ -1,4 +1,4 @@
-import { subscribe } from "./ptyManager";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { detectPrUrl } from "../utils/prUrl";
 
 // Strip ANSI escape sequences from terminal output
@@ -21,7 +21,7 @@ type OutputCallback = (sessionId: number, lastLine: string) => void;
 
 interface TrackedSession {
   sessionId: number;
-  unsubscribe: (() => void) | null;
+  unlisten: UnlistenFn | null;
   decoder: TextDecoder;
   promptCount: number;
   inHumanTurn: boolean;
@@ -109,13 +109,13 @@ function handlePtyData(sessionId: number, data: Uint8Array): void {
   }
 }
 
-/** Start tracking a session's PTY output. */
+/** Start tracking a session's PTY output via transport:data events. */
 export function startTracking(sessionId: number): void {
   stopTracking(sessionId);
 
   const entry: TrackedSession = {
     sessionId,
-    unsubscribe: null,
+    unlisten: null,
     decoder: new TextDecoder(),
     promptCount: 0,
     inHumanTurn: false,
@@ -124,27 +124,30 @@ export function startTracking(sessionId: number): void {
 
   tracked.set(sessionId, entry);
 
-  const unsub = subscribe(sessionId, (data) => handlePtyData(sessionId, data));
-
-  if (unsub) {
-    entry.unsubscribe = unsub;
-  } else {
-    queueMicrotask(() => {
-      const retryUnsub = subscribe(sessionId, (data) => handlePtyData(sessionId, data));
-      if (retryUnsub) {
-        entry.unsubscribe = retryUnsub;
-      } else {
-        console.warn(`[ptyOutputParser] subscribe failed for session ${sessionId}`);
-        tracked.delete(sessionId);
+  // Listen for transport:data events and filter by session_id
+  listen<{ session_id: number; data: number[] }>(
+    "transport:data",
+    (event) => {
+      if (event.payload.session_id === sessionId) {
+        const data = new Uint8Array(event.payload.data);
+        handlePtyData(sessionId, data);
       }
-    });
-  }
+    }
+  ).then((unlisten) => {
+    // Only store if still tracked (may have been stopped before listen resolved)
+    const current = tracked.get(sessionId);
+    if (current) {
+      current.unlisten = unlisten;
+    } else {
+      unlisten();
+    }
+  });
 }
 
 /** Stop tracking a session. */
 export function stopTracking(sessionId: number): void {
   const entry = tracked.get(sessionId);
   if (!entry) return;
-  if (entry.unsubscribe) entry.unsubscribe();
+  if (entry.unlisten) entry.unlisten();
   tracked.delete(sessionId);
 }
