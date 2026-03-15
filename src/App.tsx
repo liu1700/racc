@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
+import { ResetDbDialog } from "./components/Sidebar/ResetDbDialog";
 
 import { StatusBar } from "./components/Dashboard/StatusBar";
 import { FileViewer } from "./components/FileViewer/FileViewer";
@@ -52,6 +54,15 @@ function App() {
     }
     prevSessionRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const unlisten = listen("menu-reset-db", () => {
+      setResetDialogOpen(true);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -116,7 +127,7 @@ function App() {
 
           {/* Content — Terminal stays mounted to preserve xterm.js state */}
           {centerTab === "tasks" && (
-            <TaskBoard repoId={activeRepoId} />
+            <TaskBoard repoId={activeRepoId} onSessionSelect={() => setCenterTab("terminal")} />
           )}
           <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
             <Terminal />
@@ -130,6 +141,10 @@ function App() {
       {/* Global Status Bar */}
       <StatusBar />
       <CommandPalette />
+      <ResetDbDialog
+        open={resetDialogOpen}
+        onClose={() => setResetDialogOpen(false)}
+      />
     </div>
   );
 }

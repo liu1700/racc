@@ -62,6 +62,7 @@ pub fn init_db() -> Result<Connection, String> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repo_id INTEGER NOT NULL,
             description TEXT NOT NULL,
+            images TEXT NOT NULL DEFAULT '[]',
             status TEXT NOT NULL DEFAULT 'open',
             session_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -102,6 +103,7 @@ pub fn init_db() -> Result<Connection, String> {
     if version >= 1 && version < 2 {
         conn.execute_batch(
             "
+            ALTER TABLE tasks ADD COLUMN images TEXT NOT NULL DEFAULT '[]';
             ALTER TABLE sessions ADD COLUMN server_id TEXT;
             PRAGMA user_version = 2;
             ",

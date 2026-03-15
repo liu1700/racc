@@ -1,4 +1,6 @@
-import type { Task, TaskStatus } from "../../types/task";
+import { invoke } from "@tauri-apps/api/core";
+import type { Task, TaskStatus, DraftImage } from "../../types/task";
+import { useTaskStore } from "../../stores/taskStore";
 import { TaskCard } from "./TaskCard";
 import { TaskInput } from "./TaskInput";
 
@@ -14,23 +16,65 @@ const COLUMN_CONFIG: Record<
 interface Props {
   status: TaskStatus;
   tasks: Task[];
-  onCreateTask?: (description: string) => void;
+  repoPath: string;
+  onSessionSelect?: () => void;
+  onCreateTask?: (description: string) => Promise<Task>;
   inputOpen?: boolean;
   onInputOpenChange?: (open: boolean) => void;
   draftValue?: string;
   onDraftChange?: (value: string) => void;
+  draftImages?: DraftImage[];
+  onAddImage?: (image: DraftImage) => void;
+  onRemoveImage?: (filename: string) => void;
 }
 
 export function TaskColumn({
   status,
   tasks,
+  repoPath,
+  onSessionSelect,
   onCreateTask,
   inputOpen = false,
   onInputOpenChange,
   draftValue = "",
   onDraftChange,
+  draftImages = [],
+  onAddImage,
+  onRemoveImage,
 }: Props) {
   const config = COLUMN_CONFIG[status];
+  const clearDraftImages = useTaskStore((s) => s.clearDraftImages);
+
+  const handleSubmit = async (desc: string) => {
+    if (!onCreateTask) return;
+    const task = await onCreateTask(desc);
+
+    // Rename draft images to task-id-based names
+    const renamedImages: string[] = [];
+    for (let i = 0; i < draftImages.length; i++) {
+      const draft = draftImages[i];
+      const ext = draft.filename.split(".").pop() || "png";
+      const newName = `${task.id}-${Date.now()}-${i}.${ext}`;
+      await invoke("rename_task_image", {
+        repoPath,
+        oldName: draft.filename,
+        newName,
+      });
+      renamedImages.push(newName);
+    }
+    if (renamedImages.length > 0) {
+      await invoke("update_task_images", {
+        taskId: task.id,
+        images: JSON.stringify(renamedImages),
+      });
+      // Reload tasks to get updated images
+      const { loadTasks } = useTaskStore.getState();
+      await loadTasks(task.repo_id);
+    }
+    clearDraftImages();
+    onDraftChange?.("");
+    onInputOpenChange?.(false);
+  };
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
@@ -49,6 +93,7 @@ export function TaskColumn({
           <TaskCard
             key={task.id}
             task={task}
+            onSessionSelect={onSessionSelect}
           />
         ))}
       </div>
@@ -60,14 +105,14 @@ export function TaskColumn({
             <TaskInput
               value={draftValue}
               onChange={(v) => onDraftChange?.(v)}
-              onSubmit={(desc) => {
-                onCreateTask(desc);
-                onDraftChange?.("");
-                onInputOpenChange?.(false);
-              }}
+              onSubmit={handleSubmit}
               onCancel={() => {
                 onInputOpenChange?.(false);
               }}
+              repoPath={repoPath}
+              images={draftImages}
+              onAddImage={(img) => onAddImage?.(img)}
+              onRemoveImage={(fn) => onRemoveImage?.(fn)}
             />
           ) : (
             <button

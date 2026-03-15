@@ -8,14 +8,14 @@ Racc is a **control plane for AI coding agents** — a desktop app that manages 
 
 It is explicitly **not**:
 - A code editor (VS Code, Neovim already exist)
-- A new AI agent (Claude Code, Aider already exist)
+- A new AI agent (Claude Code already exists)
 - A replacement for git or docker (it orchestrates them)
 
 ## Target User
 
 **Primary persona:** An individual developer who:
 
-- Uses Claude Code / Aider daily as their main coding workflow
+- Uses Claude Code daily as their main coding workflow
 - Maintains multiple projects or feature branches simultaneously
 - Currently runs agents in multiple terminals or tmux panes to work in parallel
 - Struggles with lack of visual overview, usage tracking, and change review
@@ -68,7 +68,7 @@ Build on battle-tested tools:
 - **git worktrees** for code isolation (not custom sandboxing)
 - **native PTY** for agent communication (standard terminal I/O)
 - **SQLite** for session persistence (lightweight, embedded)
-- **docker** for environment isolation (not Nix or Firecracker) — planned v0.2
-- **Tailscale** for networking (not custom VPN) — planned v0.2
+- **docker** for environment isolation (not Nix or Firecracker) — planned
+- **Tailscale** for networking (not custom VPN) — planned
 
 [Next: Feature Specification >](Feature-Specification.md)

@@ -3,6 +3,7 @@ import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { codeToHtml } from "shiki";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useShallow } from "zustand/react/shallow";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 import "./fileViewer.css";
 
 export function FileViewer() {
@@ -27,6 +28,8 @@ export function FileViewer() {
   const [jumpOpen, setJumpOpen] = useState(false);
   const [jumpValue, setJumpValue] = useState("");
   const jumpInputRef = useRef<HTMLInputElement>(null);
+
+  const { isComposingRef, compositionProps } = useIMEComposition();
 
   // Animate in/out
   useEffect(() => {
@@ -293,7 +296,7 @@ export function FileViewer() {
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              if (e.key === "Enter" && !isComposingRef.current) {
                 e.preventDefault();
                 navigateMatch(e.shiftKey ? -1 : 1);
               }
@@ -303,6 +306,7 @@ export function FileViewer() {
                 setSearchQuery("");
               }
             }}
+            {...compositionProps}
             placeholder="Search in file..."
             className="w-64 rounded bg-surface-2 px-2 py-1 text-sm text-zinc-200 outline-none focus:ring-1 focus:ring-accent"
           />
@@ -332,7 +336,7 @@ export function FileViewer() {
             value={jumpValue}
             onChange={(e) => setJumpValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+              if (e.key === "Enter" && !isComposingRef.current) {
                 e.preventDefault();
                 handleJump(jumpValue);
               }
@@ -342,6 +346,7 @@ export function FileViewer() {
                 setJumpValue("");
               }
             }}
+            {...compositionProps}
             className="w-20 rounded bg-surface-2 px-2 py-1 text-sm text-zinc-200 outline-none focus:ring-1 focus:ring-accent"
           />
         </div>

@@ -6,6 +6,7 @@ mod ws_server;
 
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,10 +30,16 @@ pub fn run() {
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
+            let reset_db_item = tauri::menu::MenuItemBuilder::new("Reset Database...")
+                .id("reset_db")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, "Racc")
                 .hide()
                 .hide_others()
                 .show_all()
+                .separator()
+                .item(&reset_db_item)
                 .separator()
                 .quit()
                 .build()?;
@@ -53,6 +60,12 @@ pub fn run() {
                 .build()?;
 
             app.set_menu(menu)?;
+
+            app.on_menu_event(|app_handle, event| {
+                if event.id().as_ref() == "reset_db" {
+                    let _ = app_handle.emit("menu-reset-db", ());
+                }
+            });
 
             let app_handle = app.handle().clone();
             let db_for_ws = db_arc.clone();
@@ -99,8 +112,14 @@ pub fn run() {
             commands::task::list_tasks,
             commands::task::update_task_status,
             commands::task::update_task_description,
+            commands::task::update_task_images,
             commands::task::delete_task,
+            commands::task::save_task_image,
+            commands::task::copy_file_to_task_images,
+            commands::task::delete_task_image,
+            commands::task::rename_task_image,
             commands::db::reset_db,
+            commands::shell::open_url,
             commands::insights::record_session_events,
             commands::insights::get_insights,
             commands::insights::update_insight_status,

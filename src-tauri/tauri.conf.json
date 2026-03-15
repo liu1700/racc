@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Racc — Agentic IDE",
+        "title": "Racc",
         "width": 1400,
         "height": 900,
         "resizable": true,
@@ -23,7 +23,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {

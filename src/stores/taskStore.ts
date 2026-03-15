@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Task, TaskStatus } from "../types/task";
+import type { Task, TaskStatus, DraftImage } from "../types/task";
+
+function parseTask(raw: Record<string, unknown>): Task {
+  return {
+    ...(raw as unknown as Task),
+    images:
+      typeof raw.images === "string"
+        ? JSON.parse(raw.images as string)
+        : (raw.images as string[]) ?? [],
+  };
+}
 
 interface TaskState {
   tasks: Task[];
@@ -8,11 +18,19 @@ interface TaskState {
   error: string | null;
   draftInputOpen: boolean;
   draftValue: string;
+  draftImages: DraftImage[];
 
   setDraftInputOpen: (open: boolean) => void;
   setDraftValue: (value: string) => void;
+  addDraftImage: (image: DraftImage) => void;
+  removeDraftImage: (filename: string) => void;
+  clearDraftImages: () => void;
   loadTasks: (repoId: number) => Promise<void>;
-  createTask: (repoId: number, description: string) => Promise<Task>;
+  createTask: (
+    repoId: number,
+    description: string,
+    images?: string[]
+  ) => Promise<Task>;
   fireTask: (
     taskId: number,
     repoId: number,
@@ -36,23 +54,49 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   error: null,
   draftInputOpen: false,
   draftValue: "",
+  draftImages: [],
 
   setDraftInputOpen: (open: boolean) => set({ draftInputOpen: open }),
   setDraftValue: (value: string) => set({ draftValue: value }),
+  addDraftImage: (image: DraftImage) =>
+    set((state) => ({ draftImages: [...state.draftImages, image] })),
+  removeDraftImage: (filename: string) =>
+    set((state) => ({
+      draftImages: state.draftImages.filter((i) => i.filename !== filename),
+    })),
+  clearDraftImages: () => {
+    const { draftImages } = get();
+    for (const img of draftImages) {
+      URL.revokeObjectURL(img.objectUrl);
+    }
+    set({ draftImages: [] });
+  },
 
   loadTasks: async (repoId: number) => {
     set({ loading: true, error: null });
     try {
-      const tasks = await invoke<Task[]>("list_tasks", { repoId });
+      const raw = await invoke<Record<string, unknown>[]>("list_tasks", {
+        repoId,
+      });
+      const tasks = raw.map(parseTask);
       set({ tasks, loading: false });
     } catch (err) {
       set({ error: String(err), loading: false });
     }
   },
 
-  createTask: async (repoId: number, description: string) => {
+  createTask: async (
+    repoId: number,
+    description: string,
+    images: string[] = []
+  ) => {
     try {
-      const task = await invoke<Task>("create_task", { repoId, description });
+      const raw = await invoke<Record<string, unknown>>("create_task", {
+        repoId,
+        description,
+        images: JSON.stringify(images),
+      });
+      const task = parseTask(raw);
       set((state: TaskState) => ({ tasks: [task, ...state.tasks] }));
       return task;
     } catch (err) {
@@ -65,7 +109,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   // Implementation Notes, agent/skip-permissions are frontend concerns.
   // fire_task is intentionally implemented on the frontend, calling the
   // existing create_session Rust command internally.
-  fireTask: async (taskId: number, repoId: number, useWorktree: boolean, branch: string | undefined, skipPermissions: boolean) => {
+  fireTask: async (
+    taskId: number,
+    repoId: number,
+    useWorktree: boolean,
+    branch: string | undefined,
+    skipPermissions: boolean
+  ) => {
     // Import sessionStore dynamically to avoid circular deps
     const { useSessionStore } = await import("./sessionStore");
     const { createSession } = useSessionStore.getState();
@@ -102,19 +152,40 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const task = get().tasks.find((t: Task) => t.id === taskId);
     if (task) {
       const { ptyManager } = await import("../services/ptyManager");
+
+      let prompt = task.description;
+      if (task.images.length > 0) {
+        const repo = useSessionStore
+          .getState()
+          .repos.find((r) => r.repo.id === task.repo_id);
+        if (repo) {
+          const imagePaths = task.images.map(
+            (img) => `${repo.repo.path}/.racc/images/${img}`
+          );
+          prompt +=
+            "\n\nRefer to the following images:\n" +
+            imagePaths.map((p) => `- ${p}`).join("\n");
+        }
+      }
+
       setTimeout(() => {
-        ptyManager.write(newSession.id, task.description + "\r");
+        ptyManager.write(newSession.id, prompt + "\r");
       }, 2000);
     }
   },
 
-  updateTaskStatus: async (taskId: number, status: TaskStatus, sessionId?: number) => {
+  updateTaskStatus: async (
+    taskId: number,
+    status: TaskStatus,
+    sessionId?: number
+  ) => {
     try {
-      const task = await invoke<Task>("update_task_status", {
+      const raw = await invoke<Record<string, unknown>>("update_task_status", {
         taskId,
         status,
         sessionId: sessionId ?? null,
       });
+      const task = parseTask(raw);
       set((state: TaskState) => ({
         tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
       }));
@@ -126,10 +197,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   updateTaskDescription: async (taskId: number, description: string) => {
     try {
-      const task = await invoke<Task>("update_task_description", {
-        taskId,
-        description,
-      });
+      const raw = await invoke<Record<string, unknown>>(
+        "update_task_description",
+        {
+          taskId,
+          description,
+        }
+      );
+      const task = parseTask(raw);
       set((state: TaskState) => ({
         tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
       }));

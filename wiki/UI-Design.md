@@ -6,27 +6,27 @@
 
 ## Layout Overview
 
-Three-panel layout, left to right:
+Two-panel layout, left to right:
 
 ```
-+----------------+------------------------------------+----------------------+
-|                |                                    |                      |
-|  Left Sidebar  |              Center Main Area                            |
-|  (~15%)        |              (~85%)                                       |
-|                |                                                          |
-|  Session List  |  Tasks / Terminal (tab switching)                         |
-|  + Inline      |  ── or ──                                                 |
-|    Activity    |  Diff Review View                                         |
-|  + Quick       |  (switchable)                                             |
-|    Actions     |                                                           |
++----------------+-----------------------------------------------------------+
 |                |                                                           |
-+----------------+------------------------------------+----------------------+
+|  Left Sidebar  |              Center Main Area                             |
+|  (~15%)        |              (~85%)                                        |
+|                |                                                           |
+|  Session List  |  Tasks / Terminal (tab switching)                          |
+|  + Inline      |  ── or ──                                                  |
+|    Activity    |  Diff Review View                                          |
+|  + Quick       |  (switchable)                                              |
+|    Actions     |                                                            |
+|                |                                                           |
++----------------+-----------------------------------------------------------+
 |                        Global Status Bar                                   |
 |  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
 +----------------------------------------------------------------------------+
 ```
 
-**F-pattern scanning alignment:** The left sidebar (session list) occupies the highest-priority upper-left position, matching natural eye-scanning patterns. The center terminal is the primary interaction surface. The right panel provides supplementary intelligence without competing for primary attention.
+**F-pattern scanning alignment:** The left sidebar (session list) occupies the highest-priority upper-left position, matching natural eye-scanning patterns. The center area is the primary interaction surface.
 
 ## Critical Design Decision
 
@@ -110,11 +110,11 @@ The center panel has a tab bar switching between **Tasks** (default) and **Termi
 
 A kanban-style board for cognitive offloading and agent orchestration. Three columns: Open, Working, Closed.
 
-- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
-- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates
+- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Image attachment via Cmd+V paste or file picker button; thumbnails (48×48) display below textarea with per-image delete (X button on hover). Each card has a "Fire" button and shows attached image thumbnails (32×32)
+- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates. Image thumbnails remain visible
 - **Closed column:** Session completed or removed — archived tasks at reduced opacity
 
-**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
+**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar. If images are attached, their absolute file paths (`{repo}/.racc/images/{filename}`) are appended to the prompt sent to the terminal agent.
 
 **Tab badge:** Tasks tab shows count of non-closed tasks in a rounded badge.
 
@@ -130,7 +130,7 @@ A kanban-style board for cognitive offloading and agent orchestration. Three col
 - Buffer replay on session switch (up to 1MB per session)
 - Async dynamic import of xterm to avoid blocking initial render
 - Placeholder message when no active session selected
-- **Chinese IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
+- **IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
 
 ### File Viewer Mode (implemented)
 
@@ -139,7 +139,6 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 **Triggers:**
 - **Cmd+P** — Opens the command palette for fuzzy file search (global shortcut)
 - **Cmd+Click on terminal paths** — xterm.js link provider detects file path patterns and opens the file with optional line scroll
-- **Pi Agent `read_file` tool** — Assistant reads files inline (≤30 lines) with an "Open Full File" button to launch the overlay
 
 **Overlay design:**
 - Positioned as `absolute inset-0 z-30` within the center `<main>` panel (sidebar remains visible for preattentive status monitoring)
@@ -164,12 +163,6 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 - Fuzzy matching via `nucleo-matcher` with 100ms debounced search
 - Keyboard navigation: Arrow keys to select, Enter to open, Esc to close
 - Respects `.gitignore` via the `ignore` crate
-
-### Diff Review Mode *(planned)*
-- Placeholder component exists (`DiffViewer.tsx`)
-- Backend `get_diff` command returns `git diff HEAD` output
-- Full side-by-side review UI planned for P1
-- **Batched review design:** When agents complete work, diffs queue for review. The developer enters review mode on their own schedule — no forced interruption of deep work. Aligns with research showing optimal review at 200–400 lines per session, with effectiveness dropping after 60–90 minutes.
 
 ## Right Panel — Insights Panel (hidden for MVP)
 

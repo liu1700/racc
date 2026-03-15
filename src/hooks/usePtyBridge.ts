@@ -49,26 +49,32 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
       ptyManager.write(sessionId, data);
     });
 
-    // IMPORTANT: Must use attachCustomKeyEventHandler (fires BEFORE xterm processes
-    // the key) not onKey (fires AFTER). Using onKey would double-send the keystroke.
-    terminal.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown" || e.ctrlKey || e.metaKey || e.altKey) {
+    // Block Shift+Enter across ALL event types (keydown, keypress, keyup).
+    // Returning false only prevents xterm.js processing, but the browser
+    // still fires keypress after keydown — xterm.js _keyPress() would then
+    // read charCode 13 and send \r to the PTY, causing Claude Code to
+    // submit instead of inserting a newline. preventDefault() on keydown
+    // stops the keypress from firing; returning false for keypress/keyup
+    // is a safety net for WebView edge cases.
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.shiftKey && event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          event.preventDefault();
+          ptyManager.write(sessionId, '\x1b[13;2u');
+        }
+        return false;
+      }
+
+      // Bypass IME for Shift+punctuation keys so characters like "?" work
+      // with Chinese input methods active (IME consumes Shift for mode switching)
+      if (event.type !== 'keydown' || event.ctrlKey || event.metaKey || event.altKey) {
         return true;
       }
 
-      if (e.shiftKey) {
-        // Shift+Enter: send kitty keyboard protocol sequence so TUI apps
-        // (Claude Code, etc.) receive it as a distinct key from plain Enter
-        if (e.key === "Enter") {
-          e.preventDefault();
-          ptyManager.write(sessionId, "\x1b[13;2u");
-          return false;
-        }
-
-        // Shift+single-char: bypass IME mode-switching
-        if (e.key.length === 1) {
-          return false;
-        }
+      if (event.shiftKey && event.key.length === 1) {
+        event.preventDefault();
+        ptyManager.write(sessionId, event.key);
+        return false;
       }
 
       return true;

@@ -3,6 +3,7 @@ import { useAssistantStore } from "../../stores/assistantStore";
 import { useShallow } from "zustand/react/shallow";
 import { AssistantMessage } from "./AssistantMessage";
 import Markdown from "react-markdown";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 export function AssistantChat() {
   const { messages, isStreaming, streamingText, error, sendMessage, clearError } = useAssistantStore(
@@ -17,6 +18,7 @@ export function AssistantChat() {
   );
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { isComposingRef, compositionProps } = useIMEComposition();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,7 +32,7 @@ export function AssistantChat() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault();
       handleSend();
     }
@@ -106,6 +108,7 @@ export function AssistantChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            {...compositionProps}
             placeholder="Ask about your agents..."
             disabled={isStreaming}
             className="flex-1 rounded border border-surface-3 bg-surface-0 px-2 py-1.5 text-xs text-zinc-300 placeholder-zinc-600 outline-none focus:border-accent disabled:opacity-50"
