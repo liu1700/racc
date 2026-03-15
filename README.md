@@ -20,6 +20,10 @@
   <img src="assets/screenshot.png" alt="Racc Screenshot" width="800" />
 </p> -->
 
+## Why "Racc"?
+
+Short for **raccoon** — clever, adorable, with nimble little hands. But be careful — they can be surprisingly brutal sometimes.
+
 ## What is Racc?
 
 Racc is a desktop app that lets you run multiple AI coding agents in parallel — each in its own terminal, its own git worktree, fully isolated. It's not a code editor. It's the control plane you've been missing.
