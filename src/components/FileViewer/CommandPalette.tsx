@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useShallow } from "zustand/react/shallow";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 export function CommandPalette() {
   const { isPaletteOpen, searchResults, searchLoading, closePalette, searchFiles, openFile } =
@@ -12,6 +13,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const { isComposingRef, compositionProps } = useIMEComposition();
 
   // Resolve session/repo context
   const sessionId = activeSession?.session.id ?? null;
@@ -66,7 +68,7 @@ export function CommandPalette() {
       return;
     }
 
-    if (e.key === "Enter" && !e.nativeEvent.isComposing && searchResults.length > 0) {
+    if (e.key === "Enter" && !isComposingRef.current && searchResults.length > 0) {
       e.preventDefault();
       selectFile(searchResults[selectedIndex].relative_path);
       return;
@@ -91,6 +93,7 @@ export function CommandPalette() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
+            {...compositionProps}
             placeholder={hasContext ? "Search files..." : "Select a repo first"}
             disabled={!hasContext}
             className="w-full bg-transparent px-2 py-2.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
