@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-shell";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Task } from "../../types/task";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
@@ -47,6 +48,11 @@ export function TaskCard({ task }: Props) {
     }
     return null;
   }, [task.session_id, repos]);
+
+  const repoPath = useMemo(() => {
+    const repo = repos.find((r) => r.repo.id === task.repo_id);
+    return repo?.repo.path ?? "";
+  }, [repos, task.repo_id]);
 
   const prDisplay = useMemo(() => {
     if (!linkedSession?.pr_url) return null;
@@ -116,6 +122,19 @@ export function TaskCard({ task }: Props) {
           >
             {task.description}
           </p>
+        )}
+
+        {task.images.length > 0 && repoPath && (
+          <div className="mb-1 flex flex-wrap gap-1">
+            {task.images.map((img) => (
+              <img
+                key={img}
+                src={convertFileSrc(`${repoPath}/.racc/images/${img}`)}
+                alt=""
+                className="h-8 w-8 rounded border border-surface-3 object-cover"
+              />
+            ))}
+          </div>
         )}
 
         {/* Working: show linked session + live activity + elapsed time */}
