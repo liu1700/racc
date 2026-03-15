@@ -4,6 +4,10 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::ssh::SshManager;
+use crate::transport::local_pty::LocalPtyTransport;
+use crate::transport::manager::TransportManager;
+
 // --- Types ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +48,7 @@ pub struct Session {
     pub created_at: String,
     pub updated_at: String,
     pub pr_url: Option<String>,
+    pub server_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,7 +79,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
 
     let mut session_stmt = conn
         .prepare(
-            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at, pr_url
+            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at, pr_url, server_id
              FROM sessions WHERE repo_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -94,6 +99,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
                     pr_url: row.get(8)?,
+                    server_id: row.get(9)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -120,6 +126,23 @@ fn get_current_branch(repo_path: &str) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+// --- Helper: build agent command string ---
+
+fn build_agent_command(agent: &str, task: &str, _cwd: &str) -> String {
+    match agent {
+        "claude-code" => {
+            let escaped_task = task.replace('\'', "'\\''");
+            format!("claude '{}'\n", escaped_task)
+        }
+        "aider" => "aider\n".to_string(),
+        "codex" => {
+            let escaped_task = task.replace('\'', "'\\''");
+            format!("codex '{}'\n", escaped_task)
+        }
+        _ => format!("{}\n", agent),
+    }
 }
 
 // --- Tauri Commands ---
@@ -206,10 +229,18 @@ pub async fn remove_repo(
 pub async fn create_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
+    ssh_manager: tauri::State<'_, Arc<SshManager>>,
     repo_id: i64,
     use_worktree: bool,
     branch: Option<String>,
+    agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,
 ) -> Result<Session, String> {
+    let agent = agent.unwrap_or_else(|| "claude-code".to_string());
+    let task_description = task_description.unwrap_or_default();
+
     let (repo_path, repo_name) = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         let row: (String, String) = conn
@@ -266,33 +297,113 @@ pub async fn create_session(
         (None, branch)
     };
 
-    let conn = db.lock().map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status)
-         VALUES (?1, 'claude-code', ?2, ?3, 'Running')",
-        rusqlite::params![repo_id, worktree_path, branch_name],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let id = conn.last_insert_rowid();
-    let (created_at, updated_at): (String, String) = conn
-        .query_row(
-            "SELECT created_at, updated_at FROM sessions WHERE id = ?1",
-            [id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+    let (session_id, worktree_path_clone, created_at, updated_at) = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id)
+             VALUES (?1, ?2, ?3, ?4, 'Running', ?5)",
+            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id],
         )
         .map_err(|e| e.to_string())?;
 
+        let id = conn.last_insert_rowid();
+        let (created_at, updated_at): (String, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        (id, worktree_path.clone(), created_at, updated_at)
+    }; // conn lock released here
+
+    if let Some(ref sid) = server_id {
+        // Remote session: clone repo if needed, create worktree, spawn SshTmuxTransport
+        let remote_repo_path = format!("~/racc-repos/{}", repo_name);
+
+        // Check if repo exists on remote
+        let check = ssh_manager
+            .exec(sid, &format!("test -d {} && echo exists || echo missing", remote_repo_path))
+            .await
+            .map_err(|e| format!("Failed to check remote repo: {}", e))?;
+
+        if check.stdout.trim() == "missing" {
+            // Get repo URL from local repo's origin remote
+            let repo_path_str = repo_path.clone();
+            let url_output = Command::new("git")
+                .args(["-C", &repo_path_str, "remote", "get-url", "origin"])
+                .output()
+                .map_err(|e| format!("Failed to get repo URL: {}", e))?;
+            let repo_url = String::from_utf8_lossy(&url_output.stdout).trim().to_string();
+
+            if repo_url.is_empty() {
+                return Err("No origin remote URL found for this repository".to_string());
+            }
+
+            ssh_manager
+                .exec(sid, &format!("mkdir -p ~/racc-repos && git clone {} {}", repo_url, remote_repo_path))
+                .await
+                .map_err(|e| format!("Failed to clone repo on remote: {}", e))?;
+        }
+
+        // Create worktree on remote
+        let remote_worktree = format!("~/racc-worktrees/{}/{}", repo_name, branch_name);
+        let _ = ssh_manager
+            .exec(sid, &format!(
+                "mkdir -p ~/racc-worktrees/{} && (git -C {} worktree add {} -b racc-{} 2>/dev/null || git -C {} worktree add {} racc-{} 2>/dev/null || true)",
+                repo_name,
+                remote_repo_path, remote_worktree, session_id,
+                remote_repo_path, remote_worktree, session_id
+            ))
+            .await;
+
+        // Spawn SshTmuxTransport
+        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree);
+        let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
+            session_id,
+            sid,
+            &agent_cmd,
+            80, 24,
+            (*ssh_manager).clone(),
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+    } else {
+        // Local session: spawn LocalPtyTransport
+        let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
+        let agent_cmd = build_agent_command(&agent, &task_description, cwd);
+        let transport = LocalPtyTransport::spawn(
+            session_id,
+            cwd,
+            "/bin/zsh",
+            80, 24,  // default size, frontend will resize
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        ).await.map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+
+        // Send agent command after short delay to let shell initialize
+        if !task_description.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            transport_manager.write(session_id, agent_cmd.as_bytes()).await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
     let session = Session {
-        id,
+        id: session_id,
         repo_id,
-        agent: "claude-code".to_string(),
+        agent,
         worktree_path,
         branch: Some(branch_name),
         status: SessionStatus::Running,
         created_at,
         updated_at,
         pr_url: None,
+        server_id,
     };
 
     if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
@@ -311,8 +422,12 @@ pub async fn create_session(
 pub async fn stop_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
     session_id: i64,
 ) -> Result<(), String> {
+    // Close transport before updating DB
+    let _ = transport_manager.remove(session_id).await;
+
     let conn = db.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
@@ -335,9 +450,13 @@ pub async fn stop_session(
 #[tauri::command]
 pub async fn remove_session(
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
     session_id: i64,
     delete_worktree: bool,
 ) -> Result<(), String> {
+    // Close transport if still running
+    let _ = transport_manager.remove(session_id).await;
+
     let conn = db.lock().map_err(|e| e.to_string())?;
 
     let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
@@ -422,11 +541,11 @@ pub async fn reattach_session(
     )
     .map_err(|e| e.to_string())?;
 
-    let (agent, branch, created_at, updated_at, pr_url): (String, Option<String>, String, String, Option<String>) = conn
+    let (agent, branch, created_at, updated_at, pr_url, server_id): (String, Option<String>, String, String, Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT agent, branch, created_at, updated_at, pr_url FROM sessions WHERE id = ?1",
+            "SELECT agent, branch, created_at, updated_at, pr_url, server_id FROM sessions WHERE id = ?1",
             [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .map_err(|e| e.to_string())?;
 
@@ -440,6 +559,7 @@ pub async fn reattach_session(
         created_at,
         updated_at,
         pr_url,
+        server_id,
     };
 
     if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
@@ -457,18 +577,63 @@ pub async fn reattach_session(
 #[tauri::command]
 pub async fn reconcile_sessions(
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    ssh_manager: tauri::State<'_, Arc<SshManager>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
+    // Collect all Running sessions first, then release the lock before doing async SSH ops
+    let running_sessions: Vec<(i64, Option<String>)> = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id, server_id FROM sessions WHERE status = 'Running'")
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<(i64, Option<String>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+
+    for (session_id, server_id) in running_sessions {
+        let new_status = if let Some(ref sid) = server_id {
+            // Remote session: tmux sessions survive Racc restarts — probe them
+            if ssh_manager.is_connected(sid).await {
+                let tmux_name = format!("racc-{}", session_id);
+                match ssh_manager
+                    .exec(sid, &format!("tmux has-session -t {}", tmux_name))
+                    .await
+                {
+                    Ok(output) if output.exit_code == 0 => {
+                        // tmux session alive — keep status "Running"
+                        None
+                    }
+                    _ => {
+                        // tmux session gone — mark "Completed"
+                        Some("Completed")
+                    }
+                }
+            } else {
+                // Can't reach server — mark "Disconnected"
+                Some("Disconnected")
+            }
+        } else {
+            // Local session: PTY state is in-memory and lost on restart
+            Some("Disconnected")
+        };
+
+        if let Some(status) = new_status {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                &format!(
+                    "UPDATE sessions SET status = '{}', updated_at = datetime('now') WHERE id = ?1",
+                    status
+                ),
+                [session_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     let conn = db.lock().map_err(|e| e.to_string())?;
-
-    // With native PTY, there's no external process to check.
-    // On app startup, all previously "Running" sessions are stale
-    // because PTY state is in-memory and lost on restart.
-    conn.execute(
-        "UPDATE sessions SET status = 'Disconnected', updated_at = datetime('now') WHERE status = 'Running'",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-
     query_repos_with_sessions(&conn)
 }
 

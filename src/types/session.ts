@@ -17,6 +17,7 @@ export interface Session {
   created_at: string;
   updated_at: string;
   pr_url: string | null;
+  server_id: string | null;
 }
 
 export interface RepoWithSessions {

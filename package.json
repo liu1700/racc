@@ -18,6 +18,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.58.1",
+    "@mariozechner/pi-ai": "^0.58.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-dialog": "^2.6.0",
@@ -30,7 +32,6 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "shiki": "^4.0.2",
-    "tauri-pty": "^0.2.1",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

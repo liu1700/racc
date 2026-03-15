@@ -151,7 +151,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // more robust but is deferred to keep scope minimal.
     const task = get().tasks.find((t: Task) => t.id === taskId);
     if (task) {
-      const { writePty } = await import("../services/ptyManager");
+      const { ptyManager } = await import("../services/ptyManager");
 
       let prompt = task.description;
       if (task.images.length > 0) {
@@ -169,7 +169,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       }
 
       setTimeout(() => {
-        writePty(newSession.id, prompt + "\r");
+        ptyManager.write(newSession.id, prompt + "\r");
       }, 2000);
     }
   },

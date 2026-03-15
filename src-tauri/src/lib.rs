@@ -1,5 +1,7 @@
 mod commands;
 mod events;
+pub mod ssh;
+mod transport;
 mod ws_server;
 
 use rusqlite::Connection;
@@ -12,15 +14,19 @@ pub fn run() {
     let db_arc: Arc<Mutex<Connection>> = Arc::new(Mutex::new(db));
     let (event_tx, _event_rx) = events::create_event_bus();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let transport_manager = crate::transport::manager::TransportManager::new();
+    let ssh_manager = std::sync::Arc::new(ssh::SshManager::new());
+    transport_manager.start_buffer_task();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_notification::init())
         .manage(db_arc.clone())
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
         .manage(event_tx)
+        .manage(transport_manager)
+        .manage(ssh_manager)
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
@@ -121,6 +127,18 @@ pub fn run() {
             commands::insights::get_session_events,
             commands::insights::append_to_file,
             commands::insights::run_batch_analysis,
+            commands::transport::transport_write,
+            commands::transport::transport_resize,
+            commands::transport::transport_get_buffer,
+            commands::server::add_server,
+            commands::server::update_server,
+            commands::server::remove_server,
+            commands::server::list_servers,
+            commands::server::connect_server,
+            commands::server::disconnect_server,
+            commands::server::test_connection,
+            commands::server::execute_remote_command,
+            commands::server::list_ssh_config_hosts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

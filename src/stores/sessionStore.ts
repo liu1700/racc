@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { spawnPty, killPty, killAll } from "../services/ptyManager";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -30,6 +29,7 @@ interface SessionState {
     useWorktree: boolean,
     branch?: string,
     skipPermissions?: boolean,
+    serverId?: string,
   ) => Promise<void>;
   reattachSession: (sessionId: number, skipPermissions?: boolean) => Promise<void>;
   stopSession: (sessionId: number) => Promise<void>;
@@ -97,9 +97,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({ repos: [], loading: false, error: String(e) });
     }
 
-    // Kill all PTYs on app close to avoid orphaned processes
-    window.addEventListener("beforeunload", () => killAll());
-
     // Listen for remotely-created sessions (from WebSocket API)
     listen<{
       session_id: number;
@@ -110,18 +107,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       source: string;
       reattach?: boolean;
     }>('racc://session-created', async (event) => {
-      const { session_id, worktree_path, source, reattach } = event.payload;
+      const { session_id, source } = event.payload;
       if (source !== 'remote') return;
 
       // Refresh session list from DB
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos });
 
-      // Spawn PTY for the remotely-created session
-      const agentCmd = reattach
-        ? 'claude --continue --dangerously-skip-permissions'
-        : 'claude --dangerously-skip-permissions';
-      spawnPty(session_id, worktree_path, 80, 24, agentCmd);
+      // PTY is already spawned by Rust-side create_session, just start tracking output
       startTracking(session_id);
     });
 
@@ -134,7 +127,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       if (source !== 'remote') return;
 
       stopTracking(session_id);
-      killPty(session_id);
       const repos = await invoke<RepoWithSessions[]>("list_repos");
       set({ repos });
     });
@@ -174,27 +166,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (repoId, useWorktree, branch, skipPermissions = true) => {
+  createSession: async (repoId, useWorktree, branch, _skipPermissions = true, serverId) => {
     set({ error: null });
     try {
+      // PTY is now spawned by Rust-side create_session
       const session = await invoke<Session>("create_session", {
         repoId,
         useWorktree,
         branch: branch || null,
+        agent: "claude-code",
+        taskDescription: null,
+        serverId: serverId || null,
       });
 
-      // Resolve working directory: worktree path, or fall back to repo path
-      const { repos } = get();
-      const repo = repos.find((r) => r.repo.id === repoId)?.repo;
-      const cwd = session.worktree_path || repo?.path || ".";
-
-      // Build agent command with optional flags
-      const agentCmd = skipPermissions ? "claude --dangerously-skip-permissions" : "claude";
-
-      // Spawn PTY in the session's working directory
-      spawnPty(session.id, cwd, 80, 24, agentCmd);
-
-      // Start tracking PTY output
+      // Start tracking PTY output via transport:data events
       startTracking(session.id);
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
@@ -205,20 +190,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  reattachSession: async (sessionId, skipPermissions = true) => {
+  reattachSession: async (sessionId, _skipPermissions = true) => {
     set({ error: null });
     try {
       const session = await invoke<Session>("reattach_session", { sessionId });
 
-      const { repos } = get();
-      const repo = repos.find((r) => r.repo.id === session.repo_id)?.repo;
-      const cwd = session.worktree_path || repo?.path || ".";
-
-      const flags = skipPermissions ? " --dangerously-skip-permissions" : "";
-      const agentCmd = `claude --continue${flags}`;
-
-      spawnPty(session.id, cwd, 80, 24, agentCmd);
-
+      // Start tracking PTY output via transport:data events
       startTracking(session.id);
 
       const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
@@ -232,7 +209,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   stopSession: async (sessionId) => {
     try {
       stopTracking(sessionId);
-      killPty(sessionId);
+      // Transport is closed by Rust-side stop_session
       await invoke("stop_session", { sessionId });
 
       // Trigger batch analysis when a session ends
@@ -254,7 +231,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       stopTracking(sessionId);
       get().clearSessionLastOutput(sessionId);
-      killPty(sessionId);
+      // Transport is closed by Rust-side remove_session
       await invoke("remove_session", { sessionId, deleteWorktree });
 
       // Trigger batch analysis (session may have been running)
@@ -277,7 +254,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   resetDb: async () => {
     set({ error: null });
     try {
-      killAll();
       await invoke("reset_db");
       set({
         repos: [],
