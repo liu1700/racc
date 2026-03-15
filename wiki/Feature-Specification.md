@@ -39,29 +39,7 @@ This is the **#1 user pain point** — the community has independently built 7+ 
 
 **MVP approach:** Read Claude Code's local usage data files. Token counts only — no USD cost estimation (irrelevant for subscription users like Claude Max). Support for other agents' usage data in later versions.
 
-### 3. Visual Diff Review *(not yet implemented)*
-
-When an agent completes a round of work, provide a proper review experience. Designed around the cognitive research finding that review effectiveness drops after 60–90 minutes and 200–400 LOC — see [Cognitive Design Research](Cognitive-Design-Research.md).
-
-**Features:**
-- Side-by-side diff view (GitHub PR review style)
-- Per-file accept / reject
-- Checkpoint timeline — roll back to any historical point
-- File change list with status indicators (added / modified / deleted)
-
-**Batched review model:** Completed agent work queues for review. The developer enters review mode on their own schedule rather than being interrupted mid-flow. This resolves the flow-monitoring paradox: agents run in the background (deep work mode) → results accumulate → developer surfaces for active evaluation (monitoring mode).
-
-**Why this matters:** "Blindly accepting changes" is a real danger — Parasuraman's research shows complacency risk increases with automation reliability. Users need a review gate between agent output and their codebase, and the review experience must support active comprehension, not rubber-stamping.
-
-**Current status:** `get_diff` Rust command exists (returns `git diff HEAD`). UI placeholder exists in `DiffViewer.tsx`. Full review UI is planned for P1.
-
-### 4. Insights Panel — Cross-Session Pattern Detection (hidden for MVP)
-
-> **Status:** UI hidden and all event capture/analysis disabled for MVP. Code is preserved in the codebase for future re-enablement. See [UI Design — Insights Panel](UI-Design#right-panel--insights-panel-hidden-for-mvp) for full design details.
-
-An actionable insights feed designed to detect patterns across sessions and surface one-click suggestions. Six insight types (repeated prompts, startup patterns, repeated permissions, cost anomalies, file conflicts, similar sessions) with hybrid frontend real-time + Rust batch analysis architecture. Full implementation exists but is disconnected from the app to keep the MVP focused.
-
-### 5. Task Board — Cognitive Offloading & Agent Orchestration (implemented)
+### 3. Task Board — Cognitive Offloading & Agent Orchestration (implemented)
 
 A kanban-style task board integrated into the center panel for cognitive offloading and automated agent orchestration. Users write task descriptions (the act of writing IS the cognitive offload) and "fire" them to automatically spawn agent sessions.
 
@@ -88,14 +66,13 @@ A kanban-style task board integrated into the center panel for cognitive offload
 
 **Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, update_description, update_images, delete, save_task_image, copy_file_to_task_images, delete_task_image, rename_task_image).
 
-### 6. File Viewer & Command Palette (implemented)
+### 4. File Viewer & Command Palette (implemented)
 
 A zero-footprint file viewer designed around cognitive science principles — no persistent file tree, no extra tabs. Files are viewed on demand and the UI disappears completely when closed.
 
-**Three trigger mechanisms (all funnel through a single `openFile()` action):**
+**Two trigger mechanisms (all funnel through a single `openFile()` action):**
 1. **Cmd+P command palette** — fuzzy file search powered by `nucleo-matcher`, respects `.gitignore` via `ignore` crate
 2. **Terminal path click** — Cmd+Click on file paths detected in xterm.js terminal output (regex-based link provider)
-3. **Pi Agent `read_file` tool** — assistant can read files on the user's behalf, showing a lightweight inline preview (≤30 lines) with an "Open Full File" button
 
 **Full overlay viewer:**
 - Shiki syntax highlighting (`github-dark-default` theme, VS Code-compatible TextMate grammars)
@@ -118,21 +95,19 @@ These features significantly enhance the product but are not required for initia
 
 | Feature | Description | Dependency |
 |---------|-------------|------------|
+| **Codex Support** | Add Codex CLI as a supported agent | Agent adapter |
+| **Docker Sandbox** | Opt-in container-based environment isolation | Docker integration |
 | **Task Queue Enhancements** | Task dependencies, priority ordering, bulk operations, drag-and-drop | Task Board (implemented) |
-| **Tiered Notification System** | Five-tier alerts (ambient → critical) with anti-fatigue design: deduplication, notification budgets, user thresholds. Audio channel for Tier 3+ per Wickens' Multiple Resource Theory | Session status tracking |
 | **Cross-Machine Session Management** | Connect to remote agent sessions via Tailscale, manage from one dashboard | Tailscale integration |
-| **Portless Integration** | Auto-assign named URLs per worktree, embed preview window in IDE | Portless setup |
-| **Multi-Agent Conflict Detection** | ~~Warn when multiple agents modify the same file~~ **Implemented** via Insights Panel file conflict detection | ~~File change tracking~~ Done |
 
 ---
 
 ## P2: Future Vision
 
-Lower priority — depends on ecosystem maturity.
+Lower priority — depends on ecosystem maturity and user feedback.
 
 | Feature | Description | Blocker |
 |---------|-------------|---------|
-| **Visual Regression Review** | Screenshot comparison, browser preview | Requires mature agent capabilities |
 | **Spec-Driven Development** | Built-in requirements.md / tasks.md editor tied to agent execution | Workflow design needed |
 | **Global Knowledge Base** | Cross-session CLAUDE.md management and sync | Multi-session maturity |
 

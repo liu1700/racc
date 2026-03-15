@@ -19,12 +19,10 @@
 | Session reconciliation | Detect orphaned sessions on startup, mark Disconnected | Done |
 | Token usage tracking | Parse Claude Code JSONL files, aggregate token counts (10s poll) | Done |
 | Zustand state management | Session store with 11 actions, `useShallow` optimization | Done |
-| ~~AI assistant~~ | ~~Diff summary, risk triage, session queries via sidecar~~ | Removed |
 | File viewer & command palette | Cmd+P fuzzy search, terminal path click, Shiki highlighting overlay | Done |
 | Task Board | Kanban board for cognitive offloading + auto agent orchestration (Open→Working→Closed) | Done |
-| Git diff viewer | View changes made by agents | **Next** |
 
-**Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface, see token usage per session, and review diffs before accepting changes.
+**Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface and see token usage per session.
 
 **Recent stabilization work:**
 - Fixed xterm.js init race condition (always mount terminal div before init)
@@ -33,33 +31,22 @@
 
 ---
 
-### v0.2 — Remote & Isolation (+4 weeks after v0.1)
+### v0.2 — Multi-Agent & Isolation
 
-**Goal:** Support remote machines, proper environment isolation, and session immortality.
+**Goal:** Support additional agents, proper environment isolation, and remote sessions.
 
 | Feature | Detail |
 |---------|--------|
+| Codex support | Add Codex CLI as a supported agent |
+| Docker Sandbox | Opt-in container-based environment isolation |
 | Tailscale remote sessions | Connect to and manage agent sessions on remote machines |
 | Session immortality | Agents survive app crashes via remote PTY persistence |
-| Docker Sandbox | Opt-in container-based environment isolation |
-| Portless naming | Auto-assign URLs per worktree with embedded preview |
-| Checkpoint / rollback | Full checkpoint timeline with rollback to any point |
-| Codex support | Add Codex CLI as a supported agent |
-| Visual diff review | Side-by-side diff view with per-file accept/reject |
 
 ---
 
-### v0.3 — Orchestration & SDK (+4 weeks after v0.2)
+### v0.3 — TBD
 
-**Goal:** Advanced multi-agent workflows and deeper integration.
-
-| Feature | Detail |
-|---------|--------|
-| Task queue enhancements | Task dependencies, priority ordering, bulk operations, drag-and-drop |
-| Parallel orchestration | Fan out N agents working in parallel from Task Board |
-| Conflict detection | Warn when multiple agents touch the same files |
-| Agent SDK integration | Direct Claude Code SDK integration (structured output) |
-| Multi-model backends | Support for alternative model providers |
+To be determined based on user feedback and ecosystem evolution.
 
 ---
 
@@ -82,8 +69,8 @@ The original research document's framework was sound, but this roadmap makes fiv
 ## Milestones Timeline
 
 ```
-March 2026                          April 2026                        May 2026
-|--- v0.1 MVP Development ---------|--- v0.2 Remote & Isolation -----|--- v0.3 Orchestration ------>
-     |                                   |                                 |
-     Dashboard + Terminal + Cost         Tailscale + Docker + Rollback     Task Queue + SDK
+March 2026                          April 2026
+|--- v0.1 MVP Development ---------|--- v0.2 Multi-Agent & Isolation ----->
+     |                                   |
+     Dashboard + Terminal + Tasks        Codex + Docker + Remote
 ```

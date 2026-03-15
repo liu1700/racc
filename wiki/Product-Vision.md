@@ -68,7 +68,7 @@ Build on battle-tested tools:
 - **git worktrees** for code isolation (not custom sandboxing)
 - **native PTY** for agent communication (standard terminal I/O)
 - **SQLite** for session persistence (lightweight, embedded)
-- **docker** for environment isolation (not Nix or Firecracker) — planned v0.2
-- **Tailscale** for networking (not custom VPN) — planned v0.2
+- **docker** for environment isolation (not Nix or Firecracker) — planned
+- **Tailscale** for networking (not custom VPN) — planned
 
 [Next: Feature Specification >](Feature-Specification.md)

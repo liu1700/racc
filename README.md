@@ -38,8 +38,8 @@ Currently supports **Claude Code**, with **Codex** support planned.
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | **v0.1 — MVP** | Multi-session dashboard, task board, git worktree isolation, file viewer | Done |
-| **v0.2 — Remote & Isolation** | Tailscale remote sessions, Docker sandbox, visual diff review | Planned |
-| **v0.3 — Orchestration** | Codex support, parallel orchestration, conflict detection, Agent SDK | Planned |
+| **v0.2 — Multi-Agent & Isolation** | Codex support, Docker sandbox, remote sessions | Planned |
+| **v0.3** | TBD | — |
 
 ## Quick Start
 

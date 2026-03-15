@@ -130,7 +130,7 @@ A kanban-style board for cognitive offloading and agent orchestration. Three col
 - Buffer replay on session switch (up to 1MB per session)
 - Async dynamic import of xterm to avoid blocking initial render
 - Placeholder message when no active session selected
-- **Chinese IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
+- **IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
 
 ### File Viewer Mode (implemented)
 
@@ -139,7 +139,6 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 **Triggers:**
 - **Cmd+P** — Opens the command palette for fuzzy file search (global shortcut)
 - **Cmd+Click on terminal paths** — xterm.js link provider detects file path patterns and opens the file with optional line scroll
-- **Pi Agent `read_file` tool** — Assistant reads files inline (≤30 lines) with an "Open Full File" button to launch the overlay
 
 **Overlay design:**
 - Positioned as `absolute inset-0 z-30` within the center `<main>` panel (sidebar remains visible for preattentive status monitoring)
@@ -164,12 +163,6 @@ A zero-footprint overlay for viewing source code and documentation — appears o
 - Fuzzy matching via `nucleo-matcher` with 100ms debounced search
 - Keyboard navigation: Arrow keys to select, Enter to open, Esc to close
 - Respects `.gitignore` via the `ignore` crate
-
-### Diff Review Mode *(planned)*
-- Placeholder component exists (`DiffViewer.tsx`)
-- Backend `get_diff` command returns `git diff HEAD` output
-- Full side-by-side review UI planned for P1
-- **Batched review design:** When agents complete work, diffs queue for review. The developer enters review mode on their own schedule — no forced interruption of deep work. Aligns with research showing optimal review at 200–400 lines per session, with effectiveness dropping after 60–90 minutes.
 
 ## Right Panel — Insights Panel (hidden for MVP)
 

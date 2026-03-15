@@ -34,10 +34,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 |  |  tauri-plugin-pty: Native PTY processes (one per session)        ||
 |  |  Agent runs inside PTY → xterm.js renders output in real-time   ||
 |  +------------------------------------------------------------------+|
-|  +------------------------------------------------------------------+|
-|  |  Sidecar: racc-assistant (bun-compiled binary, stdin/stdout JSON) ||
-|  |  pi-ai + pi-agent-core → OpenRouter → LLM                       ||
-|  +------------------------------------------------------------------+|
+|                                                                      |
 +----------------------------------------------------------------------+
 ```
 
@@ -159,7 +156,6 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reattach_session`, `reconcile_sessions` | Session and repo lifecycle management |
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, aggregate token counts (total + weekly) |
-| `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `read_file_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, file reading relay, sidecar process management |
 | `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `update_task_images`, `delete_task`, `save_task_image`, `copy_file_to_task_images`, `delete_task_image`, `rename_task_image` | Task CRUD for Task Board — create (with optional images), list by repo, update status/images, delete. Image file I/O: save from clipboard bytes, copy from file picker, delete, rename (draft→final) |
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
@@ -171,18 +167,15 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal tab switching, calls `initialize()` on mount. Right panel (Insights) hidden for MVP |
+| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal tab switching, calls `initialize()` on mount |
 | `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
 | `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
 | `RemoveSessionDialog.tsx` | Modal | Removal confirmation with optional worktree cleanup checkbox |
 | `ResetDbDialog.tsx` | Modal | Database reset confirmation — wipes all repos, sessions, and assistant history |
 | `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
-| `CostTracker.tsx` | Right panel | Polls `get_project_costs` every 10s, displays token usage breakdown |
-| `InsightsPanel.tsx` | Right panel | Insights timeline feed — **hidden for MVP**, code preserved |
-| `InsightCard.tsx` | Right panel | Single insight card — **hidden for MVP** |
-| `InsightActions.tsx` | Right panel | Per-type action buttons — **hidden for MVP** |
-| `AssistantSetup.tsx` | Right panel | API key configuration — **hidden for MVP** |
+| `CostTracker.tsx` | *(not rendered)* | Polls `get_project_costs` every 10s — component exists but not in layout |
+| `InsightsPanel.tsx` | *(not rendered)* | Insights timeline feed — code preserved for future use |
 | `FileViewer.tsx` | Center panel (overlay) | Full file viewer with Shiki syntax highlighting, Cmd+F search, Ctrl+G jump-to-line |
 | `CommandPalette.tsx` | Global overlay | Fuzzy file search (Cmd+P), keyboard navigation, debounced search |
 | `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
@@ -194,7 +187,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `TaskInput.tsx` | Center panel | Inline task creation with image paste (Cmd+V), file picker, and thumbnail preview |
 | `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
 | `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
-| `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
+| `DiffViewer.tsx` | *(not rendered)* | Placeholder — not currently planned |
 | `StatusBar.tsx` | Bottom bar | Session counts, total/weekly token usage, connection status |
 
 [Next: Session Lifecycle >](Session-Lifecycle.md)
