@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+pub mod ssh;
 mod transport;
 mod ws_server;
 
@@ -13,6 +14,7 @@ pub fn run() {
     let (event_tx, _event_rx) = events::create_event_bus();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let transport_manager = crate::transport::manager::TransportManager::new();
+    let ssh_manager = std::sync::Arc::new(ssh::SshManager::new());
     transport_manager.start_buffer_task();
 
     tauri::Builder::default()
@@ -23,6 +25,7 @@ pub fn run() {
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
         .manage(event_tx)
         .manage(transport_manager)
+        .manage(ssh_manager)
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
@@ -112,6 +115,11 @@ pub fn run() {
             commands::server::update_server,
             commands::server::remove_server,
             commands::server::list_servers,
+            commands::server::connect_server,
+            commands::server::disconnect_server,
+            commands::server::test_connection,
+            commands::server::execute_remote_command,
+            commands::server::list_ssh_config_hosts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

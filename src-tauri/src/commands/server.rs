@@ -1,3 +1,4 @@
+use crate::ssh::SshManager;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -166,4 +167,71 @@ pub fn list_servers(db: State<'_, Arc<Mutex<Connection>>>) -> Result<Vec<Server>
         .map_err(|e| e.to_string())?;
 
     Ok(servers)
+}
+
+#[tauri::command]
+pub async fn connect_server(
+    server_id: String,
+    db: State<'_, Arc<Mutex<Connection>>>,
+    ssh: State<'_, Arc<SshManager>>,
+) -> Result<(), String> {
+    let server = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        get_server_by_id(&conn, &server_id)?
+    };
+    ssh.connect(
+        &server_id,
+        &server.host,
+        server.port as u16,
+        &server.username,
+        &server.auth_method,
+        server.key_path.as_deref(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn disconnect_server(
+    server_id: String,
+    ssh: State<'_, Arc<SshManager>>,
+) -> Result<(), String> {
+    ssh.disconnect(&server_id).await
+}
+
+#[tauri::command]
+pub async fn test_connection(
+    server_id: String,
+    db: State<'_, Arc<Mutex<Connection>>>,
+    ssh: State<'_, Arc<SshManager>>,
+) -> Result<String, String> {
+    let server = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        get_server_by_id(&conn, &server_id)?
+    };
+    ssh.connect(
+        &server_id,
+        &server.host,
+        server.port as u16,
+        &server.username,
+        &server.auth_method,
+        server.key_path.as_deref(),
+    )
+    .await?;
+    let result = ssh.exec(&server_id, "echo ok").await?;
+    ssh.disconnect(&server_id).await?;
+    Ok(result.stdout)
+}
+
+#[tauri::command]
+pub async fn execute_remote_command(
+    server_id: String,
+    command: String,
+    ssh: State<'_, Arc<SshManager>>,
+) -> Result<crate::ssh::CommandOutput, String> {
+    ssh.exec(&server_id, &command).await
+}
+
+#[tauri::command]
+pub async fn list_ssh_config_hosts() -> Result<Vec<crate::ssh::config_parser::SshHostConfig>, String> {
+    crate::ssh::config_parser::list_ssh_hosts()
 }
