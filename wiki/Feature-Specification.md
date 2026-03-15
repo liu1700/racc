@@ -67,9 +67,11 @@ A kanban-style task board integrated into the center panel for cognitive offload
 
 **Lifecycle:** Open → Working → Closed
 
-- **Open:** User writes a task description via inline textarea (multiline, wraps) — zero-config, minimal friction. Open tasks are editable: click the description to inline-edit before firing
-- **Working:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. Card shows real-time agent activity via PTY Output Parser (information scent)
+- **Open:** User writes a task description via inline textarea (multiline, wraps) — zero-config, minimal friction. Open tasks are editable: click the description to inline-edit before firing. Users can attach images via clipboard paste (Cmd+V) or file picker button — thumbnails display below the textarea with per-image delete
+- **Working:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. If images are attached, their absolute file paths are appended to the prompt so the terminal agent can read them. Card shows real-time agent activity via PTY Output Parser (information scent)
 - **Closed:** Session completes or is removed → task automatically moves to Closed
+
+**Image Attachments:** Images are saved to `{repo_path}/.racc/images/` as files (named `{taskId}-{timestamp}-{index}.{ext}`). Draft images use temporary names and are renamed after task creation. TaskCards display small (32×32) thumbnails of attached images. On fire, the prompt sent to the terminal includes absolute paths so agents (Claude Code, Aider, etc.) can reference them via their file-reading capabilities.
 
 **Fire Dialog:** Reuses NewAgentDialog pattern — agent selection, skip-permissions, worktree (ON by default), auto-generated branch name (`task/keywords` from description).
 
@@ -82,9 +84,9 @@ A kanban-style task board integrated into the center panel for cognitive offload
 
 **Cognitive design rationale:** Based on Risko & Gilbert's cognitive offloading research — externalizing working memory to the task board reduces cognitive load. Batched evaluation (Review column) supports 60–90 minute work cycles per the cognitive research. Preattentive color coding (green=running, amber=review, blue=done) for <200ms status recognition.
 
-**Data model:** `tasks` table (SQLite v4) with FK to `repos` (CASCADE) and `sessions` (SET NULL). Status CHECK constraint enforces valid values.
+**Data model:** `tasks` table (SQLite) with FK to `repos` (CASCADE) and `sessions` (SET NULL). Status CHECK constraint enforces valid values. `images` column stores a JSON array of filenames (e.g., `["task-1-1710000000-0.png"]`). Image files stored on disk at `{repo_path}/.racc/images/`.
 
-**Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, update_description, delete).
+**Current status:** Fully implemented. Components: `TaskBoard/` (TaskBoard, TaskColumn, TaskCard, TaskInput, FireTaskDialog). Store: `taskStore.ts`. Backend: `task.rs` (create, list, update_status, update_description, update_images, delete, save_task_image, copy_file_to_task_images, delete_task_image, rename_task_image).
 
 ### 6. File Viewer & Command Palette (implemented)
 
