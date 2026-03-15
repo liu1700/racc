@@ -109,6 +109,32 @@ pub fn init_db() -> Result<Connection, String> {
         .map_err(|e| format!("Migration v2 failed: {e}"))?;
     }
 
+    // Migration v2 → v3: create servers table
+    if version < 3 {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS servers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER DEFAULT 22,
+                username TEXT NOT NULL,
+                auth_method TEXT NOT NULL,
+                key_path TEXT,
+                ssh_config_host TEXT,
+                setup_status TEXT DEFAULT 'pending',
+                setup_details TEXT,
+                ai_provider TEXT,
+                ai_api_key TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| format!("Migration v3 failed: {e}"))?;
+        conn.pragma_update(None, "user_version", 3)
+            .map_err(|e| format!("Migration v3 version update failed: {e}"))?;
+    }
+
     Ok(conn)
 }
 
