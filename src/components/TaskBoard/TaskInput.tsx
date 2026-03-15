@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { DraftImage } from "../../types/task";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 interface Props {
   value: string;
@@ -26,18 +27,14 @@ export function TaskInput({
   onRemoveImage,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { isComposingRef, compositionProps } = useIMEComposition();
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (
-      e.key === "Enter" &&
-      !e.shiftKey &&
-      !e.nativeEvent.isComposing &&
-      value.trim()
-    ) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current && value.trim()) {
       e.preventDefault();
       onSubmit(value.trim());
     }
@@ -113,6 +110,7 @@ export function TaskInput({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        {...compositionProps}
         placeholder="Describe your task..."
         rows={3}
         className="w-full resize-none rounded border border-accent bg-surface-2 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-accent-hover"

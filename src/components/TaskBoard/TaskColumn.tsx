@@ -17,6 +17,7 @@ interface Props {
   status: TaskStatus;
   tasks: Task[];
   repoPath: string;
+  onSessionSelect?: () => void;
   onCreateTask?: (description: string) => Promise<Task>;
   inputOpen?: boolean;
   onInputOpenChange?: (open: boolean) => void;
@@ -31,6 +32,7 @@ export function TaskColumn({
   status,
   tasks,
   repoPath,
+  onSessionSelect,
   onCreateTask,
   inputOpen = false,
   onInputOpenChange,
@@ -91,6 +93,7 @@ export function TaskColumn({
           <TaskCard
             key={task.id}
             task={task}
+            onSessionSelect={onSessionSelect}
           />
         ))}
       </div>

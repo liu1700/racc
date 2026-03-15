@@ -9,9 +9,10 @@ const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
 interface Props {
   repoId: number | null;
+  onSessionSelect?: () => void;
 }
 
-export function TaskBoard({ repoId }: Props) {
+export function TaskBoard({ repoId, onSessionSelect }: Props) {
   const {
     tasks,
     createTask,
@@ -126,6 +127,7 @@ export function TaskBoard({ repoId }: Props) {
           status={status}
           tasks={tasksByStatus[status]}
           repoPath={repoPath}
+          onSessionSelect={onSessionSelect}
           onCreateTask={
             status === "open"
               ? (desc) => createTask(repoId, desc)

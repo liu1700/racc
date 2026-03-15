@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function RemoveSessionDialog({ session, open, onClose }: Props) {
-  const [removeWorktree, setRemoveWorktree] = useState(false);
+  const [removeWorktree, setRemoveWorktree] = useState(!!session.worktree_path);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const removeSession = useSessionStore((s) => s.removeSession);

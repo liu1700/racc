@@ -25,7 +25,7 @@ export function Terminal() {
       const { Terminal: XTerm } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
       const { WebLinksAddon } = await import("@xterm/addon-web-links");
-      const { open } = await import("@tauri-apps/plugin-shell");
+      const { invoke } = await import("@tauri-apps/api/core");
 
       if (disposed) return;
 
@@ -45,7 +45,7 @@ export function Terminal() {
       const fitAddon = new FitAddon();
       xterm.loadAddon(fitAddon);
       xterm.loadAddon(new WebLinksAddon((_e, uri) => {
-        open(uri);
+        invoke("open_url", { url: uri });
       }));
       xterm.open(el);
       fitAddon.fit();
@@ -115,12 +115,15 @@ export function Terminal() {
         rafId = requestAnimationFrame(() => {
           rafId = null;
           if (disposed || !xterm) return;
-          // Remember if user was following output (viewport at bottom)
+          // Remember scroll state before fit() changes dimensions
           const wasAtBottom = xterm.buffer.active.viewportY >= xterm.buffer.active.baseY;
+          const savedViewportY = xterm.buffer.active.viewportY;
           fitAddon.fit();
           // Restore scroll position after fit() to prevent jump-to-top
           if (wasAtBottom) {
             xterm.scrollToBottom();
+          } else {
+            xterm.scrollToLine(savedViewportY);
           }
         });
       });
@@ -153,8 +156,9 @@ export function Terminal() {
     terminal: term,
   });
 
-  // Focus terminal on click
+  // Focus terminal on click and scroll to bottom
   const handleClick = useCallback(() => {
+    term?.scrollToBottom();
     term?.focus();
   }, [term]);
 

@@ -29,7 +29,19 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
 
     // Subscribe to live output
     const unsub = subscribe(sessionId, (data) => {
-      terminal.write(data);
+      // Capture scroll state before write — xterm.js / Tauri WebView reflow
+      // can reset viewport to top when processing TUI escape sequences
+      const buf = terminal.buffer.active;
+      const isAtBottom = buf.baseY === 0 || buf.viewportY >= buf.baseY;
+      const savedViewportY = buf.viewportY;
+
+      terminal.write(data, () => {
+        if (isAtBottom) {
+          terminal.scrollToBottom();
+        } else {
+          terminal.scrollToLine(savedViewportY);
+        }
+      });
     });
 
     return () => {
@@ -41,26 +53,32 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
   useEffect(() => {
     if (sessionId === null || !terminal) return;
 
-    // Bypass IME for Shift+punctuation keys so characters like "?" work
-    // with Chinese input methods active (IME consumes Shift for mode switching)
     terminal.attachCustomKeyEventHandler((event) => {
+      // Block Shift+Enter across ALL event types (keydown, keypress, keyup).
+      // Returning false only prevents xterm.js processing, but the browser
+      // still fires keypress after keydown — xterm.js _keyPress() would then
+      // read charCode 13 and send \r to the PTY, causing Claude Code to
+      // submit instead of inserting a newline. preventDefault() on keydown
+      // stops the keypress from firing; returning false for keypress/keyup
+      // is a safety net for WebView edge cases.
+      if (event.shiftKey && event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (event.type === 'keydown') {
+          event.preventDefault();
+          writePty(sessionId, '\x1b[13;2u');
+        }
+        return false;
+      }
+
+      // Bypass IME for Shift+punctuation keys so characters like "?" work
+      // with Chinese input methods active (IME consumes Shift for mode switching)
       if (event.type !== 'keydown' || event.ctrlKey || event.metaKey || event.altKey) {
         return true;
       }
 
-      if (event.shiftKey) {
-        // Shift+Enter: send kitty keyboard protocol sequence so TUI apps
-        // (Claude Code, etc.) receive it as a distinct key from plain Enter
-        if (event.key === 'Enter') {
-          writePty(sessionId, '\x1b[13;2u');
-          return false;
-        }
-
-        // Shift+single-char: bypass IME mode-switching
-        if (event.key.length === 1) {
-          writePty(sessionId, event.key);
-          return false;
-        }
+      if (event.shiftKey && event.key.length === 1) {
+        event.preventDefault();
+        writePty(sessionId, event.key);
+        return false;
       }
 
       return true;

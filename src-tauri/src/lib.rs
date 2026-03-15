@@ -100,6 +100,7 @@ pub fn run() {
             commands::task::delete_task_image,
             commands::task::rename_task_image,
             commands::db::reset_db,
+            commands::shell::open_url,
             commands::insights::record_session_events,
             commands::insights::get_insights,
             commands::insights::update_insight_status,

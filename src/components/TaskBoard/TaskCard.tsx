@@ -6,9 +6,11 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { FireTaskDialog } from "./FireTaskDialog";
 import { parsePrDisplay } from "../../utils/prUrl";
+import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 interface Props {
   task: Task;
+  onSessionSelect?: () => void;
 }
 
 function formatElapsed(createdAt: string): string {
@@ -19,11 +21,12 @@ function formatElapsed(createdAt: string): string {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-export function TaskCard({ task }: Props) {
+export function TaskCard({ task, onSessionSelect }: Props) {
   const [fireOpen, setFireOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.description);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const { isComposingRef, compositionProps } = useIMEComposition();
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const repos = useSessionStore((s) => s.repos);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
@@ -74,7 +77,7 @@ export function TaskCard({ task }: Props) {
   };
 
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault();
       handleEditSave();
     }
@@ -99,7 +102,10 @@ export function TaskCard({ task }: Props) {
         } ${task.status === "working" ? "cursor-pointer" : ""}`}
         onClick={
           task.status === "working" && task.session_id
-            ? () => setActiveSession(task.session_id!)
+            ? () => {
+                setActiveSession(task.session_id!);
+                onSessionSelect?.();
+              }
             : undefined
         }
       >
@@ -109,6 +115,7 @@ export function TaskCard({ task }: Props) {
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={handleEditKeyDown}
+            {...compositionProps}
             onBlur={handleEditSave}
             rows={3}
             className="mb-1 w-full resize-none rounded border border-accent bg-surface-2 px-1.5 py-1 text-xs font-medium leading-snug text-zinc-200 outline-none"
