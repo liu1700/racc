@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useServerStore } from "../../stores/serverStore";
 import { AddServerDialog } from "./AddServerDialog";
+import { SetupWizard } from "../SetupWizard/SetupWizard";
 import type { Server } from "../../types/server";
 
 const setupStatusColor: Record<string, string> = {
@@ -21,6 +22,7 @@ export function ServerList() {
   const [editServer, setEditServer] = useState<Server | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [setupServerId, setSetupServerId] = useState<string | null>(null);
 
   const handleAction = async (label: string, action: () => Promise<void>) => {
     setActionLoading(label);
@@ -100,6 +102,12 @@ export function ServerList() {
                 {actionLoading === "disconnect" ? "..." : "Disconnect"}
               </button>
               <button
+                onClick={() => setSetupServerId(server.id)}
+                className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200"
+              >
+                Setup
+              </button>
+              <button
                 onClick={() => {
                   setEditServer(server);
                   setAddDialogOpen(true);
@@ -136,6 +144,13 @@ export function ServerList() {
         }}
         editServer={editServer}
       />
+
+      {setupServerId && (
+        <SetupWizard
+          serverId={setupServerId}
+          onDone={() => setSetupServerId(null)}
+        />
+      )}
     </div>
   );
 }
