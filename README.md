@@ -1,6 +1,6 @@
-<!-- <p align="center">
-  <img src="assets/logo.png" alt="Racc" width="120" />
-</p> -->
+<p align="center">
+  <img src="assets/logo.png" alt="Racc" width="200" />
+</p>
 
 <h1 align="center">Racc</h1>
 
