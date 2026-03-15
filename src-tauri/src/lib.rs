@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod transport;
 mod ws_server;
 
 use rusqlite::Connection;
