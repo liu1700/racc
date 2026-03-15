@@ -577,18 +577,63 @@ pub async fn reattach_session(
 #[tauri::command]
 pub async fn reconcile_sessions(
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    ssh_manager: tauri::State<'_, Arc<SshManager>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
+    // Collect all Running sessions first, then release the lock before doing async SSH ops
+    let running_sessions: Vec<(i64, Option<String>)> = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id, server_id FROM sessions WHERE status = 'Running'")
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<(i64, Option<String>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+
+    for (session_id, server_id) in running_sessions {
+        let new_status = if let Some(ref sid) = server_id {
+            // Remote session: tmux sessions survive Racc restarts — probe them
+            if ssh_manager.is_connected(sid).await {
+                let tmux_name = format!("racc-{}", session_id);
+                match ssh_manager
+                    .exec(sid, &format!("tmux has-session -t {}", tmux_name))
+                    .await
+                {
+                    Ok(output) if output.exit_code == 0 => {
+                        // tmux session alive — keep status "Running"
+                        None
+                    }
+                    _ => {
+                        // tmux session gone — mark "Completed"
+                        Some("Completed")
+                    }
+                }
+            } else {
+                // Can't reach server — mark "Disconnected"
+                Some("Disconnected")
+            }
+        } else {
+            // Local session: PTY state is in-memory and lost on restart
+            Some("Disconnected")
+        };
+
+        if let Some(status) = new_status {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                &format!(
+                    "UPDATE sessions SET status = '{}', updated_at = datetime('now') WHERE id = ?1",
+                    status
+                ),
+                [session_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     let conn = db.lock().map_err(|e| e.to_string())?;
-
-    // With native PTY, there's no external process to check.
-    // On app startup, all previously "Running" sessions are stale
-    // because PTY state is in-memory and lost on restart.
-    conn.execute(
-        "UPDATE sessions SET status = 'Disconnected', updated_at = datetime('now') WHERE status = 'Running'",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-
     query_repos_with_sessions(&conn)
 }
 
