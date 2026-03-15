@@ -70,13 +70,26 @@ struct AgentProfile {
 ```rust
 #[async_trait]
 pub trait Transport: Send + Sync {
+    /// Write data to the transport (PTY stdin or SSH channel stdin).
     async fn write(&self, data: &[u8]) -> Result<(), TransportError>;
-    async fn read(&self) -> Result<Vec<u8>, TransportError>;
+
+    /// Resize the terminal dimensions.
     async fn resize(&self, cols: u16, rows: u16) -> Result<(), TransportError>;
+
+    /// Close the transport and clean up resources.
     async fn close(&self) -> Result<(), TransportError>;
+
+    /// Check if the transport is still alive.
     fn is_alive(&self) -> bool;
 }
 ```
+
+**Output streaming:** Transports do not expose a `read()` method. Instead, each transport spawns a background `tokio::task` on creation that continuously reads from the underlying source (PTY stdout or SSH channel) and pushes data through two paths:
+
+1. **Tauri event emit** — `app_handle.emit_to(session_id, "transport:data", payload)` for real-time xterm.js rendering.
+2. **Output buffer** — a ring buffer (1MB cap, oldest-chunk eviction) maintained per transport inside `TransportManager`, supporting `get_buffer(session_id)` for session-switch replay.
+
+This replaces the existing `ptyManager.ts` buffer/listener system entirely on the Rust side.
 
 ### LocalPtyTransport
 
@@ -91,7 +104,7 @@ Wraps existing `tauri-plugin-pty`:
 
 Wraps `russh` SSH channel:
 
-- On create: `ssh → tmux new-session -d -s racc-{session_id} '{agent_cmd}'` then `tmux attach`
+- On create: `ssh → tmux new-session -d -s racc-{session_id} '{agent_cmd}'` then `tmux attach` (session IDs are DB auto-increment integers, globally unique within a Racc instance)
 - `write()` → SSH channel stdin (forwarded to tmux)
 - `read()` → SSH channel stdout (tmux output stream)
 - `resize()` → SSH channel window size change
@@ -102,16 +115,20 @@ Wraps `russh` SSH channel:
 
 ```rust
 pub struct TransportManager {
-    transports: HashMap<String, Box<dyn Transport>>,  // session_id → transport
+    transports: HashMap<i64, Box<dyn Transport>>,     // session_id (i64) → transport
+    buffers: HashMap<i64, RingBuffer>,                 // session_id → output ring buffer (1MB)
 }
 
 impl TransportManager {
-    pub async fn create_local(&self, session_id: &str, cwd: &str, cmd: &str) -> Result<()>;
-    pub async fn create_remote(&self, session_id: &str, server: &Server, cmd: &str) -> Result<()>;
-    pub async fn get(&self, session_id: &str) -> Option<&dyn Transport>;
-    pub async fn remove(&self, session_id: &str) -> Result<()>;
+    pub async fn create_local(&self, session_id: i64, cwd: &str, cmd: &str, app: AppHandle) -> Result<()>;
+    pub async fn create_remote(&self, session_id: i64, server: &Server, cmd: &str, app: AppHandle) -> Result<()>;
+    pub async fn get(&self, session_id: i64) -> Option<&dyn Transport>;
+    pub async fn get_buffer(&self, session_id: i64) -> Option<Vec<u8>>;  // for session-switch replay
+    pub async fn remove(&self, session_id: i64) -> Result<()>;
 }
 ```
+
+Session IDs are `i64` throughout, matching the existing `sessions` table `INTEGER PRIMARY KEY AUTOINCREMENT`.
 
 Injected as Tauri managed state alongside `EventSender` and `DbPool`.
 
@@ -119,18 +136,21 @@ Injected as Tauri managed state alongside `EventSender` and `DbPool`.
 
 ```rust
 #[tauri::command]
-async fn transport_write(session_id: String, data: Vec<u8>, state: State<TransportManager>) -> Result<()>;
+async fn transport_write(session_id: i64, data: Vec<u8>, state: State<TransportManager>) -> Result<()>;
 
 #[tauri::command]
-async fn transport_resize(session_id: String, cols: u16, rows: u16, state: State<TransportManager>) -> Result<()>;
+async fn transport_resize(session_id: i64, cols: u16, rows: u16, state: State<TransportManager>) -> Result<()>;
+
+#[tauri::command]
+async fn transport_get_buffer(session_id: i64, state: State<TransportManager>) -> Result<Vec<u8>>;
 ```
 
-Read direction: transport background task continuously reads and pushes data via `app_handle.emit_to()` to the frontend.
+Read direction: each transport's background task pushes data via `app_handle.emit_to()` and writes to the ring buffer in `TransportManager`. Frontend listens to `transport:data` events for real-time rendering, and calls `transport_get_buffer` on session switch for replay.
 
 ### Impact on Existing Code
 
-- `ptyManager.ts` — replaced entirely. Frontend no longer calls `tauri-plugin-pty` directly; instead calls transport commands.
-- `usePtyBridge.ts` — simplified to xterm.js ↔ Tauri event/command bridge, agnostic of local vs remote.
+- `ptyManager.ts` — replaced entirely. Output buffering, listener management, and session-switch replay all move to Rust-side `TransportManager`. Frontend no longer calls `tauri-plugin-pty` directly; instead calls transport commands and listens to `transport:data` events.
+- `usePtyBridge.ts` — simplified to xterm.js ↔ Tauri event/command bridge, agnostic of local vs remote. On session switch, calls `transport_get_buffer` for replay.
 - `session.rs` `create_session` — routes to different transport creation based on `server_id`.
 
 ## SSH Connection Management
@@ -199,7 +219,23 @@ async fn connect_server(server_id: String) -> Result<()>;
 
 #[tauri::command]
 async fn disconnect_server(server_id: String) -> Result<()>;
+
+#[tauri::command]
+async fn update_server(server_id: String, config: ServerConfig) -> Result<Server>;
+
+#[tauri::command]
+async fn execute_remote_command(server_id: String, command: String) -> Result<CommandOutput>;
 ```
+
+### SSH Key Passphrase Handling
+
+If a user's SSH key is passphrase-protected and not loaded in ssh-agent, `russh` connection will fail. Racc will:
+
+1. Detect the failure reason and prompt the user in the UI
+2. Suggest loading the key into ssh-agent: `ssh-add ~/.ssh/id_rsa`
+3. Offer to retry connection after user confirms
+
+Direct passphrase prompting in-app is out of scope for MVP — users should use ssh-agent.
 
 ## AI-Driven Setup Flow
 
@@ -243,7 +279,11 @@ const runRemoteCommand: AgentTool = {
     command: { type: "string" },
     requires_confirmation: { type: "boolean" },
   },
-  // Executes via SshManager, streams output to frontend
+  execute: async ({ command, requires_confirmation }) => {
+    // Bridges to Rust via Tauri invoke("execute_remote_command", { server_id, command })
+    // requires_confirmation=true → frontend shows confirm dialog before invoking
+    // Returns { stdout, stderr, exit_code }
+  },
 };
 
 const getServerInfo: AgentTool = {
@@ -406,14 +446,34 @@ GPU Box: ● connected | Dev VM: ○ reconnecting (2/5)
 ### Phase 4: Remote Sessions
 
 - `SshTmuxTransport` implementation
-- Remote git clone / worktree management
+- Remote git clone / worktree management (see below)
 - Full remote session creation flow
 - Auto-reconnect + tmux reattach on disconnect
+- Update `reconcile_sessions` for remote sessions (see below)
+
+#### Remote Git Worktree Management
+
+Same worktree-per-session model as local, executed over SSH:
+
+1. **Clone check** — `execute_remote_command("test -d {repo_path}")`. If missing, prompt user to confirm clone.
+2. **Clone** — `execute_remote_command("git clone {repo_url} {repo_path}")`, output streamed to UI.
+3. **Worktree create** — `execute_remote_command("git -C {repo_path} worktree add {worktree_path} -b {branch}")`. Remote worktree path follows same convention: `~/racc-worktrees/{repo}/{branch}`.
+4. **Worktree cleanup** — on session delete, `execute_remote_command("git -C {repo_path} worktree remove --force {worktree_path}")`.
+
+#### Remote Session Reconciliation
+
+The existing `reconcile_sessions` marks all "Running" sessions as "Disconnected" on app startup. For remote sessions this is extended:
+
+1. On startup, for each remote session with status "Running":
+   - Attempt SSH connection to its server
+   - If connected → `execute_remote_command("tmux has-session -t racc-{session_id}")`
+   - If tmux session exists → keep status "Running", create `SshTmuxTransport` to reattach
+   - If tmux session gone → mark "Completed"
+   - If SSH connection fails → mark "Disconnected" (user can manually reconnect later)
 
 ### Phase 5: Polish
 
 - Status bar connection status display
-- Remote session reattach after Racc restart
 - Remote cost tracking
 - Concurrent sessions across multiple servers
 
