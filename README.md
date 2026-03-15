@@ -15,10 +15,9 @@
 
 ---
 
-<!-- TODO: Add screenshot or GIF here -->
-<!-- <p align="center">
-  <img src="assets/screenshot.png" alt="Racc Screenshot" width="800" />
-</p> -->
+<p align="center">
+  <img src="assets/demo.gif" alt="Racc Demo" width="800" />
+</p>
 
 ## What is Racc?
 
