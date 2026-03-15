@@ -6,3 +6,4 @@ pub mod git;
 pub mod insights;
 pub mod session;
 pub mod task;
+pub mod transport;

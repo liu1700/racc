@@ -12,6 +12,8 @@ pub fn run() {
     let db_arc: Arc<Mutex<Connection>> = Arc::new(Mutex::new(db));
     let (event_tx, _event_rx) = events::create_event_bus();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let transport_manager = crate::transport::manager::TransportManager::new();
+    transport_manager.start_buffer_task();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -20,6 +22,7 @@ pub fn run() {
         .manage(db_arc.clone())
         .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
         .manage(event_tx)
+        .manage(transport_manager)
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
@@ -102,6 +105,9 @@ pub fn run() {
             commands::insights::get_session_events,
             commands::insights::append_to_file,
             commands::insights::run_batch_analysis,
+            commands::transport::transport_write,
+            commands::transport::transport_resize,
+            commands::transport::transport_get_buffer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
