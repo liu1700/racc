@@ -64,6 +64,10 @@ See the [wiki](https://github.com/liu1700/racc/wiki) for detailed design docs, i
 
 Short for **raccoon** — clever, adorable, with nimble little hands. But be careful — they can be surprisingly brutal sometimes.
 
+<p align="center">
+  <img src="assets/raccoon.png" alt="Raccoon" width="300" />
+</p>
+
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
