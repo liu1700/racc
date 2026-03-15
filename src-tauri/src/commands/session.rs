@@ -4,6 +4,9 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::transport::local_pty::LocalPtyTransport;
+use crate::transport::manager::TransportManager;
+
 // --- Types ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +47,7 @@ pub struct Session {
     pub created_at: String,
     pub updated_at: String,
     pub pr_url: Option<String>,
+    pub server_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,7 +78,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
 
     let mut session_stmt = conn
         .prepare(
-            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at, pr_url
+            "SELECT id, repo_id, agent, worktree_path, branch, status, created_at, updated_at, pr_url, server_id
              FROM sessions WHERE repo_id = ? ORDER BY created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -94,6 +98,7 @@ fn query_repos_with_sessions(conn: &Connection) -> Result<Vec<RepoWithSessions>,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
                     pr_url: row.get(8)?,
+                    server_id: row.get(9)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -120,6 +125,23 @@ fn get_current_branch(repo_path: &str) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+// --- Helper: build agent command string ---
+
+fn build_agent_command(agent: &str, task: &str, _cwd: &str) -> String {
+    match agent {
+        "claude-code" => {
+            let escaped_task = task.replace('\'', "'\\''");
+            format!("claude '{}'\n", escaped_task)
+        }
+        "aider" => "aider\n".to_string(),
+        "codex" => {
+            let escaped_task = task.replace('\'', "'\\''");
+            format!("codex '{}'\n", escaped_task)
+        }
+        _ => format!("{}\n", agent),
+    }
 }
 
 // --- Tauri Commands ---
@@ -206,10 +228,17 @@ pub async fn remove_repo(
 pub async fn create_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
     repo_id: i64,
     use_worktree: bool,
     branch: Option<String>,
+    agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,
 ) -> Result<Session, String> {
+    let agent = agent.unwrap_or_else(|| "claude-code".to_string());
+    let task_description = task_description.unwrap_or_default();
+
     let (repo_path, repo_name) = {
         let conn = db.lock().map_err(|e| e.to_string())?;
         let row: (String, String) = conn
@@ -266,33 +295,59 @@ pub async fn create_session(
         (None, branch)
     };
 
-    let conn = db.lock().map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status)
-         VALUES (?1, 'claude-code', ?2, ?3, 'Running')",
-        rusqlite::params![repo_id, worktree_path, branch_name],
-    )
-    .map_err(|e| e.to_string())?;
-
-    let id = conn.last_insert_rowid();
-    let (created_at, updated_at): (String, String) = conn
-        .query_row(
-            "SELECT created_at, updated_at FROM sessions WHERE id = ?1",
-            [id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+    let (session_id, worktree_path_clone, created_at, updated_at) = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id)
+             VALUES (?1, ?2, ?3, ?4, 'Running', ?5)",
+            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id],
         )
         .map_err(|e| e.to_string())?;
 
+        let id = conn.last_insert_rowid();
+        let (created_at, updated_at): (String, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at FROM sessions WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        (id, worktree_path.clone(), created_at, updated_at)
+    }; // conn lock released here
+
+    // Only spawn transport for local sessions (server_id is None)
+    if server_id.is_none() {
+        let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
+        let agent_cmd = build_agent_command(&agent, &task_description, cwd);
+        let transport = LocalPtyTransport::spawn(
+            session_id,
+            cwd,
+            "/bin/zsh",
+            80, 24,  // default size, frontend will resize
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        ).await.map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+
+        // Send agent command after short delay to let shell initialize
+        if !task_description.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            transport_manager.write(session_id, agent_cmd.as_bytes()).await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
     let session = Session {
-        id,
+        id: session_id,
         repo_id,
-        agent: "claude-code".to_string(),
+        agent,
         worktree_path,
         branch: Some(branch_name),
         status: SessionStatus::Running,
         created_at,
         updated_at,
         pr_url: None,
+        server_id,
     };
 
     if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {
@@ -311,8 +366,12 @@ pub async fn create_session(
 pub async fn stop_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
     session_id: i64,
 ) -> Result<(), String> {
+    // Close transport before updating DB
+    let _ = transport_manager.remove(session_id).await;
+
     let conn = db.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
@@ -335,9 +394,13 @@ pub async fn stop_session(
 #[tauri::command]
 pub async fn remove_session(
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
     session_id: i64,
     delete_worktree: bool,
 ) -> Result<(), String> {
+    // Close transport if still running
+    let _ = transport_manager.remove(session_id).await;
+
     let conn = db.lock().map_err(|e| e.to_string())?;
 
     let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
@@ -422,11 +485,11 @@ pub async fn reattach_session(
     )
     .map_err(|e| e.to_string())?;
 
-    let (agent, branch, created_at, updated_at, pr_url): (String, Option<String>, String, String, Option<String>) = conn
+    let (agent, branch, created_at, updated_at, pr_url, server_id): (String, Option<String>, String, String, Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT agent, branch, created_at, updated_at, pr_url FROM sessions WHERE id = ?1",
+            "SELECT agent, branch, created_at, updated_at, pr_url, server_id FROM sessions WHERE id = ?1",
             [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .map_err(|e| e.to_string())?;
 
@@ -440,6 +503,7 @@ pub async fn reattach_session(
         created_at,
         updated_at,
         pr_url,
+        server_id,
     };
 
     if let Some(tx) = app_handle.try_state::<crate::events::EventSender>() {

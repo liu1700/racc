@@ -39,6 +39,7 @@ pub fn init_db() -> Result<Connection, String> {
             branch TEXT,
             status TEXT NOT NULL DEFAULT 'Running',
             pr_url TEXT,
+            server_id TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -92,10 +93,20 @@ pub fn init_db() -> Result<Connection, String> {
         CREATE UNIQUE INDEX idx_insights_fingerprint
             ON insights(fingerprint) WHERE status = 'active';
 
-        PRAGMA user_version = 1;
+        PRAGMA user_version = 2;
         ",
         )
         .map_err(|e| format!("Migration failed: {e}"))?;
+    }
+
+    if version >= 1 && version < 2 {
+        conn.execute_batch(
+            "
+            ALTER TABLE sessions ADD COLUMN server_id TEXT;
+            PRAGMA user_version = 2;
+            ",
+        )
+        .map_err(|e| format!("Migration v2 failed: {e}"))?;
     }
 
     Ok(conn)
