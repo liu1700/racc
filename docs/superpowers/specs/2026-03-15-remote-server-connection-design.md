@@ -96,9 +96,9 @@ This replaces the existing `ptyManager.ts` buffer/listener system entirely on th
 Wraps existing `tauri-plugin-pty`:
 
 - `write()` → PTY stdin
-- `read()` → PTY stdout
 - `resize()` → PTY resize
 - `close()` → kill process
+- Background task reads PTY stdout → emits `transport:data` event + writes to ring buffer
 
 ### SshTmuxTransport
 
@@ -106,8 +106,8 @@ Wraps `russh` SSH channel:
 
 - On create: `ssh → tmux new-session -d -s racc-{session_id} '{agent_cmd}'` then `tmux attach` (session IDs are DB auto-increment integers, globally unique within a Racc instance)
 - `write()` → SSH channel stdin (forwarded to tmux)
-- `read()` → SSH channel stdout (tmux output stream)
 - `resize()` → SSH channel window size change
+- Background task reads SSH channel stdout → emits `transport:data` event + writes to ring buffer
 - `close()` → `tmux kill-session -t racc-{session_id}`
 - On disconnect: auto SSH reconnect → `tmux attach -t racc-{session_id}`
 
@@ -191,7 +191,7 @@ Connection priority:
 
 ### Auto-Reconnect
 
-When transport `read()` detects SSH channel down:
+When the transport's background read task detects SSH channel down:
 
 1. Notify frontend: "Reconnecting..." status
 2. `SshManager` initiates reconnect with exponential backoff
