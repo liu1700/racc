@@ -95,6 +95,7 @@ pub fn run() {
             commands::task::update_task_description,
             commands::task::delete_task,
             commands::db::reset_db,
+            commands::shell::open_url,
             commands::insights::record_session_events,
             commands::insights::get_insights,
             commands::insights::update_insight_status,

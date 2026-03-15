@@ -5,4 +5,5 @@ pub mod file;
 pub mod git;
 pub mod insights;
 pub mod session;
+pub mod shell;
 pub mod task;
