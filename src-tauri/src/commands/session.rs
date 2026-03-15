@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::ssh::SshManager;
 use crate::transport::local_pty::LocalPtyTransport;
 use crate::transport::manager::TransportManager;
 
@@ -229,6 +230,7 @@ pub async fn create_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
     transport_manager: tauri::State<'_, TransportManager>,
+    ssh_manager: tauri::State<'_, Arc<SshManager>>,
     repo_id: i64,
     use_worktree: bool,
     branch: Option<String>,
@@ -315,8 +317,62 @@ pub async fn create_session(
         (id, worktree_path.clone(), created_at, updated_at)
     }; // conn lock released here
 
-    // Only spawn transport for local sessions (server_id is None)
-    if server_id.is_none() {
+    if let Some(ref sid) = server_id {
+        // Remote session: clone repo if needed, create worktree, spawn SshTmuxTransport
+        let remote_repo_path = format!("~/racc-repos/{}", repo_name);
+
+        // Check if repo exists on remote
+        let check = ssh_manager
+            .exec(sid, &format!("test -d {} && echo exists || echo missing", remote_repo_path))
+            .await
+            .map_err(|e| format!("Failed to check remote repo: {}", e))?;
+
+        if check.stdout.trim() == "missing" {
+            // Get repo URL from local repo's origin remote
+            let repo_path_str = repo_path.clone();
+            let url_output = Command::new("git")
+                .args(["-C", &repo_path_str, "remote", "get-url", "origin"])
+                .output()
+                .map_err(|e| format!("Failed to get repo URL: {}", e))?;
+            let repo_url = String::from_utf8_lossy(&url_output.stdout).trim().to_string();
+
+            if repo_url.is_empty() {
+                return Err("No origin remote URL found for this repository".to_string());
+            }
+
+            ssh_manager
+                .exec(sid, &format!("mkdir -p ~/racc-repos && git clone {} {}", repo_url, remote_repo_path))
+                .await
+                .map_err(|e| format!("Failed to clone repo on remote: {}", e))?;
+        }
+
+        // Create worktree on remote
+        let remote_worktree = format!("~/racc-worktrees/{}/{}", repo_name, branch_name);
+        let _ = ssh_manager
+            .exec(sid, &format!(
+                "mkdir -p ~/racc-worktrees/{} && (git -C {} worktree add {} -b racc-{} 2>/dev/null || git -C {} worktree add {} racc-{} 2>/dev/null || true)",
+                repo_name,
+                remote_repo_path, remote_worktree, session_id,
+                remote_repo_path, remote_worktree, session_id
+            ))
+            .await;
+
+        // Spawn SshTmuxTransport
+        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree);
+        let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
+            session_id,
+            sid,
+            &agent_cmd,
+            80, 24,
+            (*ssh_manager).clone(),
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+    } else {
+        // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
         let agent_cmd = build_agent_command(&agent, &task_description, cwd);
         let transport = LocalPtyTransport::spawn(
