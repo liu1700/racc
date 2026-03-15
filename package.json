@@ -1,8 +1,16 @@
 {
   "name": "racc",
-  "private": true,
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liu1700/racc.git"
+  },
+  "homepage": "https://github.com/liu1700/racc",
+  "bugs": {
+    "url": "https://github.com/liu1700/racc/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
