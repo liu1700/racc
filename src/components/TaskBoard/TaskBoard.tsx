@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { TaskStatus } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
@@ -13,8 +13,26 @@ interface Props {
 }
 
 export function TaskBoard({ repoId, onSessionSelect }: Props) {
-  const { tasks, createTask, loading, error, draftInputOpen, draftValue, setDraftInputOpen, setDraftValue } = useTaskStore();
+  const {
+    tasks,
+    createTask,
+    loading,
+    error,
+    draftInputOpen,
+    draftValue,
+    draftImages,
+    setDraftInputOpen,
+    setDraftValue,
+    addDraftImage,
+    removeDraftImage,
+  } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
+
+  const repoPath = useMemo(() => {
+    if (!repoId) return "";
+    const r = repos.find((rr) => rr.repo.id === repoId);
+    return r?.repo.path ?? "";
+  }, [repoId, repos]);
 
   // Note: loadTasks is called in App.tsx to support the tab badge.
   // No duplicate load here.
@@ -22,8 +40,14 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
   // Watch session status changes → sync working→closed
   // Also detect orphaned working tasks whose session no longer exists
   useEffect(() => {
-    const { syncTaskWithSession, updateTaskStatus, tasks: currentTasks } = useTaskStore.getState();
-    const runningTasks = currentTasks.filter((t) => t.status === "working" && t.session_id);
+    const {
+      syncTaskWithSession,
+      updateTaskStatus,
+      tasks: currentTasks,
+    } = useTaskStore.getState();
+    const runningTasks = currentTasks.filter(
+      (t) => t.status === "working" && t.session_id
+    );
     if (runningTasks.length === 0) return;
 
     // Build set of all existing session IDs
@@ -58,7 +82,10 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
       <div className="flex flex-1 items-center justify-center">
         <button
           onClick={async () => {
-            const selected = await openDialog({ directory: true, multiple: false });
+            const selected = await openDialog({
+              directory: true,
+              multiple: false,
+            });
             if (selected) await importRepo(selected);
           }}
           className="text-sm text-zinc-500 transition-colors hover:text-accent"
@@ -86,7 +113,10 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
   }
 
   const tasksByStatus = Object.fromEntries(
-    COLUMNS.map((status) => [status, tasks.filter((t) => t.status === status)])
+    COLUMNS.map((status) => [
+      status,
+      tasks.filter((t) => t.status === status),
+    ])
   ) as Record<TaskStatus, typeof tasks>;
 
   return (
@@ -96,6 +126,7 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
           key={status}
           status={status}
           tasks={tasksByStatus[status]}
+          repoPath={repoPath}
           onSessionSelect={onSessionSelect}
           onCreateTask={
             status === "open"
@@ -103,9 +134,14 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
               : undefined
           }
           inputOpen={status === "open" ? draftInputOpen : false}
-          onInputOpenChange={status === "open" ? setDraftInputOpen : undefined}
+          onInputOpenChange={
+            status === "open" ? setDraftInputOpen : undefined
+          }
           draftValue={status === "open" ? draftValue : ""}
           onDraftChange={status === "open" ? setDraftValue : undefined}
+          draftImages={status === "open" ? draftImages : []}
+          onAddImage={status === "open" ? addDraftImage : undefined}
+          onRemoveImage={status === "open" ? removeDraftImage : undefined}
         />
       ))}
     </div>

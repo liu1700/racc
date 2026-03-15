@@ -110,11 +110,11 @@ The center panel has a tab bar switching between **Tasks** (default) and **Termi
 
 A kanban-style board for cognitive offloading and agent orchestration. Three columns: Open, Working, Closed.
 
-- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Each card has a "Fire" button
-- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates
+- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Image attachment via Cmd+V paste or file picker button; thumbnails (48×48) display below textarea with per-image delete (X button on hover). Each card has a "Fire" button and shows attached image thumbnails (32×32)
+- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates. Image thumbnails remain visible
 - **Closed column:** Session completed or removed — archived tasks at reduced opacity
 
-**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar.
+**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar. If images are attached, their absolute file paths (`{repo}/.racc/images/{filename}`) are appended to the prompt sent to the terminal agent.
 
 **Tab badge:** Tasks tab shows count of non-closed tasks in a rounded badge.
 

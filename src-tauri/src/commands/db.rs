@@ -61,6 +61,7 @@ pub fn init_db() -> Result<Connection, String> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repo_id INTEGER NOT NULL,
             description TEXT NOT NULL,
+            images TEXT NOT NULL DEFAULT '[]',
             status TEXT NOT NULL DEFAULT 'open',
             session_id INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -92,10 +93,20 @@ pub fn init_db() -> Result<Connection, String> {
         CREATE UNIQUE INDEX idx_insights_fingerprint
             ON insights(fingerprint) WHERE status = 'active';
 
-        PRAGMA user_version = 1;
+        PRAGMA user_version = 2;
         ",
         )
         .map_err(|e| format!("Migration failed: {e}"))?;
+    }
+
+    if version >= 1 && version < 2 {
+        conn.execute_batch(
+            "
+            ALTER TABLE tasks ADD COLUMN images TEXT NOT NULL DEFAULT '[]';
+            PRAGMA user_version = 2;
+            ",
+        )
+        .map_err(|e| format!("Migration v2 failed: {e}"))?;
     }
 
     Ok(conn)

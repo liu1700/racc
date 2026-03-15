@@ -91,7 +91,7 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 **Schema (v4):**
 - `repos` table: id, path, name, added_at
 - `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-- `tasks` table: id, repo_id (FK CASCADE), description, status (CHECK open|working|closed), session_id (FK SET NULL), created_at, updated_at
+- `tasks` table: id, repo_id (FK CASCADE), description, images (JSON array of filenames), status (CHECK open|working|closed), session_id (FK SET NULL), created_at, updated_at
 - `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
 - `assistant_config` table: key, value
 - `session_events` table: id, session_id (FK→sessions), event_type, payload (JSON), created_at (Unix ms)
@@ -160,7 +160,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
 | `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, aggregate token counts (total + weekly) |
 | `assistant.rs` | `set_assistant_config`, `get_assistant_config`, `save_assistant_message`, `get_assistant_messages`, `get_all_sessions_for_assistant`, `get_session_diff_for_assistant`, `get_session_costs_for_assistant`, `read_file_for_assistant`, `assistant_send_message`, `assistant_read_response`, `assistant_shutdown` | AI assistant config, message persistence, session queries, file reading relay, sidecar process management |
-| `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `delete_task` | Task CRUD for Task Board — create, list by repo, update status with optional session linking, delete with existence guard |
+| `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `update_task_images`, `delete_task`, `save_task_image`, `copy_file_to_task_images`, `delete_task_image`, `rename_task_image` | Task CRUD for Task Board — create (with optional images), list by repo, update status/images, delete. Image file I/O: save from clipboard bytes, copy from file picker, delete, rename (draft→final) |
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
 | `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
@@ -190,8 +190,8 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `eventCapture.ts` | Service | Event normalization, buffering — **disabled for MVP** |
 | `TaskBoard.tsx` | Center panel | 3-column kanban (Open/Working/Closed) with session sync |
 | `TaskColumn.tsx` | Center panel | Single kanban column with header, cards, and new-task input |
-| `TaskCard.tsx` | Center panel | Status-dependent card with live activity and fire button |
-| `TaskInput.tsx` | Center panel | Inline task creation input (Enter/Esc) |
+| `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, and image thumbnails |
+| `TaskInput.tsx` | Center panel | Inline task creation with image paste (Cmd+V), file picker, and thumbnail preview |
 | `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
 | `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
 | `DiffViewer.tsx` | Center panel | Placeholder (P1 feature) |
