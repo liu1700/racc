@@ -153,8 +153,9 @@ export function Terminal() {
     terminal: term,
   });
 
-  // Focus terminal on click
+  // Focus terminal on click and scroll to bottom
   const handleClick = useCallback(() => {
+    term?.scrollToBottom();
     term?.focus();
   }, [term]);
 
