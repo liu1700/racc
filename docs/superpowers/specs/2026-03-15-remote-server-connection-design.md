@@ -241,7 +241,32 @@ Direct passphrase prompting in-app is out of scope for MVP — users should use 
 
 ### Architecture
 
-Instead of hardcoded detection chains and install commands, the setup is driven by a `@mariozechner/pi-agent-core` agent running locally. The agent uses tools to execute commands on the remote server via `SshManager`.
+The setup flow has two tiers depending on whether the user has configured an LLM API key:
+
+1. **With API key (full AI mode)** — A `@mariozechner/pi-agent-core` agent runs locally, uses tools to execute commands on the remote server via `SshManager`, and provides conversational, adaptive guidance.
+2. **Without API key (static guide mode)** — Racc displays a concise static checklist with the essential setup commands. Each command has a **[Copy]** button so users can paste and run them manually on the server.
+
+The API key is configured in the Add Server panel (or a global Racc settings page). Supported providers: OpenRouter, Anthropic, OpenAI — any provider supported by `@mariozechner/pi-ai`.
+
+### Setup Agent API Key
+
+The setup agent requires an LLM API key to run. This is separate from the API keys used by the coding agents (Claude Code, Codex) on the remote server.
+
+Configuration in the Add Server dialog:
+
+```
+┌─ AI Setup Assistant (optional) ──────┐
+│                                       │
+│ Provider: [OpenRouter ▾]             │
+│ API Key:  [sk-...              ] [👁] │
+│                                       │
+│ Enables intelligent, adaptive server  │
+│ setup. Without this, you'll get a     │
+│ static setup guide instead.           │
+└───────────────────────────────────────┘
+```
+
+The key is stored in `servers` table (or a global `settings` table if shared across servers). If not set, the setup wizard gracefully degrades to static mode.
 
 ### Setup Agent Definition
 
@@ -325,6 +350,49 @@ The setup wizard is a conversational interface, not a static checklist:
 └───────────────────────────────────────────┘
 ```
 
+### Static Guide Fallback (No API Key)
+
+When no LLM API key is configured, the setup wizard shows a static guide:
+
+```
+┌─ Server Setup: GPU Box ──────────────────┐
+│                                           │
+│ Please run these commands on your server  │
+│ to complete setup:                        │
+│                                           │
+│ 1. Install tmux                           │
+│ ┌───────────────────────────────┐         │
+│ │ sudo apt install -y tmux      │ [Copy]  │
+│ └───────────────────────────────┘         │
+│                                           │
+│ 2. Install Claude Code                    │
+│ ┌───────────────────────────────┐         │
+│ │ npm install -g @anthropic-ai/ │ [Copy]  │
+│ │ claude-code                   │         │
+│ └───────────────────────────────┘         │
+│                                           │
+│ 3. Login to Claude Code                   │
+│ ┌───────────────────────────────┐         │
+│ │ claude login                  │ [Copy]  │
+│ └───────────────────────────────┘         │
+│                                           │
+│ 4. Configure git SSH access               │
+│ ┌───────────────────────────────┐         │
+│ │ ssh-keygen -t ed25519         │ [Copy]  │
+│ │ cat ~/.ssh/id_ed25519.pub     │         │
+│ └───────────────────────────────┘         │
+│ → Add the public key to GitHub            │
+│                                           │
+│ Tip: Set up an AI API key in Racc         │
+│ settings for intelligent, adaptive        │
+│ setup assistance.                         │
+│                                           │
+│              [Re-check] [Done]            │
+└───────────────────────────────────────────┘
+```
+
+The static guide adapts minimally based on what SSH detection reveals (e.g., skips steps for already-installed components). Each code block has a **[Copy]** button. A "Re-check" button re-runs basic detection commands via SSH to update the checklist status.
+
 ### Advantages Over Hardcoded Setup
 
 - **Adaptive** — handles any OS, package manager, network config
@@ -370,9 +438,16 @@ Remote sessions show server name. Otherwise identical to local sessions.
 │ Auth: ○ SSH Key  ○ SSH Agent      │
 │ Key Path: [              ] [📁]   │
 │                                    │
+│                                    │
+│ ─── AI Setup Assistant (optional) ─│
+│ Provider: [OpenRouter ▾]          │
+│ API Key:  [               ] [👁]  │
+│                                    │
 │      [Test Connection] [Add]      │
 └────────────────────────────────────┘
 ```
+
+If the user provides an API key, setup uses the AI agent. Otherwise, it falls back to the static guide with copy buttons.
 
 ### Remote Session Creation
 
