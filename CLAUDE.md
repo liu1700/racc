@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Racc is an Agentic IDE — a Tauri 2.x desktop app that orchestrates multiple AI coding agent sessions (Claude Code, Aider, Codex). It is not a code editor; it's a control plane for terminal-based agents built on native PTY, git worktrees, and xterm.js.
+Racc is a Tauri 2.x desktop app that orchestrates AI coding agent sessions. Currently supports Claude Code, with Codex support planned. It is not a code editor; it's a control plane for terminal-based agents built on native PTY, git worktrees, and xterm.js.
 
 ## Commands
 
@@ -39,7 +39,7 @@ No test framework is configured yet.
 
 **Frontend state:** Zustand store in `src/stores/sessionStore.ts` manages session list and active session, calls Tauri commands.
 
-**UI layout:** Three-panel — left sidebar (session list, 15%), center (xterm.js terminal, 55%), right panel (cost tracker + AI assistant, 30%), bottom status bar.
+**UI layout:** Two-panel — left sidebar (session list), center (tasks / xterm.js terminal), bottom status bar.
 
 ## Key Conventions
 

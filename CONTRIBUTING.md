@@ -55,12 +55,6 @@ git clone https://github.com/liu1700/racc.git
 cd racc
 bun install
 
-# Build the AI assistant sidecar binary
-cd sidecar
-bun install
-bash build.sh
-cd ..
-
 # Launch full app (frontend + Rust backend with hot reload)
 bun tauri dev
 ```
@@ -92,15 +86,7 @@ racc/
 │   │   ├── session.rs      # Session and repo lifecycle
 │   │   ├── git.rs          # Git worktree operations
 │   │   ├── cost.rs         # Claude Code cost tracking
-│   │   ├── assistant.rs    # AI assistant + sidecar management
 │   │   └── db.rs           # SQLite initialization and migrations
-│   └── binaries/           # Sidecar binaries (git-ignored)
-├── sidecar/                # AI assistant sidecar (TypeScript, bun-compiled)
-│   └── src/
-│       ├── index.ts        # stdin/stdout JSON lines protocol
-│       ├── agent.ts        # LLM agent setup and system prompt
-│       ├── tools.ts        # Tool definitions (sessions, diffs, costs)
-│       └── protocol.ts     # Message type definitions
 ├── wiki/                   # Design docs (synced to GitHub Wiki)
 └── package.json
 ```

@@ -22,15 +22,24 @@
 
 ## What is Racc?
 
-Racc is a desktop app that lets you run multiple AI coding agents (Claude Code, Aider, Codex) in parallel — each in its own terminal, its own git worktree, fully isolated. It's not a code editor. It's the control plane you've been missing.
+Racc is a desktop app that lets you run multiple AI coding agents in parallel — each in its own terminal, its own git worktree, fully isolated. It's not a code editor. It's the control plane you've been missing.
+
+Currently supports **Claude Code**, with **Codex** support planned.
 
 ## Features
 
-- **Multi-agent sessions** — Run Claude Code, Aider, Codex, or any terminal-based agent side by side
+- **Multi-agent sessions** — Run multiple agent sessions side by side
 - **Agent-agnostic** — Communicates via native PTY, works with any agent that runs in a terminal
 - **Git worktree isolation** — Each session gets its own worktree automatically, no conflicts
-- **Built-in cost tracking** — Real-time visibility into AI agent usage costs
-- **AI assistant** — Built-in sidecar that can summarize diffs, triage review risk, and answer questions across sessions
+- **Task board** — Kanban-style board for cognitive offloading and automated agent orchestration
+
+## Roadmap
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| **v0.1 — MVP** | Multi-session dashboard, task board, git worktree isolation, file viewer | Done |
+| **v0.2 — Remote & Isolation** | Tailscale remote sessions, Docker sandbox, visual diff review | Planned |
+| **v0.3 — Orchestration** | Codex support, parallel orchestration, conflict detection, Agent SDK | Planned |
 
 ## Quick Start
 
@@ -41,16 +50,13 @@ git clone https://github.com/liu1700/racc.git
 cd racc
 bun install
 
-# Build the AI assistant sidecar
-cd sidecar && bun install && bash build.sh && cd ..
-
 # Launch
 bun tauri dev
 ```
 
 ## Architecture
 
-Three-panel layout: session list (left), xterm.js terminal (center), cost tracker + AI assistant (right). Each session = one PTY process + one git worktree. Built with Tauri 2.x (Rust backend + React 19 frontend).
+Two-panel layout: session list (left sidebar), tasks / terminal (center). Each session = one PTY process + one git worktree. Built with Tauri 2.x (Rust backend + React 19 frontend).
 
 See the [wiki](https://github.com/liu1700/racc/wiki) for detailed design docs, including [Technical Architecture](https://github.com/liu1700/racc/wiki/Technical-Architecture) and [Cognitive Design Research](https://github.com/liu1700/racc/wiki/Cognitive-Design-Research).
 

@@ -3,7 +3,7 @@ import { open as openShell } from "@tauri-apps/plugin-shell";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../stores/sessionStore";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
-import { ResetDbDialog } from "./ResetDbDialog";
+
 import type { Session, SessionStatus } from "../../types/session";
 import { parsePrDisplay } from "../../utils/prUrl";
 
@@ -55,8 +55,7 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
   const [expandedRepos, setExpandedRepos] = useState<Set<number>>(new Set());
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const [removeDialogSession, setRemoveDialogSession] = useState<Session | null>(null);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const activeRepo = repos.find((r) =>
@@ -260,15 +259,6 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
         ))}
       </div>
 
-      <div className="border-t border-surface-3 px-3 py-2">
-        <button
-          onClick={() => setResetDialogOpen(true)}
-          className="w-full rounded px-2 py-1.5 text-xs text-zinc-500 transition-colors duration-150 hover:bg-surface-2 hover:text-red-400"
-        >
-          Reset Database
-        </button>
-      </div>
-
       {removeDialogSession !== null && (
         <RemoveSessionDialog
           session={removeDialogSession}
@@ -277,10 +267,6 @@ export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
         />
       )}
 
-      <ResetDbDialog
-        open={resetDialogOpen}
-        onClose={() => setResetDialogOpen(false)}
-      />
     </aside>
   );
 }

@@ -6,27 +6,27 @@
 
 ## Layout Overview
 
-Three-panel layout, left to right:
+Two-panel layout, left to right:
 
 ```
-+----------------+------------------------------------+----------------------+
-|                |                                    |                      |
-|  Left Sidebar  |              Center Main Area                            |
-|  (~15%)        |              (~85%)                                       |
-|                |                                                          |
-|  Session List  |  Tasks / Terminal (tab switching)                         |
-|  + Inline      |  ── or ──                                                 |
-|    Activity    |  Diff Review View                                         |
-|  + Quick       |  (switchable)                                             |
-|    Actions     |                                                           |
++----------------+-----------------------------------------------------------+
 |                |                                                           |
-+----------------+------------------------------------+----------------------+
+|  Left Sidebar  |              Center Main Area                             |
+|  (~15%)        |              (~85%)                                        |
+|                |                                                           |
+|  Session List  |  Tasks / Terminal (tab switching)                          |
+|  + Inline      |  ── or ──                                                  |
+|    Activity    |  Diff Review View                                          |
+|  + Quick       |  (switchable)                                              |
+|    Actions     |                                                            |
+|                |                                                           |
++----------------+-----------------------------------------------------------+
 |                        Global Status Bar                                   |
 |  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
 +----------------------------------------------------------------------------+
 ```
 
-**F-pattern scanning alignment:** The left sidebar (session list) occupies the highest-priority upper-left position, matching natural eye-scanning patterns. The center terminal is the primary interaction surface. The right panel provides supplementary intelligence without competing for primary attention.
+**F-pattern scanning alignment:** The left sidebar (session list) occupies the highest-priority upper-left position, matching natural eye-scanning patterns. The center area is the primary interaction surface.
 
 ## Critical Design Decision
 

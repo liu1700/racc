@@ -4,6 +4,7 @@ mod ws_server;
 
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,10 +24,16 @@ pub fn run() {
         .setup(move |app| {
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
+            let reset_db_item = tauri::menu::MenuItemBuilder::new("Reset Database...")
+                .id("reset_db")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, "Racc")
                 .hide()
                 .hide_others()
                 .show_all()
+                .separator()
+                .item(&reset_db_item)
                 .separator()
                 .quit()
                 .build()?;
@@ -47,6 +54,12 @@ pub fn run() {
                 .build()?;
 
             app.set_menu(menu)?;
+
+            app.on_menu_event(|app_handle, event| {
+                if event.id().as_ref() == "reset_db" {
+                    let _ = app_handle.emit("menu-reset-db", ());
+                }
+            });
 
             let app_handle = app.handle().clone();
             let db_for_ws = db_arc.clone();

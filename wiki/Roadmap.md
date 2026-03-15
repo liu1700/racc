@@ -19,7 +19,7 @@
 | Session reconciliation | Detect orphaned sessions on startup, mark Disconnected | Done |
 | Token usage tracking | Parse Claude Code JSONL files, aggregate token counts (10s poll) | Done |
 | Zustand state management | Session store with 11 actions, `useShallow` optimization | Done |
-| AI assistant | Diff summary, risk triage, session queries via Pi Agent sidecar | Done |
+| ~~AI assistant~~ | ~~Diff summary, risk triage, session queries via sidecar~~ | Removed |
 | File viewer & command palette | Cmd+P fuzzy search, terminal path click, Shiki highlighting overlay | Done |
 | Task Board | Kanban board for cognitive offloading + auto agent orchestration (Open→Working→Closed) | Done |
 | Git diff viewer | View changes made by agents | **Next** |
@@ -44,7 +44,7 @@
 | Docker Sandbox | Opt-in container-based environment isolation |
 | Portless naming | Auto-assign URLs per worktree with embedded preview |
 | Checkpoint / rollback | Full checkpoint timeline with rollback to any point |
-| Multi-agent support | Add Aider and Codex CLI as supported agents |
+| Codex support | Add Codex CLI as a supported agent |
 | Visual diff review | Side-by-side diff view with per-file accept/reject |
 
 ---

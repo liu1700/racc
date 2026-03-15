@@ -53,7 +53,7 @@ Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and Reac
 | **Insights Engine** | Frontend real-time rules + Rust batch analysis | Cross-session pattern detection — **hidden for MVP**, code preserved |
 | **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
 | **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
-| **Agent Runtime** | Claude Code / Aider / Codex | Pluggable — IDE does not bind to a specific agent |
+| **Agent Runtime** | Claude Code (Codex planned) | Pluggable — app does not bind to a specific agent |
 
 ## Tech Stack
 

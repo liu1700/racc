@@ -71,7 +71,7 @@ A kanban-style task board integrated into the center panel for cognitive offload
 - **Working:** System auto-creates a session (worktree + PTY), sends task description as initial prompt. If images are attached, their absolute file paths are appended to the prompt so the terminal agent can read them. Card shows real-time agent activity via PTY Output Parser (information scent)
 - **Closed:** Session completes or is removed → task automatically moves to Closed
 
-**Image Attachments:** Images are saved to `{repo_path}/.racc/images/` as files (named `{taskId}-{timestamp}-{index}.{ext}`). Draft images use temporary names and are renamed after task creation. TaskCards display small (32×32) thumbnails of attached images. On fire, the prompt sent to the terminal includes absolute paths so agents (Claude Code, Aider, etc.) can reference them via their file-reading capabilities.
+**Image Attachments:** Images are saved to `{repo_path}/.racc/images/` as files (named `{taskId}-{timestamp}-{index}.{ext}`). Draft images use temporary names and are renamed after task creation. TaskCards display small (32×32) thumbnails of attached images. On fire, the prompt sent to the terminal includes absolute paths so the agent can reference them via file-reading capabilities.
 
 **Fire Dialog:** Reuses NewAgentDialog pattern — agent selection, skip-permissions, worktree (ON by default), auto-generated branch name (`task/keywords` from description).
 
