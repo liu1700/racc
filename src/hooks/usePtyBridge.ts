@@ -29,7 +29,19 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
 
     // Subscribe to live output
     const unsub = subscribe(sessionId, (data) => {
-      terminal.write(data);
+      // Capture scroll state before write — xterm.js / Tauri WebView reflow
+      // can reset viewport to top when processing TUI escape sequences
+      const buf = terminal.buffer.active;
+      const isAtBottom = buf.baseY === 0 || buf.viewportY >= buf.baseY;
+      const savedViewportY = buf.viewportY;
+
+      terminal.write(data, () => {
+        if (isAtBottom) {
+          terminal.scrollToBottom();
+        } else {
+          terminal.scrollToLine(savedViewportY);
+        }
+      });
     });
 
     return () => {
