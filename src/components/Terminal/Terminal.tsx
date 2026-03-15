@@ -115,12 +115,15 @@ export function Terminal() {
         rafId = requestAnimationFrame(() => {
           rafId = null;
           if (disposed || !xterm) return;
-          // Remember if user was following output (viewport at bottom)
+          // Remember scroll state before fit() changes dimensions
           const wasAtBottom = xterm.buffer.active.viewportY >= xterm.buffer.active.baseY;
+          const savedViewportY = xterm.buffer.active.viewportY;
           fitAddon.fit();
           // Restore scroll position after fit() to prevent jump-to-top
           if (wasAtBottom) {
             xterm.scrollToBottom();
+          } else {
+            xterm.scrollToLine(savedViewportY);
           }
         });
       });
