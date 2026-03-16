@@ -28,3 +28,11 @@ pub async fn transport_get_buffer(
     transport_manager.get_buffer(session_id).await
         .ok_or_else(|| format!("No buffer for session {}", session_id))
 }
+
+#[tauri::command]
+pub async fn transport_is_alive(
+    session_id: i64,
+    transport_manager: State<'_, TransportManager>,
+) -> Result<bool, String> {
+    Ok(transport_manager.is_alive(session_id).await)
+}

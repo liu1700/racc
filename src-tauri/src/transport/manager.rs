@@ -27,7 +27,7 @@ impl TransportManager {
     pub fn start_buffer_task(&self) {
         let buffers = self.buffers.clone();
         let rx = self.buffer_rx.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let mut rx = rx.lock().await.take().expect("buffer task already started");
             while let Some((session_id, data)) = rx.recv().await {
                 let mut bufs = buffers.lock().await;

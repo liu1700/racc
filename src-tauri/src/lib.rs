@@ -6,7 +6,7 @@ mod ws_server;
 
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,7 +16,6 @@ pub fn run() {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let transport_manager = crate::transport::manager::TransportManager::new();
     let ssh_manager = std::sync::Arc::new(ssh::SshManager::new());
-    transport_manager.start_buffer_task();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -28,6 +27,10 @@ pub fn run() {
         .manage(transport_manager)
         .manage(ssh_manager)
         .setup(move |app| {
+            // Start buffer task inside setup where Tokio runtime is available
+            let tm: tauri::State<crate::transport::manager::TransportManager> = app.state();
+            tm.start_buffer_task();
+
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
             let reset_db_item = tauri::menu::MenuItemBuilder::new("Reset Database...")
@@ -130,6 +133,7 @@ pub fn run() {
             commands::transport::transport_write,
             commands::transport::transport_resize,
             commands::transport::transport_get_buffer,
+            commands::transport::transport_is_alive,
             commands::server::add_server,
             commands::server::update_server,
             commands::server::remove_server,

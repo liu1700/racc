@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 pub struct LocalPtyTransport {
-    session_id: i64,
+    _session_id: i64,
     pty_writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pty_master: Arc<Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>>,
     alive: Arc<std::sync::atomic::AtomicBool>,
@@ -62,7 +62,7 @@ impl LocalPtyTransport {
         });
 
         Ok(Self {
-            session_id,
+            _session_id: session_id,
             pty_writer: Arc::new(Mutex::new(writer)),
             pty_master: Arc::new(Mutex::new(Some(pair.master))),
             alive,

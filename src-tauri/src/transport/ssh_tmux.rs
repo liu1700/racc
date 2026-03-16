@@ -85,66 +85,6 @@ impl SshTmuxTransport {
         })
     }
 
-    /// Reattach to an existing tmux session after an SSH reconnect.
-    ///
-    /// Opens a fresh shell channel, attaches to the already-running tmux
-    /// session, and restarts the background reader.
-    pub async fn reattach(
-        &self,
-        cols: u16,
-        rows: u16,
-        app: AppHandle,
-        buffer_tx: tokio::sync::mpsc::UnboundedSender<(i64, Vec<u8>)>,
-    ) -> Result<(), TransportError> {
-        let tmux_session_name = format!("racc-{}", self.session_id);
-
-        // Abort old read task if still running
-        {
-            let mut task = self.read_task.lock().await;
-            if let Some(handle) = task.take() {
-                handle.abort();
-            }
-        }
-
-        // Open a new shell channel
-        let channel = self
-            .ssh_manager
-            .open_shell(&self.server_id, cols, rows)
-            .await
-            .map_err(|e| TransportError::IoError(format!("Failed to open SSH shell for reattach: {}", e)))?;
-
-        // Create new writer from the fresh channel
-        let new_writer: Box<dyn tokio::io::AsyncWrite + Send + Unpin> =
-            Box::new(channel.make_writer());
-
-        // Send tmux attach
-        let attach_cmd = format!("tmux attach -t {}\n", tmux_session_name);
-        channel
-            .data(attach_cmd.as_bytes())
-            .await
-            .map_err(|e| TransportError::IoError(format!("Failed to reattach to tmux: {}", e)))?;
-
-        // Mark alive again
-        self.alive
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-
-        // Replace writer
-        {
-            let mut w = self.writer.lock().await;
-            *w = new_writer;
-        }
-
-        // Spawn new reader
-        let read_task =
-            Self::spawn_reader(self.session_id, channel, self.alive.clone(), app, buffer_tx);
-        {
-            let mut task = self.read_task.lock().await;
-            *task = Some(read_task);
-        }
-
-        Ok(())
-    }
-
     /// Spawn the background tokio task that reads `ChannelMsg` from the SSH
     /// channel and forwards data to the frontend + ring buffer.
     fn spawn_reader(

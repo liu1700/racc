@@ -44,20 +44,6 @@ pub fn init_db() -> Result<Connection, String> {
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE assistant_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            tool_name TEXT,
-            tool_call_id TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE assistant_config (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
         CREATE TABLE tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repo_id INTEGER NOT NULL,
@@ -94,47 +80,27 @@ pub fn init_db() -> Result<Connection, String> {
         CREATE UNIQUE INDEX idx_insights_fingerprint
             ON insights(fingerprint) WHERE status = 'active';
 
-        PRAGMA user_version = 2;
+        CREATE TABLE servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER DEFAULT 22,
+            username TEXT NOT NULL,
+            auth_method TEXT NOT NULL,
+            key_path TEXT,
+            ssh_config_host TEXT,
+            setup_status TEXT DEFAULT 'pending',
+            setup_details TEXT,
+            ai_provider TEXT,
+            ai_api_key TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        PRAGMA user_version = 1;
         ",
         )
-        .map_err(|e| format!("Migration failed: {e}"))?;
-    }
-
-    if version >= 1 && version < 2 {
-        conn.execute_batch(
-            "
-            ALTER TABLE tasks ADD COLUMN images TEXT NOT NULL DEFAULT '[]';
-            ALTER TABLE sessions ADD COLUMN server_id TEXT;
-            PRAGMA user_version = 2;
-            ",
-        )
-        .map_err(|e| format!("Migration v2 failed: {e}"))?;
-    }
-
-    // Migration v2 → v3: create servers table
-    if version < 3 {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS servers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                host TEXT NOT NULL,
-                port INTEGER DEFAULT 22,
-                username TEXT NOT NULL,
-                auth_method TEXT NOT NULL,
-                key_path TEXT,
-                ssh_config_host TEXT,
-                setup_status TEXT DEFAULT 'pending',
-                setup_details TEXT,
-                ai_provider TEXT,
-                ai_api_key TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("Migration v3 failed: {e}"))?;
-        conn.pragma_update(None, "user_version", 3)
-            .map_err(|e| format!("Migration v3 version update failed: {e}"))?;
+        .map_err(|e| format!("Schema initialization failed: {e}"))?;
     }
 
     Ok(conn)

@@ -70,8 +70,4 @@ impl RingBuffer {
         self.chunks.iter().flat_map(|c| c.iter()).copied().collect()
     }
 
-    pub fn clear(&mut self) {
-        self.chunks.clear();
-        self.total_size = 0;
-    }
 }

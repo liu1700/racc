@@ -512,42 +512,98 @@ pub async fn remove_session(
 pub async fn reattach_session(
     app_handle: tauri::AppHandle,
     db: tauri::State<'_, Arc<Mutex<Connection>>>,
+    transport_manager: tauri::State<'_, TransportManager>,
+    ssh_manager: tauri::State<'_, Arc<SshManager>>,
     session_id: i64,
 ) -> Result<Session, String> {
-    let conn = db.lock().map_err(|e| e.to_string())?;
+    let (_status, worktree_path, repo_id, agent, branch, created_at, updated_at, pr_url, server_id, repo_path) = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
 
-    let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
-        .query_row(
-            "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
-            [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(|e| format!("Session not found: {e}"))?;
+        let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| format!("Session not found: {e}"))?;
 
-    if status == "Running" {
-        return Err("Session is already running".to_string());
-    }
-
-    // Verify worktree still exists if this is a worktree session
-    if let Some(ref wt_path) = worktree_path {
-        if !std::path::Path::new(wt_path).exists() {
-            return Err(format!("Worktree directory no longer exists: {wt_path}"));
+        if status == "Running" {
+            return Err("Session is already running".to_string());
         }
-    }
 
-    conn.execute(
-        "UPDATE sessions SET status = 'Running', updated_at = datetime('now') WHERE id = ?1",
-        [session_id],
-    )
-    .map_err(|e| e.to_string())?;
+        // Verify worktree still exists if this is a worktree session
+        if let Some(ref wt_path) = worktree_path {
+            if !std::path::Path::new(wt_path).exists() {
+                return Err(format!("Worktree directory no longer exists: {wt_path}"));
+            }
+        }
 
-    let (agent, branch, created_at, updated_at, pr_url, server_id): (String, Option<String>, String, String, Option<String>, Option<String>) = conn
-        .query_row(
-            "SELECT agent, branch, created_at, updated_at, pr_url, server_id FROM sessions WHERE id = ?1",
+        conn.execute(
+            "UPDATE sessions SET status = 'Running', updated_at = datetime('now') WHERE id = ?1",
             [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .map_err(|e| e.to_string())?;
+
+        let (agent, branch, created_at, updated_at, pr_url, server_id): (String, Option<String>, String, String, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT agent, branch, created_at, updated_at, pr_url, server_id FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let repo_path: String = conn
+            .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
+            .map_err(|e| format!("Repo not found: {e}"))?;
+
+        (status, worktree_path, repo_id, agent, branch, created_at, updated_at, pr_url, server_id, repo_path)
+    }; // DB lock released here — safe for async transport work below
+
+    if let Some(ref sid) = server_id {
+        // Remote session: reattach to existing tmux session via SSH
+        let existing = transport_manager.is_alive(session_id).await;
+        if existing {
+            // Transport still exists, try reattach on it
+            // For now, remove old and create fresh connection
+            let _ = transport_manager.remove(session_id).await;
+        }
+        let repo_name = std::path::Path::new(&repo_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        let remote_worktree = format!("~/racc-worktrees/{}/{}", repo_name, branch.as_deref().unwrap_or("main"));
+        let agent_cmd = build_agent_command(&agent, "", &remote_worktree);
+        let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
+            session_id,
+            sid,
+            &agent_cmd,
+            80, 24,
+            (*ssh_manager).clone(),
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+    } else {
+        // Local session: spawn a new PTY with `claude --continue`
+        let cwd = worktree_path.as_deref().unwrap_or(&repo_path);
+        let transport = LocalPtyTransport::spawn(
+            session_id,
+            cwd,
+            "/bin/zsh",
+            80, 24,
+            app_handle.clone(),
+            transport_manager.buffer_sender(),
+        ).await.map_err(|e| e.to_string())?;
+        transport_manager.insert(session_id, Box::new(transport)).await;
+
+        // Send `claude --continue` to resume the previous session
+        let continue_cmd = format!("claude --continue\n");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        transport_manager.write(session_id, continue_cmd.as_bytes()).await
+            .map_err(|e| e.to_string())?;
+    }
 
     let session = Session {
         id: session_id,

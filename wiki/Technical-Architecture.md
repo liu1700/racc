@@ -85,17 +85,13 @@ Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes pr
 - On app close, `killAll()` cleans up all active PTY processes
 - Token usage tracking reads Claude Code JSONL files from `~/.claude/projects/{encoded_path}/*.jsonl`
 
-**Schema (v4):**
+**Schema (v1):**
 - `repos` table: id, path, name, added_at
-- `sessions` table: id, repo_id, agent, worktree_path, branch, status, created_at, updated_at
-- `tasks` table: id, repo_id (FK CASCADE), description, images (JSON array of filenames), status (CHECK open|working|closed), session_id (FK SET NULL), created_at, updated_at
-- `assistant_messages` table: id, role, content, tool_name, tool_call_id, created_at
-- `assistant_config` table: key, value
-- `session_events` table: id, session_id (FK→sessions), event_type, payload (JSON), created_at (Unix ms)
+- `sessions` table: id, repo_id, agent, worktree_path, branch, status, pr_url, server_id, created_at, updated_at
+- `tasks` table: id, repo_id, description, images (JSON array), status, session_id, created_at, updated_at
+- `session_events` table: id, session_id, event_type, payload (JSON), created_at (Unix ms)
 - `insights` table: id, insight_type, severity, title, summary, detail_json, fingerprint (unique partial index on active), status, created_at, resolved_at
-- Migration v1→v2 dropped deprecated `tmux_session_name` column
-- Migration v2→v3 added assistant tables
-- Migration v3→v4 added tasks, session_events, and insights tables
+- `servers` table: id, name, host, port, username, auth_method, key_path, ssh_config_host, setup_status, setup_details, ai_provider, ai_api_key, created_at, updated_at
 
 ### Agent Communication: Native PTY
 
