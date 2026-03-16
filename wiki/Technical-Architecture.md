@@ -163,7 +163,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal tab switching, calls `initialize()` on mount |
+| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal/Servers tab switching, calls `initialize()` on mount |
 | `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
 | `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
 | `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
@@ -182,6 +182,8 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, and image thumbnails |
 | `TaskInput.tsx` | Center panel | Inline task creation with image paste (Cmd+V), file picker, and thumbnail preview |
 | `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
+| `ServerPanel.tsx` | Center panel | Server management tab — add/connect/remove remote servers via SSH |
+| `ServerList.tsx` | Center panel | Server list with expand/collapse actions (connect, disconnect, setup, edit, remove) |
 | `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
 | `DiffViewer.tsx` | *(not rendered)* | Placeholder — not currently planned |
 | `StatusBar.tsx` | Bottom bar | Session counts, total/weekly token usage, connection status |

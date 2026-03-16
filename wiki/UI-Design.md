@@ -102,9 +102,9 @@ Designed to align with color psychology research — reserving high-arousal red 
 
 **Constraint:** Status is communicated via color hue alone (single preattentive channel). Shape, size, and position encode other dimensions — never combined with color to indicate status.
 
-## Center Main Area — Tasks / Terminal (implemented)
+## Center Main Area — Tasks / Terminal / Servers (implemented)
 
-The center panel has a tab bar switching between **Tasks** (default) and **Terminal** views. Terminal stays mounted via CSS `hidden` to preserve xterm.js state across tab switches.
+The center panel has a tab bar switching between **Tasks** (default), **Terminal**, and **Servers** views. Terminal stays mounted via CSS `hidden` to preserve xterm.js state across tab switches.
 
 ### Task Board Mode (default — Planning & Monitoring)
 
