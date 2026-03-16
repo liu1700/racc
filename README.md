@@ -31,13 +31,15 @@ Currently supports **Claude Code**, with **Codex** support planned.
 - **Agent-agnostic** — Communicates via native PTY, works with any agent that runs in a terminal
 - **Git worktree isolation** — Each session gets its own worktree automatically, no conflicts
 - **Task board** — Kanban-style board for cognitive offloading and automated agent orchestration
+- **Remote servers** — SSH into remote machines and run agents in persistent tmux sessions
+- **Server management** — Add servers via SSH config import or manual setup, with connection testing and status tracking
 
 ## Roadmap
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
 | **v0.1 — MVP** | Multi-session dashboard, task board, git worktree isolation, file viewer | Done |
-| **v0.2 — Multi-Agent & Isolation** | Codex support, Docker sandbox, remote sessions | Planned |
+| **v0.2 — Remote & Multi-Agent** | Remote server sessions via SSH/tmux, Codex support, Docker sandbox | In progress |
 | **v0.3** | TBD | — |
 
 ## Quick Start
@@ -55,7 +57,7 @@ bun tauri dev
 
 ## Architecture
 
-Two-panel layout: session list (left sidebar), tasks / terminal (center). Each session = one PTY process + one git worktree. Built with Tauri 2.x (Rust backend + React 19 frontend).
+Two-panel layout: session list (left sidebar), tasks / terminal (center). Each session = one PTY process + one git worktree. Local sessions use native PTY; remote sessions connect over SSH and run agents in persistent tmux sessions. Built with Tauri 2.x (Rust backend + React 19 frontend).
 
 See the [wiki](https://github.com/liu1700/racc/wiki) for detailed design docs, including [Technical Architecture](https://github.com/liu1700/racc/wiki/Technical-Architecture) and [Cognitive Design Research](https://github.com/liu1700/racc/wiki/Cognitive-Design-Research).
 
