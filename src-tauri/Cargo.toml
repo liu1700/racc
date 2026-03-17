@@ -1,5 +1,5 @@
 [workspace]
-members = ["racc-core"]
+members = ["racc-core", "racc-server"]
 default-members = ["."]
 
 [package]
