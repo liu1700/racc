@@ -37,7 +37,9 @@ src-tauri/
 │       │   ├── cost.rs
 │       │   ├── db.rs         # init_db(), migrations, reset
 │       │   ├── transport.rs  # write, resize, get_buffer, is_alive
-│       │   └── insights.rs   # Session event recording, analysis
+│       │   ├── insights.rs   # Session event recording, analysis
+│       │   ├── file.rs       # read_file, search_files
+│       │   └── shell.rs      # open_url (browser fallback: window.open)
 │       ├── transport/        # Moved from src-tauri (Transport trait, manager)
 │       │   ├── mod.rs        # Transport trait definition
 │       │   ├── manager.rs    # TransportManager
@@ -150,10 +152,12 @@ pub async fn create_session(
     use_worktree: bool,
     branch: Option<String>,
     agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,
 ) -> Result<Session, String> {
-    racc_core::commands::create_session(&ctx, repo_id, use_worktree, branch, agent)
-        .await
-        .map_err(|e| e.to_string())
+    racc_core::commands::create_session(
+        &ctx, repo_id, use_worktree, branch, agent, task_description, server_id,
+    ).await.map_err(|e| e.to_string())
 }
 ```
 
@@ -164,7 +168,11 @@ pub async fn create_session(
     let use_worktree = params["use_worktree"].as_bool().unwrap_or(false);
     let branch = params.get("branch").and_then(|v| v.as_str()).map(String::from);
     let agent = params.get("agent").and_then(|v| v.as_str()).map(String::from);
-    racc_core::commands::create_session(&ctx, repo_id, use_worktree, branch, agent).await?
+    let task_description = params.get("task_description").and_then(|v| v.as_str()).map(String::from);
+    let server_id = params.get("server_id").and_then(|v| v.as_str()).map(String::from);
+    racc_core::commands::create_session(
+        &ctx, repo_id, use_worktree, branch, agent, task_description, server_id,
+    ).await?
 }
 ```
 
@@ -200,7 +208,7 @@ Abstracts Tauri IPC vs WebSocket behind a common interface.
 interface RaccTransport {
   call(method: string, params: Record<string, unknown>): Promise<any>;
   on(event: string, handler: (data: any) => void): () => void;
-  onTerminalData(sessionId: string, handler: (data: Uint8Array) => void): () => void;
+  onTerminalData(sessionId: number, handler: (data: Uint8Array) => void): () => void;
 }
 ```
 
@@ -293,7 +301,7 @@ JSON-RPC style protocol, evolved from the existing `ws_server.rs`.
 
 **Push event (no id):**
 ```json
-{"event": "session_status_changed", "data": {"session_id": "abc-123", "status": "completed"}}
+{"event": "session_status_changed", "data": {"session_id": 42, "status": "completed"}}
 ```
 
 **Terminal data:** Binary WebSocket frames. First 8 bytes = session ID (i64 LE, matches DB type), remaining bytes = PTY output. This is a new addition — the existing `ws_server.rs` only handles text frames.
@@ -322,7 +330,7 @@ When a browser reconnects (tab refresh, device switch), the `WebSocketTransport`
 3. Add `terminal_tx` broadcast channel to `AppContext`, replace `AppHandle` in `LocalPtyTransport::spawn()` and `SshTmuxTransport::spawn()` with `terminal_tx.clone()`
 4. Replace `tauri::async_runtime::spawn` with `tokio::spawn` in `TransportManager::start_buffer_task()`
 5. Create `AppContext` struct, ensure `AppContext::new()` calls `init_db()`
-6. Refactor all 10 command modules: strip `#[tauri::command]`, replace `State<T>` + `AppHandle` with `&AppContext`, replace `Result<T, String>` with `Result<T, CoreError>`
+6. Refactor command modules: strip `#[tauri::command]`, replace `State<T>` + `AppHandle` with `&AppContext`, replace `Result<T, String>` with `Result<T, CoreError>`
 7. In existing Tauri app: add thin wrappers that call `racc-core` functions
 8. Consolidate `ws_server.rs` — it currently reimplements business logic with raw SQL; replace with calls to `racc-core` functions
 9. Create `racc-server` binary with axum, including startup (`init_db`, `reconcile_sessions`) and graceful shutdown
