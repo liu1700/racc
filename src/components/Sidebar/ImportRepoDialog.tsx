@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 
 export function ImportRepoDialog() {
@@ -11,6 +11,11 @@ export function ImportRepoDialog() {
     setError(null);
     setImporting(true);
     try {
+      if (!transport.isLocal()) {
+        setImporting(false);
+        return;
+      }
+      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ directory: true, multiple: false });
       if (!selected) {
         setImporting(false);

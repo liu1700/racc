@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { transport } from "../../services/transport";
 import type { TaskStatus } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
 import { useSessionStore } from "../../stores/sessionStore";
@@ -82,11 +82,14 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
       <div className="flex flex-1 items-center justify-center">
         <button
           onClick={async () => {
-            const selected = await openDialog({
-              directory: true,
-              multiple: false,
-            });
-            if (selected) await importRepo(selected);
+            if (transport.isLocal()) {
+              const { open } = await import("@tauri-apps/plugin-dialog");
+              const selected = await open({
+                directory: true,
+                multiple: false,
+              });
+              if (selected) await importRepo(selected);
+            }
           }}
           className="text-sm text-zinc-500 transition-colors hover:text-accent"
         >

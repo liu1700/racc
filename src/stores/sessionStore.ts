@@ -1,9 +1,7 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { transport } from "../services/transport";
 import type { Repo, Session, RepoWithSessions } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
-import { sendNotification } from "@tauri-apps/plugin-notification";
 
 interface SessionState {
   repos: RepoWithSessions[];
@@ -74,16 +72,24 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       if (current?.pr_url === prUrl) return;
 
       // Persist to DB then update local state
-      invoke("update_session_pr_url", { sessionId, prUrl }).then(() => {
+      transport.call("update_session_pr_url", { sessionId, prUrl }).then(() => {
         get().updateSessionPrUrl(sessionId, prUrl);
       }).catch((e) => console.warn("[sessionStore] Failed to save PR URL:", e));
 
       // Send system notification
       try {
-        sendNotification({
-          title: "New PR Created",
-          body: `${current?.branch ?? "Session"} — ${prUrl}`,
-        });
+        if (transport.isLocal()) {
+          import("@tauri-apps/plugin-notification").then((m) =>
+            m.sendNotification({
+              title: "New PR Created",
+              body: `${current?.branch ?? "Session"} — ${prUrl}`,
+            })
+          );
+        } else if ("Notification" in window) {
+          new Notification("New PR Created", {
+            body: `${current?.branch ?? "Session"} — ${prUrl}`,
+          });
+        }
       } catch (e) {
         console.warn("[sessionStore] Failed to send notification:", e);
       }
@@ -92,14 +98,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     set({ loading: true, error: null });
     try {
-      const repos = await invoke<RepoWithSessions[]>("reconcile_sessions");
+      const repos = await transport.call("reconcile_sessions") as RepoWithSessions[];
       set({ repos, loading: false });
     } catch (e) {
       set({ repos: [], loading: false, error: String(e) });
     }
 
     // Listen for remotely-created sessions (from WebSocket API)
-    listen<{
+    transport.on('racc://session-created', async (data: {
       session_id: number;
       repo_id: number;
       branch: string | null;
@@ -107,12 +113,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       agent: string;
       source: string;
       reattach?: boolean;
-    }>('racc://session-created', async (event) => {
-      const { session_id, source } = event.payload;
+    }) => {
+      const { session_id, source } = data;
       if (source !== 'remote') return;
 
       // Refresh session list from DB
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos });
 
       // PTY is already spawned by Rust-side create_session, just start tracking output
@@ -120,15 +126,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
 
     // Listen for remotely-stopped sessions
-    listen<{
+    transport.on('racc://session-stopped', async (data: {
       session_id: number;
       source: string;
-    }>('racc://session-stopped', async (event) => {
-      const { session_id, source } = event.payload;
+    }) => {
+      const { session_id, source } = data;
       if (source !== 'remote') return;
 
       stopTracking(session_id);
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos });
     });
   },
@@ -136,8 +142,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   importRepo: async (path) => {
     set({ error: null });
     try {
-      await invoke<Repo>("import_repo", { path });
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      await transport.call("import_repo", { path }) as Repo;
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos });
     } catch (e) {
       set({ error: String(e) });
@@ -148,8 +154,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   removeRepo: async (repoId) => {
     set({ error: null });
     try {
-      await invoke("remove_repo", { repoId });
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      await transport.call("remove_repo", { repoId });
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       const { activeSessionId } = get();
       if (activeSessionId !== null) {
         const stillExists = repos.some((r) =>
@@ -171,7 +177,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ error: null });
     try {
       // PTY is now spawned by Rust-side create_session
-      const session = await invoke<Session>("create_session", {
+      const session = await transport.call("create_session", {
         repoId,
         useWorktree,
         branch: branch || null,
@@ -179,12 +185,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         taskDescription: taskDescription || null,
         serverId: serverId || null,
         skipPermissions,
-      });
+      }) as Session;
 
       // Start tracking PTY output via transport:data events
       startTracking(session.id);
 
-      const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
+      const updatedRepos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos: updatedRepos, activeSessionId: session.id });
     } catch (e) {
       set({ error: String(e) });
@@ -195,12 +201,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   reattachSession: async (sessionId, _skipPermissions = true) => {
     set({ error: null });
     try {
-      const session = await invoke<Session>("reattach_session", { sessionId });
+      const session = await transport.call("reattach_session", { sessionId }) as Session;
 
       // Start tracking PTY output via transport:data events
       startTracking(session.id);
 
-      const updatedRepos = await invoke<RepoWithSessions[]>("list_repos");
+      const updatedRepos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos: updatedRepos, activeSessionId: session.id });
     } catch (e) {
       set({ error: String(e) });
@@ -212,12 +218,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       stopTracking(sessionId);
       // Transport is closed by Rust-side stop_session
-      await invoke("stop_session", { sessionId });
+      await transport.call("stop_session", { sessionId });
 
       // Trigger batch analysis when a session ends
-      invoke("run_batch_analysis").catch(() => {});
+      transport.call("run_batch_analysis").catch(() => {});
 
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       const { activeSessionId } = get();
       set({
         repos,
@@ -234,12 +240,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       stopTracking(sessionId);
       get().clearSessionLastOutput(sessionId);
       // Transport is closed by Rust-side remove_session
-      await invoke("remove_session", { sessionId, deleteWorktree });
+      await transport.call("remove_session", { sessionId, deleteWorktree });
 
       // Trigger batch analysis (session may have been running)
-      invoke("run_batch_analysis").catch(() => {});
+      transport.call("run_batch_analysis").catch(() => {});
 
-      const repos = await invoke<RepoWithSessions[]>("list_repos");
+      const repos = await transport.call("list_repos") as RepoWithSessions[];
       const { activeSessionId } = get();
       set({
         repos,
@@ -256,7 +262,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   resetDb: async () => {
     set({ error: null });
     try {
-      await invoke("reset_db");
+      await transport.call("reset_db");
       set({
         repos: [],
         activeSessionId: null,

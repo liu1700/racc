@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { transport } from "../services/transport";
 import { ptyManager } from "../services/ptyManager";
 import type { Terminal } from "@xterm/xterm";
 
@@ -27,17 +27,12 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
       .catch(() => {}); // Buffer may not exist yet
 
     // Listen for live output
-    const unlisten = listen<{ session_id: number; data: number[] }>(
-      "transport:data",
-      (event) => {
-        if (event.payload.session_id === sessionId) {
-          terminal.write(new Uint8Array(event.payload.data));
-        }
-      }
-    );
+    const unlisten = transport.onTerminalData(sessionId, (data: Uint8Array) => {
+      terminal.write(data);
+    });
 
     return () => {
-      unlisten.then((fn) => fn());
+      unlisten();
     };
   }, [sessionId, terminal]);
 

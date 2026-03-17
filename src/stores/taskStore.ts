@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../services/transport";
 import type { Task, TaskStatus, DraftImage } from "../types/task";
 
 function parseTask(raw: Record<string, unknown>): Task {
@@ -75,9 +75,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   loadTasks: async (repoId: number) => {
     set({ loading: true, error: null });
     try {
-      const raw = await invoke<Record<string, unknown>[]>("list_tasks", {
+      const raw = await transport.call("list_tasks", {
         repoId,
-      });
+      }) as Record<string, unknown>[];
       const tasks = raw.map(parseTask);
       set({ tasks, loading: false });
     } catch (err) {
@@ -91,11 +91,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     images: string[] = []
   ) => {
     try {
-      const raw = await invoke<Record<string, unknown>>("create_task", {
+      const raw = await transport.call("create_task", {
         repoId,
         description,
         images: JSON.stringify(images),
-      });
+      }) as Record<string, unknown>;
       const task = parseTask(raw);
       set((state: TaskState) => ({ tasks: [task, ...state.tasks] }));
       return task;
@@ -173,11 +173,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     sessionId?: number
   ) => {
     try {
-      const raw = await invoke<Record<string, unknown>>("update_task_status", {
+      const raw = await transport.call("update_task_status", {
         taskId,
         status,
         sessionId: sessionId ?? null,
-      });
+      }) as Record<string, unknown>;
       const task = parseTask(raw);
       set((state: TaskState) => ({
         tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
@@ -190,13 +190,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   updateTaskDescription: async (taskId: number, description: string) => {
     try {
-      const raw = await invoke<Record<string, unknown>>(
+      const raw = await transport.call(
         "update_task_description",
         {
           taskId,
           description,
         }
-      );
+      ) as Record<string, unknown>;
       const task = parseTask(raw);
       set((state: TaskState) => ({
         tasks: state.tasks.map((t: Task) => (t.id === taskId ? task : t)),
@@ -209,7 +209,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   deleteTask: async (taskId: number) => {
     try {
-      await invoke("delete_task", { taskId });
+      await transport.call("delete_task", { taskId });
       set((state: TaskState) => ({
         tasks: state.tasks.filter((t: Task) => t.id !== taskId),
       }));

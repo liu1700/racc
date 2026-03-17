@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "./transport";
 import { setPromptCallback } from "./ptyOutputParser";
 import type { SessionEvent, SessionEventType } from "../types/insights";
 
@@ -47,7 +47,7 @@ async function flushEvents(): Promise<void> {
 
   const batch = eventBuffer.splice(0);
   try {
-    await invoke("record_session_events", { events: batch });
+    await transport.call("record_session_events", { events: batch });
   } catch (e) {
     console.error("[eventCapture] flush failed:", e);
     eventBuffer.unshift(...batch);

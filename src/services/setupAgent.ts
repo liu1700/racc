@@ -5,7 +5,7 @@
  * that helps users configure remote servers for running AI coding agents.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "./transport";
 import { Agent, type AgentEvent, type AgentTool, type AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { getModel, getModels } from "@mariozechner/pi-ai";
@@ -124,10 +124,10 @@ function createRunRemoteCommandTool(options: SetupAgentOptions): AgentTool<typeo
       }
 
       try {
-        const result = await invoke<CommandOutput>("execute_remote_command", {
+        const result = await transport.call("execute_remote_command", {
           serverId: options.serverId,
           command,
-        });
+        }) as CommandOutput;
 
         const outputParts: string[] = [];
         if (result.stdout) outputParts.push(`stdout:\n${result.stdout}`);
@@ -164,7 +164,7 @@ function createGetServerInfoTool(options: SetupAgentOptions): AgentTool<typeof G
       _params: Static<typeof GetServerInfoParams>,
     ): Promise<AgentToolResult<Server | null>> => {
       try {
-        const servers = await invoke<Server[]>("list_servers");
+        const servers = await transport.call("list_servers") as Server[];
         const server = servers.find((s) => s.id === options.serverId) ?? null;
 
         if (!server) {

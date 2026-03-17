@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { useShallow } from "zustand/react/shallow";
@@ -25,7 +26,6 @@ export function Terminal() {
       const { Terminal: XTerm } = await import("@xterm/xterm");
       const { FitAddon } = await import("@xterm/addon-fit");
       const { WebLinksAddon } = await import("@xterm/addon-web-links");
-      const { invoke } = await import("@tauri-apps/api/core");
 
       if (disposed) return;
 
@@ -45,7 +45,11 @@ export function Terminal() {
       const fitAddon = new FitAddon();
       xterm.loadAddon(fitAddon);
       xterm.loadAddon(new WebLinksAddon((_e, uri) => {
-        invoke("open_url", { url: uri });
+        if (transport.isLocal()) {
+          import("@tauri-apps/plugin-shell").then((m) => m.open(uri));
+        } else {
+          window.open(uri, "_blank");
+        }
       }));
       xterm.open(el);
       fitAddon.fit();

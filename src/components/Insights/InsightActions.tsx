@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileViewerStore } from "../../stores/fileViewerStore";
 
@@ -21,7 +21,7 @@ export function InsightActions({ insightType, detail, onApply, onDismiss }: Insi
     if (!repoPath) return;
 
     try {
-      await invoke("append_to_file", {
+      await transport.call("append_to_file", {
         path: `${repoPath}/CLAUDE.md`,
         content: `\n${suggested}`,
       });

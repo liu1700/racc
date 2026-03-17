@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../services/transport";
 import type { Server, ServerConfig, SshConfigHost } from "../types/server";
 
 interface ServerState {
@@ -25,7 +25,7 @@ export const useServerStore = create<ServerState>((set, _get) => ({
   loadServers: async () => {
     set({ loading: true });
     try {
-      const servers = await invoke<Server[]>("list_servers");
+      const servers = await transport.call("list_servers") as Server[];
       set({ servers, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
@@ -33,13 +33,13 @@ export const useServerStore = create<ServerState>((set, _get) => ({
   },
 
   addServer: async (config) => {
-    const server = await invoke<Server>("add_server", { config });
+    const server = await transport.call("add_server", { config }) as Server;
     set((s) => ({ servers: [server, ...s.servers] }));
     return server;
   },
 
   updateServer: async (serverId, config) => {
-    const server = await invoke<Server>("update_server", { serverId, config });
+    const server = await transport.call("update_server", { serverId, config }) as Server;
     set((s) => ({
       servers: s.servers.map((sv) => (sv.id === serverId ? server : sv)),
     }));
@@ -47,23 +47,23 @@ export const useServerStore = create<ServerState>((set, _get) => ({
   },
 
   removeServer: async (serverId) => {
-    await invoke("remove_server", { serverId });
+    await transport.call("remove_server", { serverId });
     set((s) => ({ servers: s.servers.filter((sv) => sv.id !== serverId) }));
   },
 
   connectServer: async (serverId) => {
-    await invoke("connect_server", { serverId });
+    await transport.call("connect_server", { serverId });
   },
 
   disconnectServer: async (serverId) => {
-    await invoke("disconnect_server", { serverId });
+    await transport.call("disconnect_server", { serverId });
   },
 
   testConnection: async (serverId) => {
-    return await invoke<string>("test_connection", { serverId });
+    return await transport.call("test_connection", { serverId }) as string;
   },
 
   listSshConfigHosts: async () => {
-    return await invoke<SshConfigHost[]>("list_ssh_config_hosts");
+    return await transport.call("list_ssh_config_hosts") as SshConfigHost[];
   },
 }));

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../services/transport";
 import type { AssistantMessage, AssistantConfig, ModelOption } from "../types/assistant";
 
 interface AssistantState {
@@ -33,7 +33,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
 
   loadConfig: async () => {
     try {
-      const config = await invoke<AssistantConfig>("get_assistant_config");
+      const config = await transport.call("get_assistant_config") as AssistantConfig;
       set({ config });
     } catch (e) {
       set({ error: String(e) });
@@ -42,7 +42,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
 
   saveConfig: async (provider, apiKey, model) => {
     try {
-      await invoke("set_assistant_config", { provider, apiKey, model });
+      await transport.call("set_assistant_config", { provider, apiKey, model });
       set({ config: { provider, api_key: apiKey, model } });
     } catch (e) {
       set({ error: String(e) });
@@ -51,7 +51,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
 
   loadHistory: async () => {
     try {
-      const messages = await invoke<AssistantMessage[]>("get_assistant_messages", { limit: 50 });
+      const messages = await transport.call("get_assistant_messages", { limit: 50 }) as AssistantMessage[];
       set({ messages });
     } catch (e) {
       set({ error: String(e) });
@@ -74,14 +74,14 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
     }));
 
     try {
-      await invoke("save_assistant_message", {
+      await transport.call("save_assistant_message", {
         role: "user",
         content,
         toolName: null,
         toolCallId: null,
       });
 
-      await invoke("assistant_send_message", { content });
+      await transport.call("assistant_send_message", { content });
 
       // Poll for responses
       let done = false;
@@ -90,7 +90,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
           // assistant_read_response uses async I/O — it awaits the next
           // sidecar output line and handles tool calls internally (looping
           // until a non-tool-call message is ready), so this is not a busy poll.
-          const line = await invoke<string>("assistant_read_response");
+          const line = await transport.call("assistant_read_response") as string;
           if (!line) {
             // Empty response — add a small delay before retrying
             await new Promise((r) => setTimeout(r, 50));
@@ -148,7 +148,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
       }));
 
       // Persist assistant message (fire-and-forget)
-      invoke("save_assistant_message", {
+      transport.call("save_assistant_message", {
         role: "assistant",
         content: streamingText,
         toolName: null,

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 import type { Task, TaskStatus, DraftImage } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
 import { TaskCard } from "./TaskCard";
@@ -55,7 +55,7 @@ export function TaskColumn({
       const draft = draftImages[i];
       const ext = draft.filename.split(".").pop() || "png";
       const newName = `${task.id}-${Date.now()}-${i}.${ext}`;
-      await invoke("rename_task_image", {
+      await transport.call("rename_task_image", {
         repoPath,
         oldName: draft.filename,
         newName,
@@ -63,7 +63,7 @@ export function TaskColumn({
       renamedImages.push(newName);
     }
     if (renamedImages.length > 0) {
-      await invoke("update_task_images", {
+      await transport.call("update_task_images", {
         taskId: task.id,
         images: JSON.stringify(renamedImages),
       });
