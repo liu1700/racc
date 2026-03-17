@@ -120,6 +120,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const { useSessionStore } = await import("./sessionStore");
     const { createSession } = useSessionStore.getState();
 
+    // Build the task prompt (description + optional image paths)
+    const task = get().tasks.find((t: Task) => t.id === taskId);
+    if (!task) {
+      set({ error: "fireTask: task not found" });
+      return;
+    }
+
+    let prompt = task.description;
+    if (task.images.length > 0) {
+      const repo = useSessionStore
+        .getState()
+        .repos.find((r) => r.repo.id === task.repo_id);
+      if (repo) {
+        const imagePaths = task.images.map(
+          (img) => `${repo.repo.path}/.racc/images/${img}`
+        );
+        prompt +=
+          "\n\nRefer to the following images:\n" +
+          imagePaths.map((p) => `- ${p}`).join("\n");
+      }
+    }
+
     // Capture session count before creation to find the new one
     const beforeRepos = useSessionStore.getState().repos;
     const beforeRepo = beforeRepos.find((r) => r.repo.id === repoId);
@@ -128,8 +150,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // Tell sessionStore not to auto-switch to terminal tab
     useSessionStore.setState({ _skipTerminalSwitch: true });
 
-    // Create session via existing flow
-    await createSession(repoId, useWorktree, branch, skipPermissions);
+    // Create session with task description — Rust builds the `claude '...'` command
+    await createSession(repoId, useWorktree, branch, skipPermissions, undefined, prompt);
 
     // Find the newly created session by diffing session IDs
     const afterRepos = useSessionStore.getState().repos;
@@ -143,35 +165,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     // Link task to session and set running
     await get().updateTaskStatus(taskId, "working", newSession.id);
-
-    // Send task description to PTY as initial prompt.
-    // Uses a 2s delay as pragmatic fallback for agent initialization.
-    // Known limitation: if agent takes longer (cold start, large repo),
-    // the prompt may arrive too early. A signal-based approach would be
-    // more robust but is deferred to keep scope minimal.
-    const task = get().tasks.find((t: Task) => t.id === taskId);
-    if (task) {
-      const { ptyManager } = await import("../services/ptyManager");
-
-      let prompt = task.description;
-      if (task.images.length > 0) {
-        const repo = useSessionStore
-          .getState()
-          .repos.find((r) => r.repo.id === task.repo_id);
-        if (repo) {
-          const imagePaths = task.images.map(
-            (img) => `${repo.repo.path}/.racc/images/${img}`
-          );
-          prompt +=
-            "\n\nRefer to the following images:\n" +
-            imagePaths.map((p) => `- ${p}`).join("\n");
-        }
-      }
-
-      setTimeout(() => {
-        ptyManager.write(newSession.id, prompt + "\r");
-      }, 2000);
-    }
   },
 
   updateTaskStatus: async (
