@@ -42,7 +42,11 @@ Currently supports **Claude Code**, with **Codex** support planned.
 | **v0.2 — Remote & Multi-Agent** | Remote server sessions via SSH/tmux, Codex support, Docker sandbox | In progress |
 | **v0.3** | TBD | — |
 
-## Quick Start
+## Download
+
+Grab the latest `.dmg` from the [Releases](https://github.com/liu1700/racc/releases) page.
+
+## Build from Source
 
 **Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable) | [Bun](https://bun.sh/) (v1.0+) | [Git](https://git-scm.com/) | [Tauri 2.x prerequisites](https://v2.tauri.app/start/prerequisites/)
 
@@ -51,8 +55,11 @@ git clone https://github.com/liu1700/racc.git
 cd racc
 bun install
 
-# Launch
+# Development
 bun tauri dev
+
+# Production build
+bun tauri build
 ```
 
 ## Architecture
