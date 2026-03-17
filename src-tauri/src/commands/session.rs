@@ -130,11 +130,12 @@ fn get_current_branch(repo_path: &str) -> Result<String, String> {
 
 // --- Helper: build agent command string ---
 
-fn build_agent_command(agent: &str, task: &str, _cwd: &str) -> String {
+fn build_agent_command(agent: &str, task: &str, _cwd: &str, skip_permissions: bool) -> String {
     match agent {
         "claude-code" => {
             let escaped_task = task.replace('\'', "'\\''");
-            format!("claude '{}'\n", escaped_task)
+            let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
+            format!("claude{} '{}'\n", dangerously, escaped_task)
         }
         "aider" => "aider\n".to_string(),
         "codex" => {
@@ -237,9 +238,11 @@ pub async fn create_session(
     agent: Option<String>,
     task_description: Option<String>,
     server_id: Option<String>,
+    skip_permissions: Option<bool>,
 ) -> Result<Session, String> {
     let agent = agent.unwrap_or_else(|| "claude-code".to_string());
     let task_description = task_description.unwrap_or_default();
+    let skip_permissions = skip_permissions.unwrap_or(false);
 
     let (repo_path, repo_name) = {
         let conn = db.lock().map_err(|e| e.to_string())?;
@@ -358,7 +361,7 @@ pub async fn create_session(
             .await;
 
         // Spawn SshTmuxTransport
-        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree);
+        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree, skip_permissions);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -374,7 +377,7 @@ pub async fn create_session(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd = build_agent_command(&agent, &task_description, cwd);
+        let agent_cmd = build_agent_command(&agent, &task_description, cwd, skip_permissions);
         let transport = LocalPtyTransport::spawn(
             session_id,
             cwd,
@@ -572,7 +575,7 @@ pub async fn reattach_session(
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
         let remote_worktree = format!("~/racc-worktrees/{}/{}", repo_name, branch.as_deref().unwrap_or("main"));
-        let agent_cmd = build_agent_command(&agent, "", &remote_worktree);
+        let agent_cmd = build_agent_command(&agent, "", &remote_worktree, false);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,

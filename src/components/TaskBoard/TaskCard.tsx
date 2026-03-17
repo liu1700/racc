@@ -31,6 +31,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
   const repos = useSessionStore((s) => s.repos);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const updateTaskDescription = useTaskStore((s) => s.updateTaskDescription);
+  const deleteTask = useTaskStore((s) => s.deleteTask);
 
   useEffect(() => {
     if (editing) {
@@ -97,7 +98,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
   return (
     <>
       <div
-        className={`min-w-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
+        className={`group/card relative min-w-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
           task.status === "closed" ? "opacity-50" : ""
         } ${task.status === "working" ? "cursor-pointer" : ""}`}
         onClick={
@@ -109,6 +110,18 @@ export function TaskCard({ task, onSessionSelect }: Props) {
             : undefined
         }
       >
+        {task.status === "open" && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteTask(task.id);
+            }}
+            className="absolute right-1.5 top-1.5 hidden rounded px-1 text-xs text-zinc-500 transition-colors hover:text-red-400 group-hover/card:block"
+            title="Delete task"
+          >
+            ×
+          </button>
+        )}
         {editing ? (
           <textarea
             ref={editRef}
