@@ -115,9 +115,8 @@ pub fn run() {
             });
 
             let app_handle = app.handle().clone();
-            let db_for_ws = db_arc.clone();
             tauri::async_runtime::spawn(async move {
-                ws_server::start(app_handle, db_for_ws, shutdown_rx).await;
+                ws_server::start(app_handle, shutdown_rx).await;
             });
 
             Ok(())
