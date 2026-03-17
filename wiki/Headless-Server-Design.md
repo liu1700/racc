@@ -34,7 +34,10 @@ src-tauri/
 │       │   ├── task.rs
 │       │   ├── server.rs
 │       │   ├── git.rs
-│       │   └── cost.rs
+│       │   ├── cost.rs
+│       │   ├── db.rs         # init_db(), migrations, reset
+│       │   ├── transport.rs  # write, resize, get_buffer, is_alive
+│       │   └── insights.rs   # Session event recording, analysis
 │       ├── transport/        # Moved from src-tauri (Transport trait, manager)
 │       │   ├── mod.rs        # Transport trait definition
 │       │   ├── manager.rs    # TransportManager
@@ -71,6 +74,13 @@ pub struct AppContext {
     pub transport_manager: TransportManager,
     pub ssh_manager: SshManager,
     pub event_bus: Arc<dyn EventBus>,
+    pub terminal_tx: broadcast::Sender<TerminalData>,  // PTY output bus
+}
+
+/// Per-session terminal output, replaces app.emit("transport:data", ...)
+pub struct TerminalData {
+    pub session_id: i64,
+    pub data: Vec<u8>,
 }
 ```
 
@@ -99,7 +109,15 @@ pub struct BroadcastEventBus {
 - **`racc-server`** uses `BroadcastEventBus` directly — events go to WebSocket subscribers
 - **`racc-tauri`** wraps it, adding `app_handle.emit("racc://event", &event)` so Tauri IPC still works alongside the broadcast
 
-Terminal output follows the same pattern. Transports emit data through a channel owned by `AppContext`. Each backend decides delivery (Tauri IPC or WebSocket binary frames).
+**Terminal output** is the hardest decoupling point. Currently `LocalPtyTransport` and `SshTmuxTransport` call `app.emit("transport:data", ...)` from inside spawned background tasks. The replacement:
+
+- `AppContext` owns a `terminal_tx: broadcast::Sender<TerminalData>` channel
+- Transports receive a `terminal_tx.clone()` at spawn time (instead of `AppHandle`)
+- Background reader tasks send `TerminalData { session_id, data }` to the broadcast
+- Each backend subscribes and delivers appropriately:
+  - **Tauri** subscribes and calls `app_handle.emit("transport:data", ...)` to feed IPC
+  - **Axum** subscribes and sends binary WebSocket frames to connected clients
+- `TransportManager::start_buffer_task()` also switches from `tauri::async_runtime::spawn` to `tokio::spawn`
 
 ---
 
@@ -116,6 +134,8 @@ pub async fn create_session(
     use_worktree: bool,
     branch: Option<String>,
     agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,  // None = local PTY, Some = SSH/tmux remote
 ) -> Result<Session, CoreError> { ... }
 ```
 
@@ -196,9 +216,15 @@ export const transport: RaccTransport =
     : new WebSocketTransport(window.location.host);
 ```
 
-Stores (`sessionStore.ts`, `taskStore.ts`) call `transport.call(...)` instead of `invoke(...)`.
+Stores (`sessionStore.ts`, `taskStore.ts`) call `transport.call(...)` instead of `invoke(...)`. There are ~28 `invoke()` call sites across ~11 files and ~8 Tauri plugin import sites that need conversion.
 
-**Terminal data over WebSocket:** Binary frames tagged with a 4-byte session ID prefix. `WebSocketTransport` demuxes to the right `onTerminalData` handler per session.
+**Tauri plugin APIs in browser mode:** Some desktop-only APIs (`@tauri-apps/plugin-dialog`, `@tauri-apps/plugin-shell`, `@tauri-apps/plugin-notification`, `convertFileSrc`) are not available in the browser. For MVP, these are gracefully degraded:
+- File picker dialog → hidden in browser mode
+- Shell URL opening → `window.open()`
+- Notifications → browser Notification API
+- Asset protocol URLs → standard HTTP URLs served by axum
+
+**Terminal data over WebSocket:** Binary frames tagged with an 8-byte session ID prefix (i64 LE). `WebSocketTransport` demuxes to the right `onTerminalData` handler per session.
 
 ---
 
@@ -209,9 +235,14 @@ Stores (`sessionStore.ts`, `taskStore.ts`) call `transport.call(...)` instead of
 
 #[tokio::main]
 async fn main() {
-    let db_path = dirs::home_dir().unwrap().join(".racc/racc.db");
+    let db_path = std::env::var("RACC_DB_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| dirs::home_dir().unwrap().join(".racc/racc.db"));
     let event_bus = Arc::new(BroadcastEventBus::new());
+    // AppContext::new() calls init_db() for schema + migrations
     let ctx = AppContext::new(db_path, event_bus).await;
+    // Reconcile stale sessions from previous runs
+    racc_core::commands::reconcile_sessions(&ctx).await;
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
@@ -221,7 +252,14 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 9399));
     let listener = TcpListener::bind(addr).await.unwrap();
     println!("racc-server listening on http://0.0.0.0:9399");
-    axum::serve(listener, app).await.unwrap();
+
+    // Graceful shutdown on SIGTERM/SIGINT
+    let shutdown = async {
+        tokio::signal::ctrl_c().await.ok();
+    };
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await.unwrap();
 }
 ```
 
@@ -241,16 +279,16 @@ cargo build --bin racc-server    # Headless binary
 
 ## WebSocket Protocol
 
-Same JSON-RPC style protocol as the existing `ws_server.rs`. No breaking changes.
+JSON-RPC style protocol, evolved from the existing `ws_server.rs`.
 
 **Request:**
 ```json
-{"id": 1, "method": "create_session", "params": {"repo_id": 1, "use_worktree": true}}
+{"id": "1", "method": "create_session", "params": {"repo_id": 1, "use_worktree": true}}
 ```
 
 **Response:**
 ```json
-{"id": 1, "result": {"session_id": "abc-123", "status": "running"}}
+{"id": "1", "result": {"session_id": 42, "status": "running"}}
 ```
 
 **Push event (no id):**
@@ -258,7 +296,7 @@ Same JSON-RPC style protocol as the existing `ws_server.rs`. No breaking changes
 {"event": "session_status_changed", "data": {"session_id": "abc-123", "status": "completed"}}
 ```
 
-**Terminal data:** Binary WebSocket frames. First 4 bytes = session ID (u32), remaining bytes = PTY output.
+**Terminal data:** Binary WebSocket frames. First 8 bytes = session ID (i64 LE, matches DB type), remaining bytes = PTY output. This is a new addition — the existing `ws_server.rs` only handles text frames.
 
 **MVP methods (carried over from existing API):**
 - `create_session`, `stop_session`, `reattach_session`
@@ -270,6 +308,9 @@ Same JSON-RPC style protocol as the existing `ws_server.rs`. No breaking changes
 - `transport_resize` — resize a session's terminal
 - `transport_get_buffer` — get buffered output for a session (on reconnect)
 
+**Client reconnection flow:**
+When a browser reconnects (tab refresh, device switch), the `WebSocketTransport` sends a `sync` message as its first request. The server responds with current state: active sessions, task list, and session statuses. The client then calls `transport_get_buffer` for each active session to restore terminal content.
+
 ---
 
 ## Migration Path for Existing Code
@@ -278,20 +319,22 @@ Same JSON-RPC style protocol as the existing `ws_server.rs`. No breaking changes
 
 1. Create `racc-core` crate, move `events.rs`, `db.rs`, `ssh/`, `transport/` as-is
 2. Add `EventBus` trait, implement `BroadcastEventBus`
-3. Create `AppContext` struct
-4. Refactor commands: strip `#[tauri::command]`, replace `State<T>` + `AppHandle` with `&AppContext`, replace `Result<T, String>` with `Result<T, CoreError>`
-5. In existing Tauri app: add thin wrappers that call `racc-core` functions
-6. Remove `AppHandle.emit()` calls from transport — use `EventBus` / output channels instead
-7. Create `racc-server` binary with axum
-8. Upgrade existing `ws_server.rs` dispatch to call `racc-core` functions
+3. Add `terminal_tx` broadcast channel to `AppContext`, replace `AppHandle` in `LocalPtyTransport::spawn()` and `SshTmuxTransport::spawn()` with `terminal_tx.clone()`
+4. Replace `tauri::async_runtime::spawn` with `tokio::spawn` in `TransportManager::start_buffer_task()`
+5. Create `AppContext` struct, ensure `AppContext::new()` calls `init_db()`
+6. Refactor all 10 command modules: strip `#[tauri::command]`, replace `State<T>` + `AppHandle` with `&AppContext`, replace `Result<T, String>` with `Result<T, CoreError>`
+7. In existing Tauri app: add thin wrappers that call `racc-core` functions
+8. Consolidate `ws_server.rs` — it currently reimplements business logic with raw SQL; replace with calls to `racc-core` functions
+9. Create `racc-server` binary with axum, including startup (`init_db`, `reconcile_sessions`) and graceful shutdown
 
 ### Frontend
 
-1. Create `RaccTransport` interface and two implementations
-2. Replace all `invoke()` calls in stores/hooks with `transport.call()`
+1. Create `RaccTransport` interface and `TauriTransport` / `WebSocketTransport` implementations
+2. Replace all ~28 `invoke()` calls across stores, hooks, and components with `transport.call()`
 3. Replace all `listen()` calls with `transport.on()`
 4. Replace `transport:data` event listener with `transport.onTerminalData()`
 5. Add WebSocket-based terminal write path (currently uses `invoke("transport_write", ...)`)
+6. Add browser-mode fallbacks for Tauri plugin APIs (dialog, shell, notification, asset protocol)
 
 ### What Stays the Same
 
