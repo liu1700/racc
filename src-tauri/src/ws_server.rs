@@ -340,6 +340,7 @@ async fn handle_create_session(ctx: &AppContext, params: Value) -> Result<Value,
     let agent = params["agent"].as_str().map(|s| s.to_string());
     let task_description = params["task_description"].as_str().map(|s| s.to_string());
     let server_id = params["server_id"].as_str().map(|s| s.to_string());
+    let skip_permissions = params["skip_permissions"].as_bool();
 
     let session = racc_core::commands::session::create_session(
         ctx,
@@ -349,6 +350,7 @@ async fn handle_create_session(ctx: &AppContext, params: Value) -> Result<Value,
         agent,
         task_description,
         server_id,
+        skip_permissions,
     )
     .await
     .map_err(|e| e.to_string())?;
