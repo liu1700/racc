@@ -51,24 +51,30 @@ User clicks [+] on a repo → Task Board opens with input focused
     - Store: repo_id, agent type, worktree_path, branch, timestamps
         |
         v
-[4] PTY Spawn
-    - ptyManager.spawnPty() creates native PTY process
-    - Working directory set to worktree or repo path
-    - Shell inherits user environment
+[4] RTK Setup (Claude Code only)
+    - ensure_rtk_local() downloads rtk to ~/.racc/bin/ if missing
+    - Configures Claude Code PreToolUse hook (rtk init or fallback)
+    - Prepends ~/.racc/bin to PATH for token-optimized command output
         |
         v
-[5] Agent Startup
+[5] PTY Spawn
+    - ptyManager.spawnPty() creates native PTY process
+    - Working directory set to worktree or repo path
+    - Shell inherits user environment + rtk PATH (Claude Code sessions)
+        |
+        v
+[6] Agent Startup
     - After 100ms delay, agent command (e.g., "claude") sent to PTY stdin
         |
         v
-[6] Communication Channel
+[7] Communication Channel
     - usePtyBridge hook wires up:
       • PTY output → xterm.js rendering (with buffer for session switching)
       • xterm.js keyboard input → PTY stdin
       • Terminal resize → PTY resize
         |
         v
-[7] State Registration
+[8] State Registration
     - Session appears nested under repo in sidebar with green "Running" dot
     - Token usage monitoring begins via JSONL file polling (10s interval)
 ```
