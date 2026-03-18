@@ -1,7 +1,21 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { open } from "@tauri-apps/plugin-shell";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 import type { Task } from "../../types/task";
+
+function getAssetUrl(path: string): string {
+  if (transport.isLocal()) {
+    return `asset://localhost/${encodeURIComponent(path)}`;
+  }
+  return path;
+}
+
+function openUrl(url: string): void {
+  if (transport.isLocal()) {
+    import("@tauri-apps/plugin-shell").then((m) => m.open(url));
+  } else {
+    window.open(url, "_blank");
+  }
+}
 import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { FireTaskDialog } from "./FireTaskDialog";
@@ -149,7 +163,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
             {task.images.map((img) => (
               <img
                 key={img}
-                src={convertFileSrc(`${repoPath}/.racc/images/${img}`)}
+                src={getAssetUrl(`${repoPath}/.racc/images/${img}`)}
                 alt=""
                 className="h-8 w-8 rounded border border-surface-3 object-cover"
               />
@@ -174,7 +188,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    open(linkedSession!.pr_url!);
+                    openUrl(linkedSession!.pr_url!);
                   }}
                   className="ml-1 shrink-0 text-accent hover:underline"
                 >

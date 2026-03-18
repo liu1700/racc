@@ -31,16 +31,19 @@
 
 ---
 
-### v0.2 — Multi-Agent & Isolation
+### v0.2 — Multi-Agent, Isolation & Headless Server
 
-**Goal:** Support additional agents, proper environment isolation, and remote sessions.
+**Goal:** Support additional agents, proper environment isolation, remote sessions, and a headless server mode.
 
-| Feature | Detail |
-|---------|--------|
-| Codex support | Add Codex CLI as a supported agent |
-| Docker Sandbox | Opt-in container-based environment isolation |
-| Tailscale remote sessions | Connect to and manage agent sessions on remote machines |
-| Session immortality | Agents survive app crashes via remote PTY persistence |
+| Feature | Detail | Status |
+|---------|--------|--------|
+| Headless server (`racc-server`) | Axum-based HTTP/WS server serving the React frontend; same `AppContext` as desktop | **In Progress** |
+| Three-crate workspace | `racc-core` (shared lib), `racc-server` (headless binary), `racc` (Tauri app) | **Done** |
+| `RaccTransport` abstraction | Frontend auto-detects Tauri vs WebSocket transport; all stores are transport-agnostic | **Done** |
+| Codex support | Add Codex CLI as a supported agent | Planned |
+| Docker Sandbox | Opt-in container-based environment isolation | Planned |
+| Tailscale remote sessions | Connect to and manage agent sessions on remote machines | Planned |
+| Session immortality | Agents survive app crashes via remote PTY persistence | Planned |
 
 ---
 

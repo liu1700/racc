@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 import type { SessionStatus } from "../../types/session";
 import type { ProjectCosts } from "../../types/cost";
@@ -22,7 +22,7 @@ export function StatusBar() {
 
     const fetchCosts = async () => {
       try {
-        const data = await invoke<ProjectCosts>("get_global_costs");
+        const data = await transport.call("get_global_costs") as ProjectCosts;
         if (!cancelled) setCosts(data);
       } catch {
         // Silent fail — cost tracking is non-critical

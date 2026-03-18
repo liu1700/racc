@@ -1,6 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { transport } from "../services/transport";
 import { addEventListener } from "../services/eventCapture";
 import type {
   Insight,
@@ -56,21 +55,21 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
     addEventListener((event) => get()._handleEvent(event));
 
     // Listen for batch analysis results from Rust
-    listen<Insight>("insight-detected", (e) => {
-      get()._addInsight(e.payload);
+    transport.on("insight-detected", (data: Insight) => {
+      get()._addInsight(data);
     });
 
     // Set up batch analysis polling (every 5 minutes)
     // Silently catches errors — run_batch_analysis may not exist until batch analysis is deployed
     setInterval(() => {
-      invoke("run_batch_analysis").catch(() => {});
+      transport.call("run_batch_analysis").catch(() => {});
     }, 5 * 60 * 1000);
   },
 
   loadInsights: async () => {
     set({ loading: true });
     try {
-      const insights = await invoke<Insight[]>("get_insights", { status: "active" });
+      const insights = await transport.call("get_insights", { status: "active" }) as Insight[];
       set({ insights, loading: false });
     } catch (e) {
       console.error("[insights] load failed:", e);
@@ -84,7 +83,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
 
   dismissInsight: async (id) => {
     try {
-      await invoke("update_insight_status", { id, status: "dismissed" });
+      await transport.call("update_insight_status", { id, status: "dismissed" });
       set((s) => ({
         insights: s.insights.filter((i) => i.id !== id),
         expandedId: s.expandedId === id ? null : s.expandedId,
@@ -96,7 +95,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
 
   applyInsight: async (id) => {
     try {
-      await invoke("update_insight_status", { id, status: "applied" });
+      await transport.call("update_insight_status", { id, status: "applied" });
       set((s) => ({
         insights: s.insights.filter((i) => i.id !== id),
         expandedId: s.expandedId === id ? null : s.expandedId,
@@ -141,7 +140,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
             })),
           };
 
-          invoke<number | null>("save_insight", {
+          transport.call("save_insight", {
             insightType: "file_conflict",
             severity: "alert",
             title: `File conflict: ${filePath.split("/").pop()}`,
@@ -192,7 +191,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
               windowMinutes: 10,
             };
 
-            invoke<number | null>("save_insight", {
+            transport.call("save_insight", {
               insightType: "cost_anomaly",
               severity: "alert",
               title: `Cost spike: session ${event.sessionId}`,
@@ -238,7 +237,7 @@ export const useInsightsStore = create<InsightsState>((set, get) => ({
             count,
           };
 
-          invoke<number | null>("save_insight", {
+          transport.call("save_insight", {
             insightType: "repeated_permission",
             severity: "warning",
             title: "Repeated permission requests",

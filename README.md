@@ -33,6 +33,7 @@ Currently supports **Claude Code**, with **Codex** support planned.
 - **Task board** — Kanban-style board for cognitive offloading and automated agent orchestration
 - **Remote servers** — SSH into remote machines and run agents in persistent tmux sessions
 - **Server management** — Add servers via SSH config import or manual setup, with connection testing and status tracking
+- **Headless server** — Run `racc-server` for browser-based access from any device on your Tailscale network
 
 ## Roadmap
 
@@ -55,16 +56,18 @@ git clone https://github.com/liu1700/racc.git
 cd racc
 bun install
 
-# Development
+# Desktop app
 bun tauri dev
 
-# Production build
-bun tauri build
+# Headless server (browser access)
+bun run build
+cd src-tauri && cargo run --bin racc-server
+# Open http://localhost:9399 or http://<tailscale-host>:9399
 ```
 
 ## Architecture
 
-Two-panel layout: session list (left sidebar), tasks / terminal (center). Each session = one PTY process + one git worktree. Local sessions use native PTY; remote sessions connect over SSH and run agents in persistent tmux sessions. Built with Tauri 2.x (Rust backend + React 19 frontend).
+Three-crate Rust workspace: `racc-core` (business logic), `racc-server` (headless axum binary), and the Tauri desktop app (thin wrappers). The React frontend auto-detects its environment — Tauri IPC in the desktop app, WebSocket in the browser. Sessions use native PTY locally or SSH/tmux for remote servers.
 
 See the [wiki](https://github.com/liu1700/racc/wiki) for detailed design docs, including [Technical Architecture](https://github.com/liu1700/racc/wiki/Technical-Architecture) and [Cognitive Design Research](https://github.com/liu1700/racc/wiki/Cognitive-Design-Research).
 

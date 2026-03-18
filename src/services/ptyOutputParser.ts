@@ -1,4 +1,4 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { transport } from "./transport";
 import { detectPrUrl } from "../utils/prUrl";
 
 // Strip ANSI escape sequences from terminal output
@@ -21,7 +21,7 @@ type OutputCallback = (sessionId: number, lastLine: string) => void;
 
 interface TrackedSession {
   sessionId: number;
-  unlisten: UnlistenFn | null;
+  unlisten: (() => void) | null;
   decoder: TextDecoder;
   promptCount: number;
   inHumanTurn: boolean;
@@ -124,24 +124,18 @@ export function startTracking(sessionId: number): void {
 
   tracked.set(sessionId, entry);
 
-  // Listen for transport:data events and filter by session_id
-  listen<{ session_id: number; data: number[] }>(
-    "transport:data",
-    (event) => {
-      if (event.payload.session_id === sessionId) {
-        const data = new Uint8Array(event.payload.data);
-        handlePtyData(sessionId, data);
-      }
-    }
-  ).then((unlisten) => {
-    // Only store if still tracked (may have been stopped before listen resolved)
-    const current = tracked.get(sessionId);
-    if (current) {
-      current.unlisten = unlisten;
-    } else {
-      unlisten();
-    }
+  // Listen for transport:data events filtered by session_id
+  const unlisten = transport.onTerminalData(sessionId, (data: Uint8Array) => {
+    handlePtyData(sessionId, data);
   });
+
+  // Store the unlisten function (synchronous with transport abstraction)
+  const current = tracked.get(sessionId);
+  if (current) {
+    current.unlisten = unlisten;
+  } else {
+    unlisten();
+  }
 }
 
 /** Stop tracking a session. */

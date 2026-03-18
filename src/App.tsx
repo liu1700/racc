@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { transport } from "./services/transport";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { Terminal } from "./components/Terminal/Terminal";
 import { ResetDbDialog } from "./components/Sidebar/ResetDbDialog";
@@ -59,10 +59,10 @@ function App() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   useEffect(() => {
-    const unlisten = listen("menu-reset-db", () => {
+    const unlisten = transport.on("menu-reset-db", () => {
       setResetDialogOpen(true);
     });
-    return () => { unlisten.then((fn) => fn()); };
+    return () => { unlisten(); };
   }, []);
 
   useEffect(() => {

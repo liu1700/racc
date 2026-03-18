@@ -4,6 +4,7 @@ pub mod ssh;
 mod transport;
 mod ws_server;
 
+use racc_core::events::EventBus;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -14,22 +15,65 @@ pub fn run() {
     let db_arc: Arc<Mutex<Connection>> = Arc::new(Mutex::new(db));
     let (event_tx, _event_rx) = events::create_event_bus();
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let transport_manager = crate::transport::manager::TransportManager::new();
-    let ssh_manager = std::sync::Arc::new(ssh::SshManager::new());
+
+    // Create racc-core components
+    let transport_manager = racc_core::transport::manager::TransportManager::new();
+    let ssh_manager = Arc::new(racc_core::ssh::SshManager::new());
+    let event_bus: Arc<racc_core::events::BroadcastEventBus> =
+        Arc::new(racc_core::events::BroadcastEventBus::new());
+    let (terminal_tx, _terminal_rx) = tokio::sync::broadcast::channel::<racc_core::TerminalData>(256);
+
+    // Build AppContext for racc-core commands
+    let app_context = racc_core::AppContext::new(
+        db_arc.clone(),
+        transport_manager,
+        ssh_manager,
+        event_bus.clone(),
+        terminal_tx.clone(),
+    );
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // AppContext is the main state container for racc-core commands
+        .manage(app_context)
+        // Keep Arc<Mutex<Connection>> separately for assistant.rs (unchanged)
         .manage(db_arc.clone())
-        .manage(tokio::sync::Mutex::new(commands::assistant::SidecarState::new()))
+        // Keep SidecarState for assistant.rs
+        .manage(tokio::sync::Mutex::new(
+            commands::assistant::SidecarState::new(),
+        ))
+        // Keep EventSender for ws_server and assistant event emission
         .manage(event_tx)
-        .manage(transport_manager)
-        .manage(ssh_manager)
         .setup(move |app| {
             // Start buffer task inside setup where Tokio runtime is available
-            let tm: tauri::State<crate::transport::manager::TransportManager> = app.state();
-            tm.start_buffer_task();
+            let ctx: tauri::State<racc_core::AppContext> = app.state();
+            ctx.transport_manager.start_buffer_task();
+
+            // Forwarder: terminal_tx -> app.emit("transport:data")
+            let app_handle_terminal = app.handle().clone();
+            let mut terminal_rx = terminal_tx.subscribe();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(data) = terminal_rx.recv().await {
+                    let _ = app_handle_terminal.emit(
+                        "transport:data",
+                        serde_json::json!({
+                            "session_id": data.session_id,
+                            "data": data.data,
+                        }),
+                    );
+                }
+            });
+
+            // Forwarder: event_bus -> app.emit("racc://event")
+            let app_handle_events = app.handle().clone();
+            let mut event_rx = event_bus.subscribe();
+            tauri::async_runtime::spawn(async move {
+                while let Ok(event) = event_rx.recv().await {
+                    let _ = app_handle_events.emit("racc://event", &event);
+                }
+            });
 
             use tauri::menu::{MenuBuilder, SubmenuBuilder};
 
@@ -71,9 +115,8 @@ pub fn run() {
             });
 
             let app_handle = app.handle().clone();
-            let db_for_ws = db_arc.clone();
             tauri::async_runtime::spawn(async move {
-                ws_server::start(app_handle, db_for_ws, shutdown_rx).await;
+                ws_server::start(app_handle, shutdown_rx).await;
             });
 
             Ok(())

@@ -24,6 +24,7 @@ Racc is a standalone desktop application (Tauri) for individual developers who u
 | [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
 | [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
 | [WebSocket Remote API](WebSocket-Remote-API.md) | External client integration via WebSocket |
+| [Headless Server Design](Headless-Server-Design.md) | Three-crate workspace, racc-server, and RaccTransport |
 | [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
 ## Key Technical Bets

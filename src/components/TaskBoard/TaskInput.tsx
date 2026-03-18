@@ -1,9 +1,24 @@
 import { useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 import type { DraftImage } from "../../types/task";
 import { useIMEComposition } from "../../hooks/useIMEComposition";
+
+function getAssetUrl(path: string): string {
+  if (transport.isLocal()) {
+    return `asset://localhost/${encodeURIComponent(path)}`;
+  }
+  return path;
+}
+
+async function pickFiles(options: { multiple?: boolean; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string[] | null> {
+  if (transport.isLocal()) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open(options);
+    if (!selected) return null;
+    return Array.isArray(selected) ? selected : [selected];
+  }
+  return null;
+}
 
 interface Props {
   value: string;
@@ -55,7 +70,7 @@ export function TaskInput({
         const filename = `draft-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
 
         const buffer = await file.arrayBuffer();
-        await invoke("save_task_image", {
+        await transport.call("save_task_image", {
           repoPath,
           filename,
           data: Array.from(new Uint8Array(buffer)),
@@ -68,7 +83,7 @@ export function TaskInput({
   };
 
   const handleFilePick = async () => {
-    const selected = await openDialog({
+    const files = await pickFiles({
       multiple: true,
       filters: [
         {
@@ -77,20 +92,19 @@ export function TaskInput({
         },
       ],
     });
-    if (!selected) return;
-    const files = Array.isArray(selected) ? selected : [selected];
+    if (!files) return;
 
     for (const filePath of files) {
       const ext = filePath.split(".").pop() || "png";
       const filename = `draft-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
 
-      await invoke("copy_file_to_task_images", {
+      await transport.call("copy_file_to_task_images", {
         repoPath,
         sourcePath: filePath,
         filename,
       });
 
-      const objectUrl = convertFileSrc(
+      const objectUrl = getAssetUrl(
         `${repoPath}/.racc/images/${filename}`
       );
       onAddImage({ filename, objectUrl });
@@ -98,7 +112,7 @@ export function TaskInput({
   };
 
   const handleRemoveImage = async (filename: string) => {
-    await invoke("delete_task_image", { repoPath, filename }).catch(() => {});
+    await transport.call("delete_task_image", { repoPath, filename }).catch(() => {});
     onRemoveImage(filename);
   };
 

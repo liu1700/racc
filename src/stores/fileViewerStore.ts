@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../services/transport";
 import type { FileContent, FileMatch } from "../types/file";
 
 interface FileViewerState {
@@ -62,11 +62,11 @@ export const useFileViewerStore = create<FileViewerState>((set, get) => ({
     });
 
     try {
-      const content = await invoke<FileContent>("read_file", {
+      const content = await transport.call("read_file", {
         sessionId: sessionId ?? null,
         repoId: repoId ?? null,
         filePath,
-      });
+      }) as FileContent;
       set({ content, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
@@ -95,11 +95,11 @@ export const useFileViewerStore = create<FileViewerState>((set, get) => ({
   searchFiles: async ({ sessionId, repoId, query }) => {
     set({ searchQuery: query, searchLoading: true });
     try {
-      const results = await invoke<FileMatch[]>("search_files", {
+      const results = await transport.call("search_files", {
         sessionId: sessionId ?? null,
         repoId: repoId ?? null,
         query,
-      });
+      }) as FileMatch[];
       // Only update if query hasn't changed (prevent stale results)
       if (get().searchQuery === query) {
         set({ searchResults: results, searchLoading: false });

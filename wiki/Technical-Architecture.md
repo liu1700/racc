@@ -4,7 +4,51 @@
 
 ## System Overview
 
-Racc uses a **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
+Racc uses a **three-crate Rust workspace** (`src-tauri/`) that supports both a desktop Tauri app and a headless server:
+
+| Crate | Type | Purpose |
+|-------|------|---------|
+| **racc-core** | Library | Shared business logic — `AppContext`, `EventBus`, `TransportManager`, commands, DB, SSH |
+| **racc-server** | Binary | Headless HTTP/WebSocket server (Axum) — serves the React frontend as static files and exposes the same command set over JSON-RPC WebSocket |
+| **racc** (root) | Tauri app | Desktop app — wraps `racc-core` with Tauri IPC and `tauri-plugin-pty` |
+
+Both `racc` (Tauri) and `racc-server` construct the same `AppContext` struct from `racc-core`, ensuring identical behavior regardless of runtime.
+
+### AppContext
+
+`AppContext` (`racc-core/src/lib.rs`) is the shared application state:
+
+```rust
+pub struct AppContext {
+    pub db: Arc<Mutex<Connection>>,         // SQLite
+    pub transport_manager: TransportManager, // PTY + SSH session transports
+    pub ssh_manager: Arc<SshManager>,        // SSH connection pool
+    pub event_bus: Arc<dyn EventBus>,        // Abstracted event dispatch
+    pub terminal_tx: broadcast::Sender<TerminalData>, // Terminal output broadcast
+}
+```
+
+### EventBus Abstraction
+
+`EventBus` (`racc-core/src/events.rs`) is a trait that decouples event emission from the runtime:
+
+- **`BroadcastEventBus`** — default implementation using `tokio::sync::broadcast`, used by both Tauri and headless server.
+- The Tauri app additionally bridges events to the WebView via `AppHandle.emit()`.
+- The headless server fans events out to connected WebSocket clients.
+
+### Frontend RaccTransport Layer
+
+The React frontend uses a `RaccTransport` interface (`src/services/transport.ts`) to abstract over the communication channel:
+
+- **`TauriTransport`** — wraps `invoke()` and `listen()` from `@tauri-apps/api`. Used when running inside the Tauri desktop app.
+- **`WebSocketTransport`** — connects via `ws://<host>/ws` using JSON-RPC for commands and binary frames for terminal data. Used when served by `racc-server`.
+- **Auto-detection** — `createTransport()` checks for `__TAURI_INTERNALS__` at startup and picks the appropriate transport. The rest of the frontend is transport-agnostic.
+
+---
+
+### Desktop Architecture (Tauri)
+
+The desktop app uses the **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
 
 ```
 +----------------------------------------------------------------------+

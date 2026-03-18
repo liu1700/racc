@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { transport } from "../../services/transport";
 
 interface StaticGuideProps {
   serverId: string;
@@ -55,10 +55,10 @@ export function StaticGuide({ serverId, onDone }: StaticGuideProps) {
     const updated = await Promise.all(
       INITIAL_TOOLS.map(async (tool) => {
         try {
-          const result = await invoke<{ exit_code: number }>(
+          const result = await transport.call(
             "execute_remote_command",
             { serverId, command: tool.command },
-          );
+          ) as { exit_code: number };
           return { ...tool, detected: result.exit_code === 0 };
         } catch {
           return { ...tool, detected: false };

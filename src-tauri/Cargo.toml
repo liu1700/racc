@@ -1,3 +1,7 @@
+[workspace]
+members = ["racc-core", "racc-server"]
+default-members = ["."]
+
 [package]
 name = "racc"
 version = "0.1.0"
@@ -36,3 +40,4 @@ uuid = { version = "1", features = ["v4"] }
 russh = "0.46"
 russh-keys = "0.46"
 dirs = "5"
+racc-core = { path = "racc-core" }

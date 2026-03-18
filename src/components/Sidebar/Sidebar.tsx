@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { open as openShell } from "@tauri-apps/plugin-shell";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import type { Session, SessionStatus } from "../../types/session";
@@ -62,8 +61,11 @@ const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
   )?.repo ?? repos[0]?.repo ?? null;
 
   const handleImportRepo = async () => {
-    const selected = await openDialog({ directory: true, multiple: false });
-    if (selected) await importRepo(selected);
+    if (transport.isLocal()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false });
+      if (selected) await importRepo(selected);
+    }
     setRepoDropdownOpen(false);
   };
 
@@ -242,7 +244,11 @@ const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          openShell(session.pr_url!);
+                          if (transport.isLocal()) {
+                            import("@tauri-apps/plugin-shell").then((m) => m.open(session.pr_url!));
+                          } else {
+                            window.open(session.pr_url!, "_blank");
+                          }
                         }}
                         className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-accent hover:underline"
                         title={session.pr_url}
