@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use crate::ssh::SshManager;
+use std::sync::Arc;
 
 const RTK_VERSION: &str = "0.30.0";
 
@@ -353,4 +355,210 @@ pub fn rtk_path_env() -> Option<String> {
     let bin_dir = rtk_bin_path()?.parent()?.to_path_buf();
     let current_path = std::env::var("PATH").unwrap_or_default();
     Some(format!("{}:{}", bin_dir.display(), current_path))
+}
+
+/// Ensure rtk is installed and configured on a remote server via SSH.
+/// Returns true if rtk is available on the remote.
+/// Never fails — logs warnings and returns false on any error.
+pub async fn ensure_rtk_remote(ssh_manager: &Arc<SshManager>, server_id: &str) -> bool {
+    // Step 1: Check if rtk already exists on remote
+    let check = ssh_manager
+        .exec(server_id, "test -x $HOME/.racc/bin/rtk && echo ok || echo missing")
+        .await;
+
+    match check {
+        Ok(output) if output.stdout.trim() == "ok" => {
+            // Binary exists, ensure hook is configured
+            if let Err(e) = configure_claude_hook_remote(ssh_manager, server_id).await {
+                log::warn!("Failed to configure remote rtk hook: {}", e);
+            }
+            return true;
+        }
+        Ok(_) => {} // missing, proceed to download
+        Err(e) => {
+            log::warn!("Failed to check remote rtk: {}", e);
+            return false;
+        }
+    }
+
+    // Step 2: Detect remote platform
+    let uname = match ssh_manager.exec(server_id, "uname -s && uname -m").await {
+        Ok(output) => output.stdout,
+        Err(e) => {
+            log::warn!("Failed to detect remote platform: {}", e);
+            return false;
+        }
+    };
+
+    let asset_name = match remote_platform_asset_name(&uname) {
+        Some(name) => name,
+        None => {
+            log::warn!("Unsupported remote platform: {}", uname.trim());
+            return false;
+        }
+    };
+
+    let url = download_url(&asset_name);
+
+    // Step 3: Download on remote (atomic temp file + rename)
+    let download_cmd = format!(
+        "mkdir -p $HOME/.racc/bin && \
+         curl -fsSL -o $HOME/.racc/bin/.rtk.tar.gz '{}' && \
+         cd $HOME/.racc/bin && \
+         tar xzf .rtk.tar.gz && mv rtk .rtk.tmp && \
+         chmod +x .rtk.tmp && \
+         mv .rtk.tmp rtk && \
+         rm -f .rtk.tar.gz",
+        url
+    );
+
+    match ssh_manager.exec(server_id, &download_cmd).await {
+        Ok(output) if output.exit_code == 0 => {
+            log::info!("rtk v{} downloaded on remote {}", RTK_VERSION, server_id);
+        }
+        Ok(output) => {
+            log::warn!(
+                "Failed to download rtk on remote (exit {}): {}",
+                output.exit_code,
+                output.stderr.trim()
+            );
+            return false;
+        }
+        Err(e) => {
+            log::warn!("SSH exec failed for rtk download: {}", e);
+            return false;
+        }
+    }
+
+    // Step 4: Configure hook on remote
+    if let Err(e) = configure_claude_hook_remote(ssh_manager, server_id).await {
+        log::warn!("Failed to configure remote rtk hook: {}", e);
+    }
+
+    true
+}
+
+/// Configure the Claude Code hook on a remote server via SSH.
+/// Tries `rtk init -g --hook-only --auto-patch` first, falls back to manual.
+async fn configure_claude_hook_remote(
+    ssh_manager: &Arc<SshManager>,
+    server_id: &str,
+) -> Result<(), String> {
+    // Try rtk init first
+    let init_result = ssh_manager
+        .exec(
+            server_id,
+            "PATH=$HOME/.racc/bin:$PATH rtk init -g --hook-only --auto-patch",
+        )
+        .await;
+
+    match init_result {
+        Ok(output) if output.exit_code == 0 => {
+            log::info!("Remote rtk hook configured via rtk init");
+            return Ok(());
+        }
+        _ => {
+            log::warn!("Remote rtk init failed, falling back to manual hook setup");
+        }
+    }
+
+    // Fallback: write hook script via base64
+    let hook_script = r#"#!/usr/bin/env bash
+RTK_BIN='$HOME/.racc/bin/rtk'
+if [ ! -x "$RTK_BIN" ]; then exit 0; fi
+if ! command -v jq &>/dev/null; then exit 0; fi
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+if [ -z "$CMD" ]; then exit 0; fi
+REWRITTEN=$("$RTK_BIN" rewrite "$CMD" 2>/dev/null) || exit 0
+if [ "$CMD" = "$REWRITTEN" ]; then exit 0; fi
+ORIGINAL_INPUT=$(echo "$INPUT" | jq -c '.tool_input')
+UPDATED_INPUT=$(echo "$ORIGINAL_INPUT" | jq --arg cmd "$REWRITTEN" '.command = $cmd')
+jq -n --argjson updated "$UPDATED_INPUT" '{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow",
+    "permissionDecisionReason": "RTK auto-rewrite",
+    "updatedInput": $updated
+  }
+}'
+"#;
+
+    let encoded = base64_encode(hook_script);
+    let write_hook_cmd = format!(
+        "mkdir -p $HOME/.racc/hooks && echo '{}' | base64 --decode > $HOME/.racc/hooks/rtk-rewrite.sh && chmod +x $HOME/.racc/hooks/rtk-rewrite.sh",
+        encoded
+    );
+
+    ssh_manager
+        .exec(server_id, &write_hook_cmd)
+        .await
+        .map_err(|e| format!("Failed to write remote hook script: {}", e))?;
+
+    // Read existing settings.json from remote
+    let read_result = ssh_manager
+        .exec(server_id, "cat $HOME/.claude/settings.json 2>/dev/null || echo '{}'")
+        .await
+        .map_err(|e| format!("Failed to read remote settings.json: {}", e))?;
+
+    let mut root: serde_json::Value = serde_json::from_str(read_result.stdout.trim())
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    // Get remote HOME for absolute path
+    let remote_home = ssh_manager
+        .exec(server_id, "echo $HOME")
+        .await
+        .map_err(|e| format!("Failed to get remote HOME: {}", e))?
+        .stdout
+        .trim()
+        .to_string();
+
+    let hook_abs_path = format!("{}/.racc/hooks/rtk-rewrite.sh", remote_home);
+
+    // Merge hook entry (same algorithm as local)
+    let hooks = root
+        .as_object_mut()
+        .ok_or("root is not object")?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}));
+    let pre_tool_use = hooks
+        .as_object_mut()
+        .ok_or("hooks is not object")?
+        .entry("PreToolUse")
+        .or_insert_with(|| serde_json::json!([]));
+    let arr = pre_tool_use
+        .as_array_mut()
+        .ok_or("PreToolUse is not array")?;
+
+    let already = arr.iter().any(|e| {
+        e.get("hook").and_then(|h| h.as_str()).map_or(false, |h| h.contains("rtk"))
+    });
+
+    if !already {
+        arr.push(serde_json::json!({
+            "matcher": "Bash",
+            "hook": hook_abs_path,
+        }));
+
+        let serialized = serde_json::to_string_pretty(&root)
+            .map_err(|e| format!("Failed to serialize: {}", e))?;
+        let encoded_settings = base64_encode(&serialized);
+        let write_settings_cmd = format!(
+            "mkdir -p $HOME/.claude && echo '{}' | base64 --decode > $HOME/.claude/settings.json",
+            encoded_settings
+        );
+        ssh_manager
+            .exec(server_id, &write_settings_cmd)
+            .await
+            .map_err(|e| format!("Failed to write remote settings.json: {}", e))?;
+    }
+
+    log::info!("Remote rtk hook configured manually on {}", server_id);
+    Ok(())
+}
+
+/// Base64-encode a string for safe SSH transport.
+fn base64_encode(input: &str) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
 }
