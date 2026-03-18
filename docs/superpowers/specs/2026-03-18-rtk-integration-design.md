@@ -35,14 +35,14 @@ A new `rtk.rs` module in `racc-core/src/` manages the binary lifecycle.
 
 **Pinned version:** Use a const in the code (e.g., `const RTK_VERSION: &str = "0.5.0"`). The download URL pattern:
 ```
-https://github.com/rtk-ai/rtk/releases/download/v{VERSION}/rtk-{TARGET}
+https://github.com/rtk-ai/rtk/releases/download/v{VERSION}/rtk-{TARGET}.tar.gz
 ```
 
 **Platform mapping table:**
 
 | `std::env::consts` (OS, ARCH) | GitHub Release asset name |
 |-------------------------------|--------------------------|
-| `("linux", "x86_64")` | `rtk-x86_64-unknown-linux-gnu` |
+| `("linux", "x86_64")` | `rtk-x86_64-unknown-linux-musl` |
 | `("linux", "aarch64")` | `rtk-aarch64-unknown-linux-gnu` |
 | `("macos", "x86_64")` | `rtk-x86_64-apple-darwin` |
 | `("macos", "aarch64")` | `rtk-aarch64-apple-darwin` |
@@ -51,7 +51,7 @@ Remote platform mapping (from `uname` output):
 
 | `uname -s` | `uname -m` | GitHub Release asset name |
 |-------------|------------|--------------------------|
-| `Linux` | `x86_64` | `rtk-x86_64-unknown-linux-gnu` |
+| `Linux` | `x86_64` | `rtk-x86_64-unknown-linux-musl` |
 | `Linux` | `aarch64` | `rtk-aarch64-unknown-linux-gnu` |
 | `Darwin` | `x86_64` | `rtk-x86_64-apple-darwin` |
 | `Darwin` | `arm64` | `rtk-aarch64-apple-darwin` |
