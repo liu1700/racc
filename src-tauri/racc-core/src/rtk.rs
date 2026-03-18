@@ -464,7 +464,7 @@ async fn configure_claude_hook_remote(
 
     // Fallback: write hook script via base64
     let hook_script = r#"#!/usr/bin/env bash
-RTK_BIN='$HOME/.racc/bin/rtk'
+RTK_BIN="$HOME/.racc/bin/rtk"
 if [ ! -x "$RTK_BIN" ]; then exit 0; fi
 if ! command -v jq &>/dev/null; then exit 0; fi
 INPUT=$(cat)
