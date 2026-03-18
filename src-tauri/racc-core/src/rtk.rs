@@ -490,10 +490,17 @@ jq -n --argjson updated "$UPDATED_INPUT" '{
         encoded
     );
 
-    ssh_manager
+    let hook_result = ssh_manager
         .exec(server_id, &write_hook_cmd)
         .await
         .map_err(|e| format!("Failed to write remote hook script: {}", e))?;
+    if hook_result.exit_code != 0 {
+        return Err(format!(
+            "Remote hook write failed (exit {}): {}",
+            hook_result.exit_code,
+            hook_result.stderr.trim()
+        ));
+    }
 
     // Read existing settings.json from remote
     let read_result = ssh_manager
@@ -531,7 +538,7 @@ jq -n --argjson updated "$UPDATED_INPUT" '{
         .ok_or("PreToolUse is not array")?;
 
     let already = arr.iter().any(|e| {
-        e.get("hook").and_then(|h| h.as_str()).map_or(false, |h| h.contains("rtk"))
+        e.get("hook").and_then(|h| h.as_str()) == Some(hook_abs_path.as_str())
     });
 
     if !already {
