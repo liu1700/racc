@@ -70,15 +70,21 @@ pub async fn download_rtk_binary() -> Result<bool, String> {
         .ok_or_else(|| format!("Unsupported platform: {} {}", std::env::consts::OS, std::env::consts::ARCH))?;
 
     let url = download_url(&asset_name);
-    let bin_dir = bin_path.parent().unwrap();
+    let bin_dir = bin_path.parent()
+        .ok_or("rtk bin path has no parent directory")?;
     std::fs::create_dir_all(bin_dir)
         .map_err(|e| format!("Failed to create {}: {}", bin_dir.display(), e))?;
 
     let tmp_path = bin_dir.join(".rtk.tmp");
     let tar_path = bin_dir.join(".rtk.tar.gz");
 
-    // Download tarball
-    let response = reqwest::get(&url)
+    // Download tarball (with 60s timeout)
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let response = client.get(&url)
+        .send()
         .await
         .map_err(|e| format!("Failed to download rtk from {}: {}", url, e))?;
 
@@ -147,18 +153,24 @@ fn extract_rtk_from_tarball(tar_gz_path: &Path, dest: &Path) -> Result<(), Strin
 /// Configure the Claude Code PreToolUse hook for rtk.
 /// Preferred: run `rtk init -g --hook-only --auto-patch`.
 /// Fallback: write hook script manually and merge settings.json.
-pub fn configure_claude_hook_local() -> Result<(), String> {
+pub async fn configure_claude_hook_local() -> Result<(), String> {
     let bin_path = match rtk_bin_path() {
         Some(p) if p.exists() => p,
         _ => return Err("rtk binary not available".into()),
     };
 
     // Try rtk init --hook-only first (it handles everything)
-    let output = std::process::Command::new(&bin_path)
-        .args(["init", "-g", "--hook-only", "--auto-patch"])
-        .output();
+    // Use spawn_blocking to avoid blocking the tokio executor
+    let bin_path_clone = bin_path.clone();
+    let init_result = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&bin_path_clone)
+            .args(["init", "-g", "--hook-only", "--auto-patch"])
+            .output()
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {}", e))?;
 
-    match output {
+    match init_result {
         Ok(o) if o.status.success() => {
             log::info!("rtk hook configured via `rtk init -g --hook-only --auto-patch`");
             return Ok(());
@@ -198,7 +210,7 @@ fn write_hook_script(rtk_bin: &Path) -> Result<(), String> {
     let script = format!(
         r#"#!/usr/bin/env bash
 # Racc-managed rtk rewrite hook for Claude Code PreToolUse
-RTK_BIN="{}"
+RTK_BIN='{}'
 if [ ! -x "$RTK_BIN" ]; then
   exit 0
 fi
@@ -327,7 +339,7 @@ pub async fn ensure_rtk_local() -> bool {
     }
 
     // Step 2: Configure hook (idempotent)
-    if let Err(e) = configure_claude_hook_local() {
+    if let Err(e) = configure_claude_hook_local().await {
         log::warn!("Failed to configure rtk hook: {}", e);
         // Binary is still available even if hook setup failed
     }
