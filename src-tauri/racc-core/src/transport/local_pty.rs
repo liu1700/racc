@@ -20,6 +20,7 @@ impl LocalPtyTransport {
         rows: u16,
         terminal_tx: tokio::sync::broadcast::Sender<crate::TerminalData>,
         buffer_tx: tokio::sync::mpsc::UnboundedSender<(i64, Vec<u8>)>,
+        extra_env: Option<std::collections::HashMap<String, String>>,
     ) -> Result<Self, TransportError> {
         use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -30,6 +31,11 @@ impl LocalPtyTransport {
         let mut cmd_builder = CommandBuilder::new(cmd);
         cmd_builder.cwd(cwd);
         cmd_builder.env("TERM", "xterm-256color");
+        if let Some(ref envs) = extra_env {
+            for (key, value) in envs {
+                cmd_builder.env(key, value);
+            }
+        }
         let _child = pair.slave.spawn_command(cmd_builder)
             .map_err(|e| TransportError::IoError(e.to_string()))?;
         drop(pair.slave);

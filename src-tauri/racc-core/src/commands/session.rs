@@ -6,6 +6,7 @@ use crate::AppContext;
 use crate::error::CoreError;
 use crate::events::RaccEvent;
 use crate::transport::local_pty::LocalPtyTransport;
+use crate::rtk;
 
 // --- Types ---
 
@@ -125,12 +126,13 @@ fn get_current_branch(repo_path: &str) -> Result<String, CoreError> {
 
 // --- Helper: build agent command string ---
 
-fn build_agent_command(agent: &str, task: &str, _cwd: &str, skip_permissions: bool) -> String {
+fn build_agent_command(agent: &str, task: &str, _cwd: &str, skip_permissions: bool, rtk_remote: bool) -> String {
     match agent {
         "claude-code" => {
             let escaped_task = task.replace('\'', "'\\''");
             let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-            format!("claude{} '{}'\n", dangerously, escaped_task)
+            let prefix = if rtk_remote { "PATH=$HOME/.racc/bin:$PATH " } else { "" };
+            format!("{}claude{} '{}'\n", prefix, dangerously, escaped_task)
         }
         "aider" => "aider\n".to_string(),
         "codex" => {
@@ -363,8 +365,15 @@ pub async fn create_session(
             ))
             .await;
 
+        // RTK setup for remote Claude Code sessions
+        let rtk_remote = if agent == "claude-code" {
+            crate::rtk::ensure_rtk_remote(&ctx.ssh_manager, sid).await
+        } else {
+            false
+        };
+
         // Spawn SshTmuxTransport
-        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree, skip_permissions);
+        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree, skip_permissions, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -383,7 +392,24 @@ pub async fn create_session(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd = build_agent_command(&agent, &task_description, cwd, skip_permissions);
+        let agent_cmd = build_agent_command(&agent, &task_description, cwd, skip_permissions, false);
+
+        // RTK setup for Claude Code sessions
+        let extra_env = if agent == "claude-code" {
+            let rtk_available = rtk::ensure_rtk_local().await;
+            if rtk_available {
+                rtk::rtk_path_env().map(|p| {
+                    let mut env = std::collections::HashMap::new();
+                    env.insert("PATH".to_string(), p);
+                    env
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let transport = LocalPtyTransport::spawn(
             session_id,
             cwd,
@@ -392,6 +418,7 @@ pub async fn create_session(
             24, // default size, frontend will resize
             ctx.terminal_tx.clone(),
             ctx.transport_manager.buffer_sender(),
+            extra_env,
         )
         .await
         .map_err(|e| CoreError::Transport(e.to_string()))?;
@@ -582,7 +609,13 @@ pub async fn reattach_session(
             repo_name,
             branch.as_deref().unwrap_or("main")
         );
-        let agent_cmd = build_agent_command(&agent, "", &remote_worktree, false);
+        let rtk_remote = if agent == "claude-code" {
+            crate::rtk::ensure_rtk_remote(&ctx.ssh_manager, sid).await
+        } else {
+            false
+        };
+
+        let agent_cmd = build_agent_command(&agent, "", &remote_worktree, false, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -601,6 +634,23 @@ pub async fn reattach_session(
     } else {
         // Local session: spawn a new PTY with `claude --continue`
         let cwd = worktree_path.as_deref().unwrap_or(&repo_path);
+
+        // RTK setup for Claude Code sessions
+        let extra_env = if agent == "claude-code" {
+            let rtk_available = rtk::ensure_rtk_local().await;
+            if rtk_available {
+                rtk::rtk_path_env().map(|p| {
+                    let mut env = std::collections::HashMap::new();
+                    env.insert("PATH".to_string(), p);
+                    env
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let transport = LocalPtyTransport::spawn(
             session_id,
             cwd,
@@ -609,6 +659,7 @@ pub async fn reattach_session(
             24,
             ctx.terminal_tx.clone(),
             ctx.transport_manager.buffer_sender(),
+            extra_env,
         )
         .await
         .map_err(|e| CoreError::Transport(e.to_string()))?;
