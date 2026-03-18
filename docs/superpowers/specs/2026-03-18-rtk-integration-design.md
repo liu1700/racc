@@ -90,7 +90,7 @@ If rtk lacks a `hook` subcommand, fall back to a script that uses `$RTK_BIN --re
 3. Ensure `hooks` key exists and is an object. If missing, create it.
 4. Ensure `hooks.PreToolUse` key exists and is an array. If missing, create it.
 5. Check if any element in the array already has `"hook"` matching the rtk hook path. If found, skip.
-6. Append `{"matcher": "Bash", "hook": "$HOME/.racc/hooks/rtk-rewrite.sh"}` to the array.
+6. Append `{"matcher": "Bash", "hook": "<absolute-path>/.racc/hooks/rtk-rewrite.sh"}` to the array, where `<absolute-path>` is the resolved home directory (e.g., `/home/user`), not `$HOME` or `~`.
 7. Write back to `$HOME/.claude/settings.json` with pretty-print formatting.
 
 Create parent directories (`$HOME/.claude/`) if they don't exist.
@@ -124,8 +124,8 @@ In `create_session()` with `server_id`, before spawning `SshTmuxTransport`:
    - Check: `ssh exec "test -x $HOME/.racc/bin/rtk && echo ok || echo missing"`
    - If missing, detect remote platform: `ssh exec "uname -s && uname -m"`
    - Download directly on remote: `ssh exec "mkdir -p $HOME/.racc/bin && curl -fsSL -o $HOME/.racc/bin/.rtk.tmp <release_url> && chmod +x $HOME/.racc/bin/.rtk.tmp && mv $HOME/.racc/bin/.rtk.tmp $HOME/.racc/bin/rtk"`
-   - Write hook script on remote via base64 transport: `ssh exec "mkdir -p $HOME/.racc/hooks && echo '<base64-encoded-script>' | base64 -d > $HOME/.racc/hooks/rtk-rewrite.sh && chmod +x $HOME/.racc/hooks/rtk-rewrite.sh"`
-   - Merge remote settings.json: `ssh exec "cat $HOME/.claude/settings.json 2>/dev/null || echo '{}'"` to read, modify in Rust using the same merge algorithm as local, then write back via base64: `ssh exec "echo '<base64-encoded-json>' | base64 -d > $HOME/.claude/settings.json"`. If the file doesn't exist, create it with parent dirs. This is the same pattern as the hook script transport.
+   - Write hook script on remote via base64 transport: `ssh exec "mkdir -p $HOME/.racc/hooks && echo '<base64-encoded-script>' | base64 --decode > $HOME/.racc/hooks/rtk-rewrite.sh && chmod +x $HOME/.racc/hooks/rtk-rewrite.sh"`
+   - Merge remote settings.json: `ssh exec "cat $HOME/.claude/settings.json 2>/dev/null || echo '{}'"` to read, modify in Rust using the same merge algorithm as local, then write back via base64: `ssh exec "echo '<base64-encoded-json>' | base64 --decode > $HOME/.claude/settings.json"`. If the file doesn't exist, create it with parent dirs. This is the same pattern as the hook script transport.
 2. PATH injection for tmux: Bake PATH into the agent command string itself since `SshTmuxTransport::spawn()` has no env parameter:
    ```
    PATH=$HOME/.racc/bin:$PATH claude --dangerously-skip-permissions 'task'
