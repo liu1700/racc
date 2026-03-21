@@ -4,6 +4,7 @@ pub mod db;
 pub mod ssh;
 pub mod transport;
 pub mod commands;
+pub mod rtk;
 
 pub use error::CoreError;
 

@@ -199,6 +199,7 @@ All Tauri commands are registered in `lib.rs` and organized into modules:
 | `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `update_task_images`, `delete_task`, `save_task_image`, `copy_file_to_task_images`, `delete_task_image`, `rename_task_image` | Task CRUD for Task Board — create (with optional images), list by repo, update status/images, delete. Image file I/O: save from clipboard bytes, copy from file picker, delete, rename (draft→final) |
 | `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
 | `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
+| `rtk.rs` | *(not a command module)* | RTK binary management, Claude Code hook configuration (local + remote SSH), auto-download with atomic rename |
 | `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
 | `events.rs` | *(not a command module)* | `RaccEvent` enum, `EventSender` type alias, `create_event_bus()` factory |
 | `ws_server.rs` | *(not a command module)* | WebSocket server on `127.0.0.1:9399` — 10 method handlers, event broadcast, heartbeat, graceful shutdown |

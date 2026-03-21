@@ -20,3 +20,7 @@ thiserror = "2"
 ignore = "0.4"
 nucleo-matcher = "0.3"
 strsim = "0.11"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+flate2 = "1"
+tar = "0.4"
+base64 = "0.22"

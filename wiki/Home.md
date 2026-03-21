@@ -25,6 +25,7 @@ Racc is a standalone desktop application (Tauri) for individual developers who u
 | [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
 | [WebSocket Remote API](WebSocket-Remote-API.md) | External client integration via WebSocket |
 | [Headless Server Design](Headless-Server-Design.md) | Three-crate workspace, racc-server, and RaccTransport |
+| [RTK Token Optimization](RTK-Token-Optimization.md) | Automatic 60-90% token cost reduction for Claude Code sessions |
 | [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
 
 ## Key Technical Bets

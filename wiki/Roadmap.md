@@ -40,6 +40,7 @@
 | Headless server (`racc-server`) | Axum-based HTTP/WS server serving the React frontend; same `AppContext` as desktop | **In Progress** |
 | Three-crate workspace | `racc-core` (shared lib), `racc-server` (headless binary), `racc` (Tauri app) | **Done** |
 | `RaccTransport` abstraction | Frontend auto-detects Tauri vs WebSocket transport; all stores are transport-agnostic | **Done** |
+| RTK token optimization | Auto-install rtk for 60-90% token cost reduction on Claude Code sessions | **Done** |
 | Codex support | Add Codex CLI as a supported agent | Planned |
 | Docker Sandbox | Opt-in container-based environment isolation | Planned |
 | Tailscale remote sessions | Connect to and manage agent sessions on remote machines | Planned |
