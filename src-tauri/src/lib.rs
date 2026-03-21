@@ -47,9 +47,10 @@ pub fn run() {
         // Keep EventSender for ws_server and assistant event emission
         .manage(event_tx)
         .setup(move |app| {
-            // Start buffer task inside setup where Tokio runtime is available
+            // Start buffer task — must use tauri::async_runtime::spawn because
+            // setup() runs on the main thread outside the Tokio runtime context
             let ctx: tauri::State<racc_core::AppContext> = app.state();
-            ctx.transport_manager.start_buffer_task();
+            tauri::async_runtime::spawn(ctx.transport_manager.buffer_task());
 
             // Forwarder: terminal_tx -> app.emit("transport:data")
             let app_handle_terminal = app.handle().clone();

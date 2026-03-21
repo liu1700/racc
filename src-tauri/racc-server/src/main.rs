@@ -51,7 +51,7 @@ async fn main() {
         eprintln!("Warning: session reconciliation failed: {}", e);
     }
 
-    ctx.transport_manager.start_buffer_task();
+    tokio::spawn(ctx.transport_manager.buffer_task());
 
     let ctx = Arc::new(ctx);
 

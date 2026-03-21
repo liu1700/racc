@@ -23,11 +23,12 @@ impl TransportManager {
         }
     }
 
-    /// Start the buffer aggregation task. Call once during app setup.
-    pub fn start_buffer_task(&self) {
+    /// Returns the buffer aggregation future. Call once during app setup.
+    /// The caller is responsible for spawning this on their async runtime.
+    pub fn buffer_task(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
         let buffers = self.buffers.clone();
         let rx = self.buffer_rx.clone();
-        tokio::spawn(async move {
+        async move {
             let mut rx = rx.lock().await.take().expect("buffer task already started");
             while let Some((session_id, data)) = rx.recv().await {
                 let mut bufs = buffers.lock().await;
@@ -35,7 +36,7 @@ impl TransportManager {
                     buf.push(data);
                 }
             }
-        });
+        }
     }
 
     pub fn buffer_sender(&self) -> tokio::sync::mpsc::UnboundedSender<(i64, Vec<u8>)> {
