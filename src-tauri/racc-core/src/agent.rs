@@ -138,11 +138,13 @@ pub fn build_command(agent: &str, _cwd: &str, skip_permissions: bool, rtk_remote
 
 /// Build PTY input to inject a task into an already-running agent.
 pub fn inject_task_input(agent_type: &AgentType, task_description: &str) -> Vec<u8> {
+    // Use \r (carriage return) to simulate Enter in PTY raw mode.
+    // Agent TUIs (Claude Code, etc.) expect \r, not \n.
     match agent_type {
-        AgentType::ClaudeCode => format!("{}\n", task_description).into_bytes(),
-        AgentType::Aider => format!("/ask {}\n", task_description).into_bytes(),
-        AgentType::Codex => format!("{}\n", task_description).into_bytes(),
-        AgentType::Generic => format!("{}\n", task_description).into_bytes(),
+        AgentType::ClaudeCode => format!("{}\r", task_description).into_bytes(),
+        AgentType::Aider => format!("/ask {}\r", task_description).into_bytes(),
+        AgentType::Codex => format!("{}\r", task_description).into_bytes(),
+        AgentType::Generic => format!("{}\r", task_description).into_bytes(),
     }
 }
 
@@ -230,6 +232,6 @@ mod tests {
     #[test]
     fn test_inject_task_aider() {
         let input = inject_task_input(&AgentType::Aider, "fix the bug");
-        assert_eq!(String::from_utf8(input).unwrap(), "/ask fix the bug\n");
+        assert_eq!(String::from_utf8(input).unwrap(), "/ask fix the bug\r");
     }
 }
