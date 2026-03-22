@@ -108,23 +108,10 @@ pub async fn update_task_status(
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
 
         if let Some(sid) = session_id {
-            // Also set supervisor_status to prevent supervisor from re-picking this task
-            let sup_status = match status.as_str() {
-                "working" => Some("Running"),
-                "closed" => Some("Completed"),
-                _ => None,
-            };
-            if let Some(ss) = sup_status {
-                conn.execute(
-                    "UPDATE tasks SET status = ?1, session_id = ?2, supervisor_status = ?3, updated_at = datetime('now') WHERE id = ?4",
-                    rusqlite::params![status, sid, ss, task_id],
-                )?;
-            } else {
-                conn.execute(
-                    "UPDATE tasks SET status = ?1, session_id = ?2, updated_at = datetime('now') WHERE id = ?3",
-                    rusqlite::params![status, sid, task_id],
-                )?;
-            }
+            conn.execute(
+                "UPDATE tasks SET status = ?1, session_id = ?2, updated_at = datetime('now') WHERE id = ?3",
+                rusqlite::params![status, sid, task_id],
+            )?;
         } else {
             conn.execute(
                 "UPDATE tasks SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -207,17 +194,6 @@ pub async fn delete_task(
         .await;
 
     Ok(())
-}
-
-pub fn get_pending_tasks(ctx: &AppContext, repo_id: i64) -> Result<Vec<Task>, CoreError> {
-    let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
-    let mut stmt = conn.prepare(&format!(
-        "{SELECT_TASK} WHERE repo_id = ?1 AND supervisor_status = 'Pending' ORDER BY created_at ASC"
-    ))?;
-    let tasks = stmt
-        .query_map([repo_id], row_to_task)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(tasks)
 }
 
 // --- Image file commands ---

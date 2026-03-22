@@ -32,9 +32,6 @@ pub fn run() {
         terminal_tx.clone(),
     ));
 
-    // Prepare supervisor configuration (started in setup closure within Tauri async runtime)
-    let supervisor_ctx = Arc::clone(&app_context);
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -50,22 +47,6 @@ pub fn run() {
         // Keep EventSender for ws_server and assistant event emission
         .manage(event_tx)
         .setup(move |app| {
-            // Start supervisor reconciliation loop — must use tauri::async_runtime::spawn
-            // because setup() runs on the main thread outside the Tokio runtime context
-            let supervisor_interval: u64 = std::env::var("RACC_SUPERVISOR_INTERVAL_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5000);
-            let supervisor = racc_core::supervisor::Supervisor::new(
-                supervisor_ctx,
-                supervisor_interval,
-            );
-            tauri::async_runtime::spawn(async move {
-                // start() spawns the supervisor as a tokio task; await its handle
-                // so this wrapper task lives as long as the supervisor does.
-                let _ = supervisor.start().await;
-            });
-
             // Start buffer task — must use tauri::async_runtime::spawn because
             // setup() runs on the main thread outside the Tokio runtime context
             let ctx: tauri::State<Arc<racc_core::AppContext>> = app.state();

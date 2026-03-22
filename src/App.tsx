@@ -9,14 +9,13 @@ import { FileViewer } from "./components/FileViewer/FileViewer";
 import { CommandPalette } from "./components/FileViewer/CommandPalette";
 import { TaskBoard } from "./components/TaskBoard/TaskBoard";
 import { ServerPanel } from "./components/Server/ServerPanel";
-import { SupervisorDashboard } from "./components/SupervisorDashboard";
 import { useSessionStore } from "./stores/sessionStore";
 import { useFileViewerStore } from "./stores/fileViewerStore";
 import { useTaskStore } from "./stores/taskStore";
 
 function App() {
   const initialize = useSessionStore((s) => s.initialize);
-  const [centerTab, setCenterTab] = useState<"tasks" | "terminal" | "servers" | "supervisor">("tasks");
+  const [centerTab, setCenterTab] = useState<"tasks" | "terminal" | "servers">("tasks");
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const repos = useSessionStore((s) => s.repos);
   const tasks = useTaskStore((s) => s.tasks);
@@ -135,16 +134,6 @@ function App() {
             >
               Servers
             </button>
-            <button
-              onClick={() => setCenterTab("supervisor")}
-              className={`px-4 py-2 text-xs uppercase tracking-wider transition-colors ${
-                centerTab === "supervisor"
-                  ? "border-b-2 border-accent text-zinc-200"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              Supervisor
-            </button>
           </div>
 
           {/* Content — Terminal stays mounted to preserve xterm.js state */}
@@ -152,7 +141,6 @@ function App() {
             <TaskBoard repoId={activeRepoId} onSessionSelect={() => setCenterTab("terminal")} />
           )}
           {centerTab === "servers" && <ServerPanel />}
-          {centerTab === "supervisor" && <SupervisorDashboard repoId={activeRepoId} />}
           <div className={centerTab === "terminal" ? "flex flex-1 flex-col" : "hidden"}>
             <Terminal />
             <FileViewer />

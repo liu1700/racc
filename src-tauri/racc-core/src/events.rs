@@ -26,18 +26,6 @@ pub enum RaccEvent {
     TaskDeleted {
         task_id: i64,
     },
-    #[serde(rename = "supervisor_action")]
-    SupervisorAction {
-        action: String,   // "assigned", "restarted", "stopped", "escalated", "completed"
-        task_id: i64,
-        session_id: Option<i64>,
-    },
-    #[serde(rename = "supervisor_alert")]
-    SupervisorAlert {
-        level: String,    // "info", "warning", "needs_input", "failure"
-        message: String,
-        task_id: Option<i64>,
-    },
 }
 
 #[async_trait]
