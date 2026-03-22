@@ -121,26 +121,17 @@ pub fn analyze_output(output: &[u8], agent_type: &AgentType, window_size: usize)
 }
 
 /// Build the shell command to launch an agent (moved from session.rs).
-pub fn build_command(agent: &str, task: &str, _cwd: &str, skip_permissions: bool, rtk_remote: bool) -> String {
+/// Returns only the launch command — task description is sent separately
+/// via PTY write after the agent initializes, avoiding all shell escaping issues.
+pub fn build_command(agent: &str, _cwd: &str, skip_permissions: bool, rtk_remote: bool) -> String {
     match agent {
         "claude-code" => {
             let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
             let prefix = if rtk_remote { "PATH=$HOME/.racc/bin:$PATH " } else { "" };
-            if task.is_empty() {
-                format!("{}claude{}\n", prefix, dangerously)
-            } else {
-                // Use heredoc to avoid shell escaping issues with long/complex descriptions
-                format!("{}claude{} <<'__RACC_TASK__'\n{}\n__RACC_TASK__\n", prefix, dangerously, task)
-            }
+            format!("{}claude{}\n", prefix, dangerously)
         }
         "aider" => "aider\n".to_string(),
-        "codex" => {
-            if task.is_empty() {
-                "codex\n".to_string()
-            } else {
-                format!("codex <<'__RACC_TASK__'\n{}\n__RACC_TASK__\n", task)
-            }
-        }
+        "codex" => "codex\n".to_string(),
         _ => format!("{}\n", agent),
     }
 }
@@ -225,15 +216,14 @@ mod tests {
 
     #[test]
     fn test_build_command_claude() {
-        let cmd = build_command("claude-code", "fix the bug", "/path", false, false);
+        let cmd = build_command("claude-code", "/path", false, false);
         assert!(cmd.contains("claude"));
-        assert!(cmd.contains("fix the bug"));
-        assert!(cmd.contains("__RACC_TASK__"));
+        assert!(!cmd.contains("fix")); // task is no longer included in command
     }
 
     #[test]
     fn test_build_command_claude_skip_permissions() {
-        let cmd = build_command("claude-code", "fix it", "/path", true, false);
+        let cmd = build_command("claude-code", "/path", true, false);
         assert!(cmd.contains("--dangerously-skip-permissions"));
     }
 

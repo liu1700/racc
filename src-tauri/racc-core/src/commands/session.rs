@@ -355,7 +355,7 @@ pub async fn create_session(
         };
 
         // Spawn SshTmuxTransport
-        let agent_cmd = agent::build_command(&agent, &task_description, &remote_worktree, skip_permissions, rtk_remote);
+        let agent_cmd = agent::build_command(&agent, &remote_worktree, skip_permissions, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -374,7 +374,7 @@ pub async fn create_session(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd = agent::build_command(&agent, &task_description, cwd, skip_permissions, false);
+        let agent_cmd = agent::build_command(&agent, cwd, skip_permissions, false);
 
         // RTK setup for Claude Code sessions
         let extra_env = if agent == "claude-code" {
@@ -408,11 +408,23 @@ pub async fn create_session(
             .insert(session_id, Box::new(transport))
             .await;
 
-        // Send agent command after short delay to let shell initialize
+        // Send agent launch command after short delay to let shell initialize
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        ctx.transport_manager
+            .write(session_id, agent_cmd.as_bytes())
+            .await
+            .map_err(|e| CoreError::Transport(e.to_string()))?;
+
+        // Send task description as user input after agent starts
+        // (avoids all shell escaping issues — text goes directly to agent's prompt)
         if !task_description.is_empty() {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+            let task_input = agent::inject_task_input(
+                &agent::AgentType::from_agent_str(&agent),
+                &task_description,
+            );
             ctx.transport_manager
-                .write(session_id, agent_cmd.as_bytes())
+                .write(session_id, &task_input)
                 .await
                 .map_err(|e| CoreError::Transport(e.to_string()))?;
         }
@@ -597,7 +609,7 @@ pub async fn reattach_session(
             false
         };
 
-        let agent_cmd = agent::build_command(&agent, "", &remote_worktree, false, rtk_remote);
+        let agent_cmd = agent::build_command(&agent, &remote_worktree, false, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
