@@ -212,7 +212,7 @@ pub async fn delete_task(
 pub fn get_pending_tasks(ctx: &AppContext, repo_id: i64) -> Result<Vec<Task>, CoreError> {
     let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
     let mut stmt = conn.prepare(&format!(
-        "{SELECT_TASK} WHERE repo_id = ?1 AND (supervisor_status = 'Pending' OR (supervisor_status IS NULL AND status = 'open')) ORDER BY created_at ASC"
+        "{SELECT_TASK} WHERE repo_id = ?1 AND supervisor_status = 'Pending' ORDER BY created_at ASC"
     ))?;
     let tasks = stmt
         .query_map([repo_id], row_to_task)?
