@@ -101,7 +101,12 @@ pub fn analyze_output(output: &[u8], agent_type: &AgentType, window_size: usize)
 
     // Check completion first — prompt at END of buffer takes priority
     if patterns.completion.is_match(&text) {
-        let tail = if text.len() > 200 { &text[text.len()-200..] } else { &text };
+        let tail_start = if text.len() > 200 {
+            let mut i = text.len() - 200;
+            while i < text.len() && !text.is_char_boundary(i) { i += 1; }
+            i
+        } else { 0 };
+        let tail = &text[tail_start..];
         if patterns.completion.is_match(tail) {
             return AgentSignal::Completion;
         }

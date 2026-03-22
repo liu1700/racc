@@ -1,9 +1,9 @@
 use futures_util::{SinkExt, StreamExt};
 use racc_core::AppContext;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
 use tauri::{Manager, AppHandle};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, RwLock};
@@ -36,7 +36,7 @@ async fn broadcast_events(
     app_handle: AppHandle,
     pool: ConnPool,
 ) {
-    let ctx = app_handle.state::<AppContext>();
+    let ctx = app_handle.state::<Arc<AppContext>>();
     let mut rx = ctx.event_bus.subscribe();
 
     loop {
@@ -238,7 +238,7 @@ async fn handle_connection(
 // --- Method dispatcher ---
 
 async fn dispatch(app_handle: &AppHandle, method: &str, params: Value) -> Result<Value, String> {
-    let ctx = app_handle.state::<AppContext>();
+    let ctx = app_handle.state::<Arc<AppContext>>();
 
     match method {
         "create_task" => handle_create_task(&ctx, params).await,
