@@ -3,7 +3,7 @@ pub use racc_core::commands::insights::{Insight, SessionEvent};
 
 #[tauri::command]
 pub async fn record_session_events(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     events: Vec<SessionEvent>,
 ) -> Result<(), String> {
     racc_core::commands::insights::record_session_events(&ctx, events)
@@ -13,7 +13,7 @@ pub async fn record_session_events(
 
 #[tauri::command]
 pub async fn get_insights(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     status: Option<String>,
 ) -> Result<Vec<Insight>, String> {
     racc_core::commands::insights::get_insights(&ctx, status)
@@ -23,7 +23,7 @@ pub async fn get_insights(
 
 #[tauri::command]
 pub async fn update_insight_status(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     id: i64,
     status: String,
 ) -> Result<(), String> {
@@ -34,7 +34,7 @@ pub async fn update_insight_status(
 
 #[tauri::command]
 pub async fn save_insight(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     insight_type: String,
     severity: String,
     title: String,
@@ -57,7 +57,7 @@ pub async fn save_insight(
 
 #[tauri::command]
 pub async fn get_session_events(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     event_type: Option<String>,
     since: Option<i64>,
 ) -> Result<Vec<SessionEvent>, String> {
@@ -75,7 +75,7 @@ pub async fn append_to_file(path: String, content: String) -> Result<(), String>
 
 #[tauri::command]
 pub async fn run_batch_analysis(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let new_insights = racc_core::commands::insights::run_batch_analysis(&ctx)

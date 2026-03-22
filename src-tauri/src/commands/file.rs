@@ -15,7 +15,7 @@ pub fn read_file_core(
 
 #[tauri::command]
 pub async fn read_file(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: Option<i64>,
     repo_id: Option<i64>,
     file_path: String,
@@ -28,7 +28,7 @@ pub async fn read_file(
 
 #[tauri::command]
 pub async fn search_files(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: Option<i64>,
     repo_id: Option<i64>,
     query: String,

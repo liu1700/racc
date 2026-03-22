@@ -149,7 +149,8 @@ async fn dispatch(
             let agent = param_opt_str(&params, "agent");
             let task_description = param_opt_str(&params, "task_description");
             let server_id = param_opt_str(&params, "server_id");
-            let result = session::create_session(ctx, repo_id, use_worktree, branch, agent, task_description, server_id)
+            let skip_permissions = params.get("skip_permissions").and_then(|v| v.as_bool());
+            let result = session::create_session(ctx, repo_id, use_worktree, branch, agent, task_description, server_id, skip_permissions)
                 .await
                 .map_err(|e| e.to_string())?;
             to_json(&result)
