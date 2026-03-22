@@ -69,7 +69,7 @@ class TauriTransport implements RaccTransport {
     handler: (data: Uint8Array) => void,
   ): () => void {
     return this.on("transport:data", (payload: any) => {
-      if (payload?.sessionId === sessionId && payload?.data) {
+      if (payload?.session_id === sessionId && payload?.data) {
         handler(new Uint8Array(payload.data));
       }
     });
