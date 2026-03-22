@@ -80,7 +80,7 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
           Fire Task
         </h2>
 
-        <div className="mb-4 rounded border-l-2 border-accent bg-surface-2 px-3 py-2 text-xs text-zinc-400">
+        <div className="mb-4 max-h-40 overflow-y-auto rounded border-l-2 border-accent bg-surface-2 px-3 py-2 text-xs text-zinc-400 whitespace-pre-wrap">
           {task.description}
         </div>
 
