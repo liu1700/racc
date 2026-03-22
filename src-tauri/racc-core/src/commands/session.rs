@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+use crate::agent;
 use crate::AppContext;
 use crate::error::CoreError;
 use crate::events::RaccEvent;
@@ -122,25 +123,6 @@ fn get_current_branch(repo_path: &str) -> Result<String, CoreError> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-// --- Helper: build agent command string ---
-
-fn build_agent_command(agent: &str, task: &str, _cwd: &str, skip_permissions: bool, rtk_remote: bool) -> String {
-    match agent {
-        "claude-code" => {
-            let escaped_task = task.replace('\'', "'\\''");
-            let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-            let prefix = if rtk_remote { "PATH=$HOME/.racc/bin:$PATH " } else { "" };
-            format!("{}claude{} '{}'\n", prefix, dangerously, escaped_task)
-        }
-        "aider" => "aider\n".to_string(),
-        "codex" => {
-            let escaped_task = task.replace('\'', "'\\''");
-            format!("codex '{}'\n", escaped_task)
-        }
-        _ => format!("{}\n", agent),
-    }
 }
 
 // --- Commands ---
@@ -373,7 +355,7 @@ pub async fn create_session(
         };
 
         // Spawn SshTmuxTransport
-        let agent_cmd = build_agent_command(&agent, &task_description, &remote_worktree, skip_permissions, rtk_remote);
+        let agent_cmd = agent::build_command(&agent, &task_description, &remote_worktree, skip_permissions, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -392,7 +374,7 @@ pub async fn create_session(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd = build_agent_command(&agent, &task_description, cwd, skip_permissions, false);
+        let agent_cmd = agent::build_command(&agent, &task_description, cwd, skip_permissions, false);
 
         // RTK setup for Claude Code sessions
         let extra_env = if agent == "claude-code" {
@@ -615,7 +597,7 @@ pub async fn reattach_session(
             false
         };
 
-        let agent_cmd = build_agent_command(&agent, "", &remote_worktree, false, rtk_remote);
+        let agent_cmd = agent::build_command(&agent, "", &remote_worktree, false, rtk_remote);
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -701,6 +683,9 @@ pub async fn reattach_session(
     Ok(session)
 }
 
+/// Startup reconciliation — called once before the supervisor loop starts.
+/// Probes both local and remote session liveness.
+/// Ongoing reconciliation is handled by the supervisor's periodic loop.
 pub async fn reconcile_sessions(
     ctx: &AppContext,
 ) -> Result<Vec<RepoWithSessions>, CoreError> {

@@ -55,6 +55,17 @@ async fn main() {
 
     let ctx = Arc::new(ctx);
 
+    // Start the supervisor reconciliation loop
+    let supervisor_interval: u64 = std::env::var("RACC_SUPERVISOR_INTERVAL_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5000);
+    let supervisor = racc_core::supervisor::Supervisor::new(
+        Arc::clone(&ctx),
+        supervisor_interval,
+    );
+    let _supervisor_handle = supervisor.start();
+
     let app = Router::new()
         .route("/ws", get(ws::ws_handler))
         .fallback_service(http::static_file_service(&dist_path))

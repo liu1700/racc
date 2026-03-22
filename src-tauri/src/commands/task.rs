@@ -3,7 +3,7 @@ pub use racc_core::commands::task::Task;
 
 #[tauri::command]
 pub async fn create_task(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     repo_id: i64,
     description: String,
     images: Option<String>,
@@ -15,7 +15,7 @@ pub async fn create_task(
 
 #[tauri::command]
 pub fn list_tasks(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     repo_id: i64,
 ) -> Result<Vec<Task>, String> {
     racc_core::commands::task::list_tasks(&ctx, repo_id).map_err(|e| e.to_string())
@@ -23,7 +23,7 @@ pub fn list_tasks(
 
 #[tauri::command]
 pub async fn update_task_status(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     task_id: i64,
     status: String,
     session_id: Option<i64>,
@@ -35,7 +35,7 @@ pub async fn update_task_status(
 
 #[tauri::command]
 pub fn update_task_description(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     task_id: i64,
     description: String,
 ) -> Result<Task, String> {
@@ -45,7 +45,7 @@ pub fn update_task_description(
 
 #[tauri::command]
 pub fn update_task_images(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     task_id: i64,
     images: String,
 ) -> Result<Task, String> {
@@ -55,7 +55,7 @@ pub fn update_task_images(
 
 #[tauri::command]
 pub async fn delete_task(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     task_id: i64,
 ) -> Result<(), String> {
     racc_core::commands::task::delete_task(&ctx, task_id)

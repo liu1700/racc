@@ -3,7 +3,7 @@ pub use racc_core::commands::session::{Repo, RepoWithSessions, Session};
 
 #[tauri::command]
 pub async fn import_repo(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     path: String,
 ) -> Result<Repo, String> {
     racc_core::commands::session::import_repo(&ctx, path)
@@ -13,7 +13,7 @@ pub async fn import_repo(
 
 #[tauri::command]
 pub async fn list_repos(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
     racc_core::commands::session::list_repos(&ctx)
         .await
@@ -22,7 +22,7 @@ pub async fn list_repos(
 
 #[tauri::command]
 pub async fn remove_repo(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     repo_id: i64,
 ) -> Result<(), String> {
     racc_core::commands::session::remove_repo(&ctx, repo_id)
@@ -32,7 +32,7 @@ pub async fn remove_repo(
 
 #[tauri::command]
 pub async fn create_session(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     repo_id: i64,
     use_worktree: bool,
     branch: Option<String>,
@@ -57,7 +57,7 @@ pub async fn create_session(
 
 #[tauri::command]
 pub async fn stop_session(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: i64,
 ) -> Result<(), String> {
     racc_core::commands::session::stop_session(&ctx, session_id)
@@ -67,7 +67,7 @@ pub async fn stop_session(
 
 #[tauri::command]
 pub async fn remove_session(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: i64,
     delete_worktree: bool,
 ) -> Result<(), String> {
@@ -78,7 +78,7 @@ pub async fn remove_session(
 
 #[tauri::command]
 pub async fn reattach_session(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: i64,
 ) -> Result<Session, String> {
     racc_core::commands::session::reattach_session(&ctx, session_id)
@@ -88,7 +88,7 @@ pub async fn reattach_session(
 
 #[tauri::command]
 pub async fn reconcile_sessions(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
     racc_core::commands::session::reconcile_sessions(&ctx)
         .await
@@ -97,7 +97,7 @@ pub async fn reconcile_sessions(
 
 #[tauri::command]
 pub async fn update_session_pr_url(
-    ctx: State<'_, racc_core::AppContext>,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: i64,
     pr_url: String,
 ) -> Result<(), String> {

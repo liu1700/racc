@@ -17,7 +17,7 @@ pub fn init_db() -> Result<rusqlite::Connection, String> {
 }
 
 #[tauri::command]
-pub fn reset_db(ctx: State<'_, racc_core::AppContext>) -> Result<(), String> {
+pub fn reset_db(ctx: State<'_, std::sync::Arc<racc_core::AppContext>>) -> Result<(), String> {
     let path = db_path()?;
 
     // Lock the DB

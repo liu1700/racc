@@ -62,6 +62,15 @@ No test framework is configured yet.
 - **Tailwind custom tokens:** `surface-{0,1,2,3}` for backgrounds, `accent` for interactive elements, `status-{running,waiting,paused,error,disconnected,completed}` for session states — defined in `tailwind.config.ts`
 - **Path alias:** `@/*` maps to `src/*` in TypeScript (tsconfig only, not Vite — use relative imports)
 
+## gstack
+
+gstack skills are vendored at `.claude/skills/gstack/`. Use `/browse` for all web browsing — never use `mcp__claude-in-chrome__*` tools.
+
+**Available skills:**
+`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/review`, `/ship`, `/browse`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`
+
+If gstack skills aren't working, rebuild: `cd .claude/skills/gstack && ./setup`
+
 ## Wiki
 
 Project design docs live in `wiki/` and are also published to the GitHub Wiki. See `wiki/Home.md` for navigation.
