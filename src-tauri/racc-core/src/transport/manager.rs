@@ -43,6 +43,11 @@ impl TransportManager {
         self.buffer_tx.clone()
     }
 
+    /// Get a cloneable handle to the transports map (for use in spawned tasks).
+    pub fn transports(&self) -> Arc<Mutex<HashMap<i64, Box<dyn Transport>>>> {
+        self.transports.clone()
+    }
+
     pub async fn insert(&self, session_id: i64, transport: Box<dyn Transport>) {
         self.buffers.lock().await.insert(session_id, RingBuffer::new(MAX_BUFFER_SIZE));
         self.transports.lock().await.insert(session_id, transport);

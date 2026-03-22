@@ -415,18 +415,60 @@ pub async fn create_session(
             .await
             .map_err(|e| CoreError::Transport(e.to_string()))?;
 
-        // Send task description as user input after agent starts
-        // (avoids all shell escaping issues — text goes directly to agent's prompt)
+        // Send task description after agent is ready — watch PTY output for the
+        // agent's prompt (e.g. Claude's "❯") before injecting the task text.
+        // This avoids interfering with interactive dialogs (workspace trust, etc.)
         if !task_description.is_empty() {
-            tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-            let task_input = agent::inject_task_input(
-                &agent::AgentType::from_agent_str(&agent),
-                &task_description,
-            );
-            ctx.transport_manager
-                .write(session_id, &task_input)
-                .await
-                .map_err(|e| CoreError::Transport(e.to_string()))?;
+            let transports = ctx.transport_manager.transports();
+            let mut rx = ctx.terminal_tx.subscribe();
+            let agent_clone = agent.clone();
+            let task_desc = task_description.clone();
+            tokio::spawn(async move {
+                let agent_type = agent::AgentType::from_agent_str(&agent_clone);
+                let timeout = tokio::time::sleep(std::time::Duration::from_secs(60));
+                tokio::pin!(timeout);
+                let mut buffer = Vec::new();
+                loop {
+                    tokio::select! {
+                        result = rx.recv() => {
+                            match result {
+                                Ok(data) if data.session_id == session_id => {
+                                    buffer.extend_from_slice(&data.data);
+                                    let text = agent::strip_ansi(&buffer);
+                                    // Check for Claude's ready prompt or generic shell prompt
+                                    if text.contains("❯") || text.contains("╭") || text.ends_with("$ ") || text.ends_with("> ") {
+                                        // Small delay to let the prompt fully render
+                                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                        let task_input = agent::inject_task_input(&agent_type, &task_desc);
+                                        let ts = transports.lock().await;
+                                        if let Some(t) = ts.get(&session_id) {
+                                            let _ = t.write(&task_input).await;
+                                        }
+                                        break;
+                                    }
+                                    // Keep buffer manageable
+                                    if buffer.len() > 8192 {
+                                        buffer.drain(..4096);
+                                    }
+                                }
+                                Ok(_) => {} // different session
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            }
+                        }
+                        _ = &mut timeout => {
+                            // Timeout: send anyway as fallback
+                            log::warn!("Timed out waiting for agent prompt, sending task anyway");
+                            let task_input = agent::inject_task_input(&agent_type, &task_desc);
+                            let ts = transports.lock().await;
+                                        if let Some(t) = ts.get(&session_id) {
+                                            let _ = t.write(&task_input).await;
+                                        }
+                            break;
+                        }
+                    }
+                }
+            });
         }
     }
 
