@@ -26,13 +26,23 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
       })
       .catch(() => {}); // Buffer may not exist yet
 
-    // Listen for live output
+    // Listen for live output with debounced refresh to work around
+    // Tauri WebView compositing issues where xterm.write() doesn't
+    // always trigger a visible re-render
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const unlisten = transport.onTerminalData(sessionId, (data: Uint8Array) => {
       terminal.write(data);
+      if (!refreshTimer) {
+        refreshTimer = setTimeout(() => {
+          terminal.refresh(0, terminal.rows - 1);
+          refreshTimer = null;
+        }, 100);
+      }
     });
 
     return () => {
       unlisten();
+      if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [sessionId, terminal]);
 
