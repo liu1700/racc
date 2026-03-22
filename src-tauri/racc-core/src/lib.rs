@@ -6,6 +6,7 @@ pub mod ssh;
 pub mod transport;
 pub mod commands;
 pub mod rtk;
+pub mod supervisor;
 
 pub use error::CoreError;
 
