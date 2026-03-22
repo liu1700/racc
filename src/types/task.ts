@@ -9,6 +9,10 @@ export interface Task {
   session_id: number | null;
   created_at: string;
   updated_at: string;
+  supervisor_status?: string | null;
+  retry_count: number;
+  last_retry_at?: string | null;
+  max_retries: number;
 }
 
 export interface DraftImage {
