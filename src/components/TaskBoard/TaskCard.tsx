@@ -149,7 +149,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
           />
         ) : (
           <p
-            className={`mb-1 whitespace-pre-wrap text-xs font-medium leading-snug text-zinc-200 ${
+            className={`mb-1 max-h-32 overflow-y-auto whitespace-pre-wrap text-xs font-medium leading-snug text-zinc-200 ${
               task.status === "open" ? "cursor-text hover:text-white" : ""
             }`}
             onClick={handleDescriptionClick}
