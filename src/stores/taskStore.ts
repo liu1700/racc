@@ -36,7 +36,8 @@ interface TaskState {
     repoId: number,
     useWorktree: boolean,
     branch: string | undefined,
-    skipPermissions: boolean
+    skipPermissions: boolean,
+    serverId?: string
   ) => Promise<void>;
   updateTaskStatus: (
     taskId: number,
@@ -114,7 +115,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     repoId: number,
     useWorktree: boolean,
     branch: string | undefined,
-    skipPermissions: boolean
+    skipPermissions: boolean,
+    serverId?: string
   ) => {
     // Import sessionStore dynamically to avoid circular deps
     const { useSessionStore } = await import("./sessionStore");
@@ -151,7 +153,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     useSessionStore.setState({ _skipTerminalSwitch: true });
 
     // Create session with task description — Rust builds the `claude '...'` command
-    await createSession(repoId, useWorktree, branch, skipPermissions, undefined, prompt);
+    await createSession(repoId, useWorktree, branch, skipPermissions, serverId, prompt);
 
     // Find the newly created session by diffing session IDs
     const afterRepos = useSessionStore.getState().repos;

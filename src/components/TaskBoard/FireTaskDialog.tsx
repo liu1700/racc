@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Task } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
+import { useServerStore } from "../../stores/serverStore";
 
 interface Props {
   task: Task;
@@ -29,9 +30,16 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
     [task.description]
   );
   const [branch, setBranch] = useState(defaultBranch);
+  const [serverId, setServerId] = useState<string>("");
   const [firing, setFiring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fireTask = useTaskStore((s) => s.fireTask);
+  const servers = useServerStore((s) => s.servers);
+  const loadServers = useServerStore((s) => s.loadServers);
+
+  useEffect(() => {
+    if (open) loadServers();
+  }, [open, loadServers]);
 
   if (!open) return null;
 
@@ -47,7 +55,8 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
         task.repo_id,
         useWorktree,
         useWorktree ? branch.trim() : undefined,
-        skipPermissions
+        skipPermissions,
+        serverId || undefined
       );
       onClose();
     } catch (err) {
@@ -88,6 +97,20 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
           <span className="mb-1 block text-xs text-zinc-400">Agent</span>
           <select className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent">
             <option value="claude-code">Claude Code</option>
+          </select>
+        </label>
+
+        <label className="mb-3 block">
+          <span className="mb-1 block text-xs text-zinc-400">Run on</span>
+          <select
+            value={serverId}
+            onChange={(e) => setServerId(e.target.value)}
+            className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent"
+          >
+            <option value="">Local machine</option>
+            {servers.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
           </select>
         </label>
 
