@@ -1,38 +1,28 @@
 import { useState } from "react";
 import { useServerStore } from "../../stores/serverStore";
 import { AddServerDialog } from "./AddServerDialog";
-import { SetupWizard } from "../SetupWizard/SetupWizard";
 import type { Server } from "../../types/server";
-
-const setupStatusColor: Record<string, string> = {
-  ready: "bg-status-running",
-  pending: "bg-zinc-500",
-  partial: "bg-yellow-500",
-  error: "bg-status-error",
-};
 
 export function ServerList() {
   const servers = useServerStore((s) => s.servers);
-  const connectServer = useServerStore((s) => s.connectServer);
-  const disconnectServer = useServerStore((s) => s.disconnectServer);
   const removeServer = useServerStore((s) => s.removeServer);
   const loadServers = useServerStore((s) => s.loadServers);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editServer, setEditServer] = useState<Server | undefined>(undefined);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [setupServerId, setSetupServerId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
 
-  const handleAction = async (label: string, action: () => Promise<void>) => {
-    setActionLoading(label);
+  const handleRemove = async (serverId: string) => {
+    setRemoving(true);
     try {
-      await action();
+      await removeServer(serverId);
       await loadServers();
+      setExpandedId(null);
     } catch {
-      // errors are handled in store
+      // errors handled in store
     } finally {
-      setActionLoading(null);
+      setRemoving(false);
     }
   };
 
@@ -67,10 +57,7 @@ export function ServerList() {
             }`}
           >
             <span
-              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                setupStatusColor[server.setup_status] ?? "bg-zinc-500"
-              }`}
-              title={server.setup_status}
+              className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-zinc-500"
             />
             <span className="flex-1 truncate text-xs text-zinc-300">
               {server.name}
@@ -80,50 +67,18 @@ export function ServerList() {
             </span>
           </div>
 
-          {/* Expanded actions */}
+          {/* Expanded: only Remove */}
           {expandedId === server.id && (
-            <div className="ml-4 flex flex-wrap gap-1 px-2 py-1">
+            <div className="ml-4 flex items-center gap-2 px-2 py-1">
+              <span className="flex-1 text-[10px] text-zinc-600">
+                {server.username}@{server.host}:{server.port}
+              </span>
               <button
-                onClick={() =>
-                  handleAction("connect", () => connectServer(server.id))
-                }
-                disabled={actionLoading !== null}
-                className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-50"
-              >
-                {actionLoading === "connect" ? "..." : "Connect"}
-              </button>
-              <button
-                onClick={() =>
-                  handleAction("disconnect", () => disconnectServer(server.id))
-                }
-                disabled={actionLoading !== null}
-                className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-50"
-              >
-                {actionLoading === "disconnect" ? "..." : "Disconnect"}
-              </button>
-              <button
-                onClick={() => setSetupServerId(server.id)}
-                className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200"
-              >
-                Setup
-              </button>
-              <button
-                onClick={() => {
-                  setEditServer(server);
-                  setAddDialogOpen(true);
-                }}
-                className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() =>
-                  handleAction("remove", () => removeServer(server.id))
-                }
-                disabled={actionLoading !== null}
+                onClick={() => handleRemove(server.id)}
+                disabled={removing}
                 className="rounded border border-surface-3 px-2 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-surface-2 hover:text-red-400 disabled:opacity-50"
               >
-                {actionLoading === "remove" ? "..." : "Remove"}
+                {removing ? "..." : "Remove"}
               </button>
             </div>
           )}
@@ -144,13 +99,6 @@ export function ServerList() {
         }}
         editServer={editServer}
       />
-
-      {setupServerId && (
-        <SetupWizard
-          serverId={setupServerId}
-          onDone={() => setSetupServerId(null)}
-        />
-      )}
     </div>
   );
 }
