@@ -160,6 +160,17 @@ export function Terminal() {
     terminal: term,
   });
 
+  // Force xterm to re-render when switching sessions (visibility change
+  // doesn't trigger ResizeObserver, so xterm's renderer may not flush)
+  useEffect(() => {
+    if (!term || !sessionId) return;
+    const timer = setTimeout(() => {
+      term.refresh(0, term.rows - 1);
+      term.scrollToBottom();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [sessionId, term]);
+
   // Focus terminal on click and scroll to bottom
   const handleClick = useCallback(() => {
     term?.scrollToBottom();

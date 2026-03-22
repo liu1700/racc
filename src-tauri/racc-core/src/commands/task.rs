@@ -108,10 +108,23 @@ pub async fn update_task_status(
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
 
         if let Some(sid) = session_id {
-            conn.execute(
-                "UPDATE tasks SET status = ?1, session_id = ?2, updated_at = datetime('now') WHERE id = ?3",
-                rusqlite::params![status, sid, task_id],
-            )?;
+            // Also set supervisor_status to prevent supervisor from re-picking this task
+            let sup_status = match status.as_str() {
+                "working" => Some("Running"),
+                "closed" => Some("Completed"),
+                _ => None,
+            };
+            if let Some(ss) = sup_status {
+                conn.execute(
+                    "UPDATE tasks SET status = ?1, session_id = ?2, supervisor_status = ?3, updated_at = datetime('now') WHERE id = ?4",
+                    rusqlite::params![status, sid, ss, task_id],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE tasks SET status = ?1, session_id = ?2, updated_at = datetime('now') WHERE id = ?3",
+                    rusqlite::params![status, sid, task_id],
+                )?;
+            }
         } else {
             conn.execute(
                 "UPDATE tasks SET status = ?1, updated_at = datetime('now') WHERE id = ?2",
