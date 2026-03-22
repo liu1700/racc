@@ -17,6 +17,11 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
   const testConnection = useServerStore((s) => s.testConnection);
   const listSshConfigHosts = useServerStore((s) => s.listSshConfigHosts);
 
+  // Track the server ID after first save, so subsequent Save & Test
+  // updates instead of creating duplicates
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  const effectiveId = editServer?.id ?? createdId;
+
   const [name, setName] = useState("");
   const [mode, setMode] = useState<ConnectionMode>("ssh_config");
 
@@ -77,6 +82,7 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
       setKeyPath("");
       setAiProvider("");
       setAiApiKey("");
+      setCreatedId(null);
     }
     setError(null);
     setTestResult(null);
@@ -116,10 +122,11 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
     setError(null);
     try {
       const config = buildConfig();
-      if (editServer) {
-        await updateServer(editServer.id, config);
+      if (effectiveId) {
+        await updateServer(effectiveId, config);
       } else {
-        await addServer(config);
+        const server = await addServer(config);
+        setCreatedId(server.id);
       }
       onClose();
     } catch (err) {
@@ -137,11 +144,12 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
       // Must save first to get a server ID for testing
       const config = buildConfig();
       let serverId: string;
-      if (editServer) {
-        await updateServer(editServer.id, config);
-        serverId = editServer.id;
+      if (effectiveId) {
+        await updateServer(effectiveId, config);
+        serverId = effectiveId;
       } else {
         const server = await addServer(config);
+        setCreatedId(server.id);
         serverId = server.id;
       }
       const result = await testConnection(serverId);
