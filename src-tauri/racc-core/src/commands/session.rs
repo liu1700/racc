@@ -683,6 +683,9 @@ pub async fn reattach_session(
     Ok(session)
 }
 
+/// Startup reconciliation — called once before the supervisor loop starts.
+/// Probes both local and remote session liveness.
+/// Ongoing reconciliation is handled by the supervisor's periodic loop.
 pub async fn reconcile_sessions(
     ctx: &AppContext,
 ) -> Result<Vec<RepoWithSessions>, CoreError> {
