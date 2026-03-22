@@ -12,6 +12,10 @@ pub struct Task {
     pub images: String,
     pub status: String,
     pub session_id: Option<i64>,
+    pub supervisor_status: Option<String>,
+    pub retry_count: i64,
+    pub last_retry_at: Option<String>,
+    pub max_retries: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -24,13 +28,17 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         images: row.get(3)?,
         status: row.get(4)?,
         session_id: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        supervisor_status: row.get(6)?,
+        retry_count: row.get(7)?,
+        last_retry_at: row.get(8)?,
+        max_retries: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 
 const SELECT_TASK: &str =
-    "SELECT id, repo_id, description, images, status, session_id, created_at, updated_at FROM tasks";
+    "SELECT id, repo_id, description, images, status, session_id, supervisor_status, retry_count, last_retry_at, max_retries, created_at, updated_at FROM tasks";
 
 pub async fn create_task(
     ctx: &AppContext,
@@ -186,6 +194,17 @@ pub async fn delete_task(
         .await;
 
     Ok(())
+}
+
+pub fn get_pending_tasks(ctx: &AppContext, repo_id: i64) -> Result<Vec<Task>, CoreError> {
+    let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+    let mut stmt = conn.prepare(&format!(
+        "{SELECT_TASK} WHERE repo_id = ?1 AND (supervisor_status = 'Pending' OR (supervisor_status IS NULL AND status = 'open')) ORDER BY created_at ASC"
+    ))?;
+    let tasks = stmt
+        .query_map([repo_id], row_to_task)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(tasks)
 }
 
 // --- Image file commands ---

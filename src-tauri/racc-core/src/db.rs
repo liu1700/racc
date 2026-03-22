@@ -92,6 +92,19 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, CoreError> {
         )?;
     }
 
+    if version < 2 {
+        conn.execute_batch(
+            "
+            ALTER TABLE tasks ADD COLUMN supervisor_status TEXT;
+            ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tasks ADD COLUMN last_retry_at TEXT;
+            ALTER TABLE tasks ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 3;
+            PRAGMA journal_mode=WAL;
+            PRAGMA user_version = 2;
+            ",
+        )?;
+    }
+
     Ok(conn)
 }
 
