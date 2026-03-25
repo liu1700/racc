@@ -51,6 +51,12 @@ Grab the latest `.dmg` from the [Releases](https://github.com/liu1700/racc/relea
 
 **Prerequisites:** [Rust](https://www.rust-lang.org/tools/install) (stable) | [Bun](https://bun.sh/) (v1.0+) | [Git](https://git-scm.com/) | [Tauri 2.x prerequisites](https://v2.tauri.app/start/prerequisites/)
 
+**Note:** If you don't have Rust installed, run:
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
 ```bash
 git clone https://github.com/liu1700/racc.git
 cd racc
