@@ -143,6 +143,36 @@ pub fn build_command(agent: &str, _cwd: &str, skip_permissions: bool, rtk_remote
     }
 }
 
+/// Detect Claude Code's first-run "trust this folder" dialog. The injector
+/// auto-accepts it (Enter selects the pre-highlighted "Yes, I trust this
+/// folder") so a fired task isn't blocked on a manual confirmation, and so the
+/// task text isn't typed into the dialog and lost.
+pub fn is_trust_dialog(text: &str) -> bool {
+    text.contains("trust this folder") || text.contains("Do you trust")
+}
+
+/// Detect that an agent has reached its interactive input prompt and is ready to
+/// receive a task. For Claude Code we look for the persistent footer hints,
+/// which appear only at the real prompt — never in the trust/confirm dialogs
+/// (those also render a `❯`, which is why matching on `❯` alone caused the task
+/// to be injected into the dialog and dropped).
+pub fn is_agent_ready(agent_type: &AgentType, text: &str) -> bool {
+    match agent_type {
+        AgentType::ClaudeCode => {
+            text.contains("for shortcuts")
+                || text.contains("shift+tab")
+                || text.contains("bypass permissions")
+                || text.contains("auto-accept edits")
+        }
+        _ => {
+            text.contains("❯")
+                || text.contains("╭")
+                || text.ends_with("$ ")
+                || text.ends_with("> ")
+        }
+    }
+}
+
 /// Build PTY input to inject a task into an already-running agent.
 pub fn inject_task_input(agent_type: &AgentType, task_description: &str) -> Vec<u8> {
     // Use \r (carriage return) to simulate Enter in PTY raw mode.
@@ -240,5 +270,34 @@ mod tests {
     fn test_inject_task_aider() {
         let input = inject_task_input(&AgentType::Aider, "fix the bug");
         assert_eq!(String::from_utf8(input).unwrap(), "/ask fix the bug\r");
+    }
+
+    #[test]
+    fn test_trust_dialog_detected() {
+        let trust = "Quick safety check: Is this a project you created or one you trust?\n  1. Yes, I trust this folder\n  2. No, exit";
+        assert!(is_trust_dialog(trust));
+        // The real prompt must NOT look like the trust dialog.
+        let ready = "❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle)";
+        assert!(!is_trust_dialog(ready));
+    }
+
+    #[test]
+    fn test_claude_ready_not_triggered_by_trust_dialog() {
+        // The trust dialog renders a `❯`, but is NOT "ready" — injecting there
+        // would drop the task into the menu.
+        let trust = "❯ 1. Yes, I trust this folder\n  2. No, exit\nEnter to confirm";
+        assert!(!is_agent_ready(&AgentType::ClaudeCode, trust));
+
+        // The real input prompt is "ready".
+        let ready_bypass = "❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle)";
+        assert!(is_agent_ready(&AgentType::ClaudeCode, ready_bypass));
+        let ready_hint = "╭─────╮\n│ >    │\n╰─────╯\n  ? for shortcuts";
+        assert!(is_agent_ready(&AgentType::ClaudeCode, ready_hint));
+    }
+
+    #[test]
+    fn test_generic_ready_still_uses_prompt_chars() {
+        assert!(is_agent_ready(&AgentType::Generic, "user@host:~$ "));
+        assert!(!is_agent_ready(&AgentType::Generic, "still working..."));
     }
 }

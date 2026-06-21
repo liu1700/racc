@@ -159,6 +159,31 @@ pub fn list_servers(ctx: &AppContext) -> Result<Vec<Server>, CoreError> {
     Ok(servers)
 }
 
+/// Ensure a live SSH connection exists for `server_id`, establishing one from
+/// the stored server config if needed. Remote sessions are fired without a
+/// prior manual "connect", and both setup/test disconnect when they finish, so
+/// the live connection must be (re)established lazily right before it's used.
+pub async fn ensure_connected(ctx: &AppContext, server_id: &str) -> Result<(), CoreError> {
+    if ctx.ssh_manager.is_connected(server_id).await {
+        return Ok(());
+    }
+    let server = {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        get_server_by_id(&conn, server_id)?
+    };
+    ctx.ssh_manager
+        .connect(
+            server_id,
+            &server.host,
+            server.port as u16,
+            &server.username,
+            &server.auth_method,
+            server.key_path.as_deref(),
+        )
+        .await
+        .map_err(CoreError::Ssh)
+}
+
 pub async fn connect_server(
     ctx: &AppContext,
     server_id: String,

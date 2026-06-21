@@ -289,8 +289,17 @@ pub async fn create_session(
         (id, worktree_path.clone(), created_at, updated_at)
     }; // conn lock released here
 
+    // Subscribe to terminal output BEFORE spawning the agent so the task
+    // injector never misses the agent's ready prompt (it can appear immediately
+    // when there's no trust dialog). Set inside each branch right before launch;
+    // the shared injector below consumes it. Applies to BOTH local and remote.
+    let mut injector_rx: Option<tokio::sync::broadcast::Receiver<crate::TerminalData>> = None;
+
     if let Some(ref sid) = server_id {
-        // Remote session: clone repo if needed, create worktree, spawn SshTmuxTransport
+        // Remote session: clone repo if needed, create worktree, spawn SshTmuxTransport.
+        // Ensure a live SSH connection first — setup/test both disconnect when done.
+        crate::commands::server::ensure_connected(&ctx, sid).await?;
+
         let remote_repo_path = format!("~/racc-repos/{}", repo_name);
 
         // Check if repo exists on remote
@@ -354,8 +363,19 @@ pub async fn create_session(
             false
         };
 
-        // Spawn SshTmuxTransport
-        let agent_cmd = agent::build_command(&agent, &remote_worktree, skip_permissions, rtk_remote);
+        // Spawn SshTmuxTransport. build_command ignores cwd, so cd into the
+        // worktree first — otherwise the agent runs in $HOME and operates on the
+        // wrong files (and triggers a trust prompt for $HOME instead).
+        let agent_cmd = format!(
+            "cd {} && {}",
+            remote_worktree,
+            agent::build_command(&agent, &remote_worktree, skip_permissions, rtk_remote)
+        );
+        // Subscribe right before spawn so we capture the agent's first output
+        // (the tmux attach repaint already shows the ready prompt).
+        if !task_description.is_empty() {
+            injector_rx = Some(ctx.terminal_tx.subscribe());
+        }
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -408,68 +428,92 @@ pub async fn create_session(
             .insert(session_id, Box::new(transport))
             .await;
 
+        // Subscribe before sending the launch command so the injector captures
+        // the agent's startup output.
+        if !task_description.is_empty() {
+            injector_rx = Some(ctx.terminal_tx.subscribe());
+        }
+
         // Send agent launch command after short delay to let shell initialize
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         ctx.transport_manager
             .write(session_id, agent_cmd.as_bytes())
             .await
             .map_err(|e| CoreError::Transport(e.to_string()))?;
+    }
 
-        // Send task description after agent is ready — watch PTY output for the
-        // agent's prompt (e.g. Claude's "❯") before injecting the task text.
-        // This avoids interfering with interactive dialogs (workspace trust, etc.)
-        if !task_description.is_empty() {
-            let transports = ctx.transport_manager.transports();
-            let mut rx = ctx.terminal_tx.subscribe();
-            let agent_clone = agent.clone();
-            let task_desc = task_description.clone();
-            tokio::spawn(async move {
-                let agent_type = agent::AgentType::from_agent_str(&agent_clone);
-                let timeout = tokio::time::sleep(std::time::Duration::from_secs(60));
-                tokio::pin!(timeout);
-                let mut buffer = Vec::new();
-                loop {
-                    tokio::select! {
-                        result = rx.recv() => {
-                            match result {
-                                Ok(data) if data.session_id == session_id => {
-                                    buffer.extend_from_slice(&data.data);
-                                    let text = agent::strip_ansi(&buffer);
-                                    // Check for Claude's ready prompt or generic shell prompt
-                                    if text.contains("❯") || text.contains("╭") || text.ends_with("$ ") || text.ends_with("> ") {
-                                        // Small delay to let the prompt fully render
-                                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                        let task_input = agent::inject_task_input(&agent_type, &task_desc);
-                                        let ts = transports.lock().await;
-                                        if let Some(t) = ts.get(&session_id) {
-                                            let _ = t.write(&task_input).await;
-                                        }
-                                        break;
+    // Send the task once the agent is truly at its input prompt. Shared by local
+    // AND remote sessions. We watch the PTY output and: (1) auto-accept the
+    // first-run "trust this folder" dialog, then (2) inject the task only when
+    // the real prompt is shown. Matching the dialog explicitly avoids typing the
+    // task into it (the dialog renders a `❯` too, which would trigger a premature
+    // inject that the dialog swallows, leaving the agent idle at an empty prompt).
+    if let Some(mut rx) = injector_rx {
+        let transports = ctx.transport_manager.transports();
+        let agent_clone = agent.clone();
+        let task_desc = task_description.clone();
+        tokio::spawn(async move {
+            let agent_type = agent::AgentType::from_agent_str(&agent_clone);
+            let timeout = tokio::time::sleep(std::time::Duration::from_secs(120));
+            tokio::pin!(timeout);
+            let mut buffer = Vec::new();
+            let mut trust_handled = false;
+            loop {
+                tokio::select! {
+                    result = rx.recv() => {
+                        match result {
+                            Ok(data) if data.session_id == session_id => {
+                                buffer.extend_from_slice(&data.data);
+                                let text = agent::strip_ansi(&buffer);
+
+                                // (1) Auto-accept the workspace trust dialog once.
+                                if !trust_handled && agent::is_trust_dialog(&text) {
+                                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                                    let ts = transports.lock().await;
+                                    if let Some(t) = ts.get(&session_id) {
+                                        // Enter confirms the pre-selected "Yes, I trust".
+                                        let _ = t.write(b"\r").await;
                                     }
-                                    // Keep buffer manageable
-                                    if buffer.len() > 8192 {
-                                        buffer.drain(..4096);
-                                    }
+                                    drop(ts);
+                                    trust_handled = true;
+                                    buffer.clear();
+                                    continue;
                                 }
-                                Ok(_) => {} // different session
-                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                                Err(_) => break,
+
+                                // (2) Inject the task at the real input prompt.
+                                if agent::is_agent_ready(&agent_type, &text) {
+                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                    let task_input = agent::inject_task_input(&agent_type, &task_desc);
+                                    let ts = transports.lock().await;
+                                    if let Some(t) = ts.get(&session_id) {
+                                        let _ = t.write(&task_input).await;
+                                    }
+                                    break;
+                                }
+
+                                // Keep buffer manageable.
+                                if buffer.len() > 8192 {
+                                    buffer.drain(..4096);
+                                }
                             }
-                        }
-                        _ = &mut timeout => {
-                            // Timeout: send anyway as fallback
-                            log::warn!("Timed out waiting for agent prompt, sending task anyway");
-                            let task_input = agent::inject_task_input(&agent_type, &task_desc);
-                            let ts = transports.lock().await;
-                                        if let Some(t) = ts.get(&session_id) {
-                                            let _ = t.write(&task_input).await;
-                                        }
-                            break;
+                            Ok(_) => {} // different session
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(_) => break,
                         }
                     }
+                    _ = &mut timeout => {
+                        // Timeout: send anyway as fallback
+                        log::warn!("Timed out waiting for agent prompt, sending task anyway");
+                        let task_input = agent::inject_task_input(&agent_type, &task_desc);
+                        let ts = transports.lock().await;
+                        if let Some(t) = ts.get(&session_id) {
+                            let _ = t.write(&task_input).await;
+                        }
+                        break;
+                    }
                 }
-            });
-        }
+            }
+        });
     }
 
     let session = Session {
@@ -501,8 +545,32 @@ pub async fn stop_session(
     ctx: &AppContext,
     session_id: i64,
 ) -> Result<(), CoreError> {
-    // Close transport before updating DB
+    // Close transport before updating DB. For a tracked transport this also
+    // kills the remote tmux session (SshTmuxTransport::close runs kill-session).
     let _ = ctx.transport_manager.remove(session_id).await;
+
+    // Look up the session's server (if remote).
+    let server_id: Option<String> = {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        conn.query_row(
+            "SELECT server_id FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    };
+
+    // For remote sessions, kill the tmux session by name directly too. This
+    // covers the case where the transport is no longer tracked in memory (e.g.
+    // after an app restart) — without it the remote agent would be orphaned and
+    // keep running. Best-effort: ignore errors (session may already be gone).
+    if let Some(sid) = server_id {
+        if crate::commands::server::ensure_connected(ctx, &sid).await.is_ok() {
+            let kill_cmd = format!("tmux kill-session -t racc-{}", session_id);
+            let _ = ctx.ssh_manager.exec(&sid, &kill_cmd).await;
+        }
+    }
 
     {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
@@ -529,41 +597,43 @@ pub async fn remove_session(
     session_id: i64,
     delete_worktree: bool,
 ) -> Result<(), CoreError> {
-    // Close transport if still running
+    // Close transport if still running (kills the remote tmux if tracked).
     let _ = ctx.transport_manager.remove(session_id).await;
 
-    let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+    // Read everything we need, then release the lock before any async/SSH work.
+    let (worktree_path, repo_path, server_id): (Option<String>, Option<String>, Option<String>) = {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        let (worktree_path, repo_id, server_id): (Option<String>, i64, Option<String>) = conn
+            .query_row(
+                "SELECT worktree_path, repo_id, server_id FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
+        let repo_path: Option<String> = conn
+            .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| {
+                row.get(0)
+            })
+            .ok();
+        (worktree_path, repo_path, server_id)
+    };
 
-    let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
-        .query_row(
-            "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
-            [session_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
-
-    // If still running, mark as completed first
-    if status == "Running" {
-        conn.execute(
-            "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
-            [session_id],
-        )?;
+    // For remote sessions, kill the tmux session by name too — the transport may
+    // not be tracked (e.g. after an app restart), so removing it from Racc would
+    // otherwise leave the remote agent running orphaned. Best-effort.
+    if let Some(sid) = server_id {
+        if crate::commands::server::ensure_connected(ctx, &sid).await.is_ok() {
+            let kill_cmd = format!("tmux kill-session -t racc-{}", session_id);
+            let _ = ctx.ssh_manager.exec(&sid, &kill_cmd).await;
+        }
     }
 
-    // Remove worktree via git if requested
+    // Remove worktree via git if requested (local worktrees only).
     if delete_worktree {
-        if let Some(wt_path) = &worktree_path {
-            let repo_path: String = conn
-                .query_row(
-                    "SELECT path FROM repos WHERE id = ?1",
-                    [repo_id],
-                    |row| row.get(0),
-                )
-                .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
-
+        if let (Some(wt_path), Some(repo_path)) = (&worktree_path, &repo_path) {
             let output = Command::new("git")
                 .args(["worktree", "remove", wt_path, "--force"])
-                .current_dir(&repo_path)
+                .current_dir(repo_path)
                 .output()
                 .map_err(|e| CoreError::Git(format!("Failed to remove worktree: {e}")))?;
 
@@ -576,7 +646,10 @@ pub async fn remove_session(
         }
     }
 
-    conn.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
+    {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        conn.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
+    }
 
     Ok(())
 }
@@ -631,7 +704,10 @@ pub async fn reattach_session(
     }; // DB lock released here -- safe for async transport work below
 
     if let Some(ref sid) = server_id {
-        // Remote session: reattach to existing tmux session via SSH
+        // Remote session: reattach to existing tmux session via SSH.
+        // Ensure a live SSH connection first — it may have dropped since launch.
+        crate::commands::server::ensure_connected(&ctx, sid).await?;
+
         let existing = ctx.transport_manager.is_alive(session_id).await;
         if existing {
             let _ = ctx.transport_manager.remove(session_id).await;
@@ -651,7 +727,13 @@ pub async fn reattach_session(
             false
         };
 
-        let agent_cmd = agent::build_command(&agent, &remote_worktree, false, rtk_remote);
+        // cd into the worktree first (build_command ignores cwd); only used if
+        // tmux has to recreate the session, but keeps behaviour consistent.
+        let agent_cmd = format!(
+            "cd {} && {}",
+            remote_worktree,
+            agent::build_command(&agent, &remote_worktree, false, rtk_remote)
+        );
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
             sid,
@@ -759,8 +841,15 @@ pub async fn reconcile_sessions(
 
     for (session_id, server_id) in running_sessions {
         let new_status = if let Some(ref sid) = server_id {
-            // Remote session: tmux sessions survive Racc restarts -- probe them
-            if ctx.ssh_manager.is_connected(sid).await {
+            // Remote session: tmux sessions survive Racc restarts -- probe them.
+            // (Re)connect first so a Racc restart doesn't wrongly drop a live
+            // remote session to "Disconnected" just because the in-memory SSH
+            // connection was lost on restart.
+            let connected = ctx.ssh_manager.is_connected(sid).await
+                || crate::commands::server::ensure_connected(ctx, sid)
+                    .await
+                    .is_ok();
+            if connected {
                 let tmux_name = format!("racc-{}", session_id);
                 match ctx
                     .ssh_manager
