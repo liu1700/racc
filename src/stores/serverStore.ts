@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { transport } from "../services/transport";
-import type { Server, ServerConfig, SshConfigHost } from "../types/server";
+import type { Server, ServerConfig, SshConfigHost, SetupReport } from "../types/server";
 
 interface ServerState {
   servers: Server[];
@@ -14,6 +14,8 @@ interface ServerState {
   connectServer: (serverId: string) => Promise<void>;
   disconnectServer: (serverId: string) => Promise<void>;
   testConnection: (serverId: string) => Promise<string>;
+  testConnectionConfig: (config: ServerConfig) => Promise<string>;
+  setupServer: (serverId: string) => Promise<SetupReport>;
   listSshConfigHosts: () => Promise<SshConfigHost[]>;
 }
 
@@ -61,6 +63,23 @@ export const useServerStore = create<ServerState>((set, _get) => ({
 
   testConnection: async (serverId) => {
     return await transport.call("test_connection", { serverId }) as string;
+  },
+
+  testConnectionConfig: async (config) => {
+    return await transport.call("test_connection_config", { config }) as string;
+  },
+
+  setupServer: async (serverId) => {
+    const report = await transport.call("setup_server", { serverId }) as SetupReport;
+    // Refresh the cached server so its setup_status reflects the result.
+    set((s) => ({
+      servers: s.servers.map((sv) =>
+        sv.id === serverId
+          ? { ...sv, setup_status: report.ok ? "ready" : "failed" }
+          : sv,
+      ),
+    }));
+    return report;
   },
 
   listSshConfigHosts: async () => {

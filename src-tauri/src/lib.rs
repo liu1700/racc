@@ -185,6 +185,8 @@ pub fn run() {
             commands::server::connect_server,
             commands::server::disconnect_server,
             commands::server::test_connection,
+            commands::server::test_connection_config,
+            commands::server::setup_server,
             commands::server::execute_remote_command,
             commands::server::list_ssh_config_hosts,
         ])

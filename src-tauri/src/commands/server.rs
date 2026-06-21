@@ -63,6 +63,26 @@ pub async fn test_connection(
 }
 
 #[tauri::command]
+pub async fn test_connection_config(
+    config: ServerConfig,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
+) -> Result<String, String> {
+    racc_core::commands::server::test_connection_config(&ctx, config)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn setup_server(
+    server_id: String,
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
+) -> Result<racc_core::commands::setup::SetupReport, String> {
+    racc_core::commands::setup::setup_server(&ctx, server_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn execute_remote_command(
     server_id: String,
     command: String,

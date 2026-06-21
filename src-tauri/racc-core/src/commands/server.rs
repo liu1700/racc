@@ -221,6 +221,35 @@ pub async fn test_connection(
     Ok(result.stdout)
 }
 
+/// Test an SSH connection from a raw config without persisting a server.
+/// Used by the Add dialog so a server is only saved once it's reachable.
+pub async fn test_connection_config(
+    ctx: &AppContext,
+    config: ServerConfig,
+) -> Result<String, CoreError> {
+    let temp_id = format!("__test_{}", uuid::Uuid::new_v4());
+    let port = config.port.unwrap_or(22) as u16;
+    ctx.ssh_manager
+        .connect(
+            &temp_id,
+            &config.host,
+            port,
+            &config.username,
+            &config.auth_method,
+            config.key_path.as_deref(),
+        )
+        .await
+        .map_err(CoreError::Ssh)?;
+    let result = ctx
+        .ssh_manager
+        .exec(&temp_id, "echo ok")
+        .await
+        .map_err(CoreError::Ssh);
+    // Always release the temporary connection, even if exec failed.
+    let _ = ctx.ssh_manager.disconnect(&temp_id).await;
+    Ok(result?.stdout)
+}
+
 pub async fn execute_remote_command(
     ctx: &AppContext,
     server_id: String,

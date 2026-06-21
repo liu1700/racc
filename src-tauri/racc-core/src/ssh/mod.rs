@@ -252,7 +252,12 @@ impl SshManager {
                         exit_code = 128; // Convention: 128 + signal
                     }
                 }
-                russh::ChannelMsg::Eof | russh::ChannelMsg::Close => {
+                russh::ChannelMsg::Eof => {
+                    // EOF is NOT terminal: the server still sends ExitStatus and
+                    // then Close afterwards. Breaking here would drop the exit
+                    // code (leaving it at -1). Keep reading until Close.
+                }
+                russh::ChannelMsg::Close => {
                     break;
                 }
                 _ => {}

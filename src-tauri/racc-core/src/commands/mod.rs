@@ -1,6 +1,7 @@
 pub mod session;
 pub mod task;
 pub mod server;
+pub mod setup;
 pub mod git;
 pub mod cost;
 pub mod transport;

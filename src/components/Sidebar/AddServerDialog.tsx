@@ -14,13 +14,8 @@ type AuthMethod = "key" | "agent";
 export function AddServerDialog({ open, onClose, editServer }: AddServerDialogProps) {
   const addServer = useServerStore((s) => s.addServer);
   const updateServer = useServerStore((s) => s.updateServer);
-  const testConnection = useServerStore((s) => s.testConnection);
+  const testConnectionConfig = useServerStore((s) => s.testConnectionConfig);
   const listSshConfigHosts = useServerStore((s) => s.listSshConfigHosts);
-
-  // Track the server ID after first save, so subsequent Save & Test
-  // updates instead of creating duplicates
-  const [createdId, setCreatedId] = useState<string | null>(null);
-  const effectiveId = editServer?.id ?? createdId;
 
   const [name, setName] = useState("");
   const [mode, setMode] = useState<ConnectionMode>("ssh_config");
@@ -36,14 +31,8 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
   const [authMethod, setAuthMethod] = useState<AuthMethod>("agent");
   const [keyPath, setKeyPath] = useState("");
 
-  // AI Setup
-  const [aiProvider, setAiProvider] = useState("");
-  const [aiApiKey, setAiApiKey] = useState("");
-
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<string | null>(null);
 
   // Load SSH config hosts on open
   useEffect(() => {
@@ -69,8 +58,6 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
         setAuthMethod(editServer.auth_method === "key" ? "key" : "agent");
         setKeyPath(editServer.key_path ?? "");
       }
-      setAiProvider(editServer.ai_provider ?? "");
-      setAiApiKey(editServer.ai_api_key ?? "");
     } else {
       setName("");
       setMode("ssh_config");
@@ -80,15 +67,33 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
       setUsername("");
       setAuthMethod("agent");
       setKeyPath("");
-      setAiProvider("");
-      setAiApiKey("");
-      setCreatedId(null);
     }
     setError(null);
-    setTestResult(null);
   }, [open, editServer]);
 
   if (!open) return null;
+
+  // Manual "Host" accepts a full `user@host:port` string so a user can paste
+  // exactly what they SSH with. Explicit username/port fields take precedence.
+  const parseHostInput = (raw: string): { host: string; user?: string; port?: number } => {
+    let s = raw.trim();
+    let user: string | undefined;
+    let port: number | undefined;
+    const at = s.lastIndexOf("@");
+    if (at >= 0) {
+      user = s.slice(0, at).trim() || undefined;
+      s = s.slice(at + 1);
+    }
+    const colon = s.lastIndexOf(":");
+    if (colon >= 0 && !s.includes("]")) {
+      const p = parseInt(s.slice(colon + 1), 10);
+      if (!isNaN(p)) {
+        port = p;
+        s = s.slice(0, colon);
+      }
+    }
+    return { host: s.trim(), user, port };
+  };
 
   const buildConfig = (): ServerConfig => {
     if (mode === "ssh_config") {
@@ -101,32 +106,31 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
         auth_method: "ssh_config",
         ssh_config_host: selectedHost,
         key_path: matched?.identity_file ?? undefined,
-        ai_provider: aiProvider || undefined,
-        ai_api_key: aiApiKey || undefined,
       };
     }
+    const parsed = parseHostInput(host);
     return {
-      name: name || host,
-      host,
-      port: parseInt(port, 10) || 22,
-      username: username || "root",
+      name: name || parsed.host || host,
+      host: parsed.host,
+      port: parseInt(port, 10) || parsed.port || 22,
+      username: username || parsed.user || "root",
       auth_method: authMethod === "key" ? "key" : "agent",
       key_path: authMethod === "key" ? keyPath : undefined,
-      ai_provider: aiProvider || undefined,
-      ai_api_key: aiApiKey || undefined,
     };
   };
 
+  // Add = verify the SSH connection, then persist. A server is only saved if
+  // it's actually reachable.
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
       const config = buildConfig();
-      if (effectiveId) {
-        await updateServer(effectiveId, config);
+      await testConnectionConfig(config);
+      if (editServer) {
+        await updateServer(editServer.id, config);
       } else {
-        const server = await addServer(config);
-        setCreatedId(server.id);
+        await addServer(config);
       }
       onClose();
     } catch (err) {
@@ -136,35 +140,12 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setError(null);
-    setTestResult(null);
-    try {
-      // Must save first to get a server ID for testing
-      const config = buildConfig();
-      let serverId: string;
-      if (effectiveId) {
-        await updateServer(effectiveId, config);
-        serverId = effectiveId;
-      } else {
-        const server = await addServer(config);
-        setCreatedId(server.id);
-        serverId = server.id;
-      }
-      const result = await testConnection(serverId);
-      setTestResult(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTesting(false);
-    }
-  };
-
+  // In manual mode the username can be parsed out of `user@host` or default to
+  // root, so only the host string is required.
   const isValid =
     mode === "ssh_config"
       ? !!selectedHost
-      : !!host && !!username;
+      : !!host.trim();
 
   return (
     <div
@@ -243,9 +224,12 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
                 type="text"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                placeholder="192.168.1.100"
+                placeholder="root@72.62.164.133"
                 className="w-full rounded border border-surface-3 bg-surface-0 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:border-accent focus:outline-none"
               />
+              <span className="mt-1 block text-[10px] text-zinc-600">
+                Accepts user@host:port — Port/Username below override it.
+              </span>
             </label>
             <div className="mb-3 flex gap-2">
               <label className="flex-1">
@@ -313,79 +297,30 @@ export function AddServerDialog({ open, onClose, editServer }: AddServerDialogPr
           </>
         )}
 
-        {/* AI Setup (optional) */}
-        <details className="mb-3">
-          <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-300">
-            AI Setup Assistant (optional)
-          </summary>
-          <div className="mt-2 space-y-2 rounded border border-surface-3 bg-surface-0 p-3">
-            <label className="block">
-              <span className="mb-1 block text-xs text-zinc-400">Provider</span>
-              <select
-                value={aiProvider}
-                onChange={(e) => setAiProvider(e.target.value)}
-                className="w-full rounded border border-surface-3 bg-surface-1 px-2 py-1.5 text-xs text-zinc-200 focus:border-accent focus:outline-none"
-              >
-                <option value="">None</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </label>
-            {aiProvider && (
-              <label className="block">
-                <span className="mb-1 block text-xs text-zinc-400">API Key</span>
-                <input
-                  type="password"
-                  value={aiApiKey}
-                  onChange={(e) => setAiApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full rounded border border-surface-3 bg-surface-1 px-2 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:border-accent focus:outline-none"
-                />
-              </label>
-            )}
-          </div>
-        </details>
-
-        {/* Error / Test result */}
+        {/* Error */}
         {error && (
           <p className="mb-3 rounded bg-red-500/10 px-3 py-2 text-xs text-red-400">
             {error}
           </p>
         )}
-        {testResult && (
-          <p className="mb-3 rounded bg-green-500/10 px-3 py-2 text-xs text-green-400">
-            {testResult}
-          </p>
-        )}
 
         {/* Actions */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={handleTest}
-            disabled={!isValid || testing}
-            className="rounded border border-surface-3 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-50"
+            onClick={onClose}
+            className="rounded px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
           >
-            {testing ? "Testing..." : "Test Connection"}
+            Cancel
           </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!isValid || saving}
-              className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : editServer ? "Save" : "Add"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!isValid || saving}
+            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? "Connecting…" : editServer ? "Save" : "Add"}
+          </button>
         </div>
       </div>
     </div>
