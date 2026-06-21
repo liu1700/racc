@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use racc_core::commands::{cost, file, git, insights, server, session, task, transport};
+use racc_core::commands::{cost, file, git, insights, server, session, setup, task, transport};
 use racc_core::AppContext;
 
 /// HTTP handler that upgrades to WebSocket.
@@ -382,6 +382,22 @@ async fn dispatch(
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(json!(result))
+        }
+        "test_connection_config" => {
+            let config: server::ServerConfig = serde_json::from_value(
+                params.get("config").cloned().unwrap_or(json!({}))
+            ).map_err(|e| format!("Invalid server config: {}", e))?;
+            let result = server::test_connection_config(ctx, config)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!(result))
+        }
+        "setup_server" => {
+            let server_id = param_str(&params, "server_id")?;
+            let result = setup::setup_server(ctx, server_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
         }
         "list_ssh_config_hosts" => {
             let result = server::list_ssh_config_hosts()

@@ -127,7 +127,14 @@ pub fn build_command(agent: &str, _cwd: &str, skip_permissions: bool, rtk_remote
     match agent {
         "claude-code" => {
             let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-            let prefix = if rtk_remote { "PATH=$HOME/.racc/bin:$PATH " } else { "" };
+            // Include ~/.local/bin so a `claude` installed by the one-click
+            // server setup (official installer drops it there) is found, and
+            // prepend .racc/bin for RTK when available.
+            let prefix = if rtk_remote {
+                "PATH=$HOME/.racc/bin:$HOME/.local/bin:$PATH "
+            } else {
+                "PATH=$HOME/.local/bin:$PATH "
+            };
             format!("{}claude{}\n", prefix, dangerously)
         }
         "aider" => "aider\n".to_string(),
