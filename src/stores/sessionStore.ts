@@ -31,6 +31,7 @@ interface SessionState {
     taskDescription?: string,
   ) => Promise<void>;
   reattachSession: (sessionId: number, skipPermissions?: boolean) => Promise<void>;
+  openSession: (sessionId: number) => Promise<void>;
   stopSession: (sessionId: number) => Promise<void>;
   removeSession: (sessionId: number, deleteWorktree?: boolean) => Promise<void>;
   setActiveSession: (id: number) => void;
@@ -211,6 +212,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch (e) {
       set({ error: String(e) });
       throw e;
+    }
+  },
+
+  // Open a session for viewing. Selects it, and reattaches if its transport is
+  // not actually live (e.g. after an app restart a remote session is "Running"
+  // in the DB but its in-memory transport was lost — clicking it would otherwise
+  // show a blank terminal).
+  openSession: async (sessionId) => {
+    set({ activeSessionId: sessionId });
+    try {
+      const alive = await transport.call("transport_is_alive", { sessionId }) as boolean;
+      if (!alive) {
+        await get().reattachSession(sessionId);
+      }
+    } catch (e) {
+      set({ error: String(e) });
     }
   },
 

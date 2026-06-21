@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { transport } from "../services/transport";
 import type { Task, TaskStatus, DraftImage } from "../types/task";
+import type { Session } from "../types/session";
 
 function parseTask(raw: Record<string, unknown>): Task {
   return {
@@ -39,6 +40,7 @@ interface TaskState {
     skipPermissions: boolean,
     serverId?: string
   ) => Promise<void>;
+  resendTask: (taskId: number) => Promise<void>;
   updateTaskStatus: (
     taskId: number,
     status: TaskStatus,
@@ -167,6 +169,48 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     // Link task to session and set running
     await get().updateTaskStatus(taskId, "working", newSession.id);
+  },
+
+  // Restart a fired task: kill its current Claude Code session (stops the remote
+  // tmux + agent) and launch a fresh one with the SAME settings — same machine,
+  // branch and worktree, which are already trusted and logged in. Used when a
+  // session is stuck (e.g. the first-run trust dialog ate the prompt) or dead;
+  // clicking Resend gives a clean restart rather than a half-broken session.
+  resendTask: async (taskId: number) => {
+    // Clear any stale board-level error before retrying.
+    set({ error: null });
+    const task = get().tasks.find((t: Task) => t.id === taskId);
+    if (!task) throw new Error("resendTask: task not found");
+
+    const { useSessionStore } = await import("./sessionStore");
+    const { repos, stopSession } = useSessionStore.getState();
+
+    // Reuse the old session's launch settings so the new session lands on the
+    // same machine + worktree (already trusted and authenticated).
+    let linked: Session | undefined;
+    for (const repo of repos) {
+      const session = repo.sessions.find((s) => s.id === task.session_id);
+      if (session) {
+        linked = session;
+        break;
+      }
+    }
+
+    // Kill the old session first (best-effort — it may already be gone).
+    if (task.session_id != null) {
+      await stopSession(task.session_id);
+    }
+
+    // Launch a fresh session with the same server / branch / worktree, then
+    // re-link the task to it. fireTask builds the prompt and re-links the task.
+    await get().fireTask(
+      taskId,
+      task.repo_id,
+      !!linked?.worktree_path,
+      linked?.branch ?? undefined,
+      true,
+      linked?.server_id ?? undefined
+    );
   },
 
   updateTaskStatus: async (

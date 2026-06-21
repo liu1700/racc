@@ -45,8 +45,8 @@ interface SidebarProps {
 export function Sidebar({ onNewTask, onSessionSelect }: SidebarProps) {
   const repos = useSessionStore((s) => s.repos);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
-  const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const reattachSession = useSessionStore((s) => s.reattachSession);
+  const openSession = useSessionStore((s) => s.openSession);
   const removeRepo = useSessionStore((s) => s.removeRepo);
 
   const importRepo = useSessionStore((s) => s.importRepo);
@@ -185,11 +185,9 @@ const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
                 <div
                   key={session.id}
                   onClick={() => {
-                    if (session.status === "Running") {
-                      setActiveSession(session.id);
-                    } else {
-                      reattachSession(session.id);
-                    }
+                    // openSession reattaches if the transport isn't live (e.g.
+                    // a "Running" remote session after an app restart).
+                    openSession(session.id);
                     onSessionSelect?.();
                   }}
                   className={`group ml-4 cursor-pointer rounded px-2 py-1 transition-colors duration-150 ${

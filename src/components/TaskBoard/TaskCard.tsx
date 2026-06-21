@@ -44,8 +44,36 @@ export function TaskCard({ task, onSessionSelect }: Props) {
   const sessionLastOutput = useSessionStore((s) => s.sessionLastOutput);
   const repos = useSessionStore((s) => s.repos);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
+  const openSession = useSessionStore((s) => s.openSession);
   const updateTaskDescription = useTaskStore((s) => s.updateTaskDescription);
   const deleteTask = useTaskStore((s) => s.deleteTask);
+  const resendTask = useTaskStore((s) => s.resendTask);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
+    "idle"
+  );
+
+  const handleResend = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setResendState("sending");
+    try {
+      await resendTask(task.id);
+      // The task now points at the freshly created session — switch to it.
+      const updated = useTaskStore
+        .getState()
+        .tasks.find((t) => t.id === task.id);
+      if (updated?.session_id) {
+        setActiveSession(updated.session_id);
+        onSessionSelect?.();
+      }
+      setResendState("sent");
+      setTimeout(() => setResendState("idle"), 2000);
+    } catch {
+      // Auto-restart failed (e.g. server unreachable) — fall back to the Fire
+      // dialog so the user can pick server/worktree/branch manually.
+      setResendState("idle");
+      setFireOpen(true);
+    }
+  };
 
   useEffect(() => {
     if (editing) {
@@ -118,7 +146,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
         onClick={
           task.status === "working" && task.session_id
             ? () => {
-                setActiveSession(task.session_id!);
+                openSession(task.session_id!);
                 onSessionSelect?.();
               }
             : undefined
@@ -198,6 +226,18 @@ export function TaskCard({ task, onSessionSelect }: Props) {
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span>{formatElapsed(task.updated_at)}</span>
+              <button
+                onClick={handleResend}
+                disabled={resendState === "sending"}
+                title="Restart this task: stop the current session and launch a fresh one with the same server/branch/worktree"
+                className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-zinc-400 transition-colors hover:bg-accent/20 hover:text-accent disabled:opacity-50"
+              >
+                {resendState === "sending"
+                  ? "Sending…"
+                  : resendState === "sent"
+                    ? "✓ Sent"
+                    : "↻ Resend"}
+              </button>
             </div>
           </>
         )}

@@ -9,14 +9,19 @@ use tokio::sync::Mutex;
 ///
 /// The background reader owns the `Channel` (for `wait()`), while a separate
 /// `ChannelTx` writer (created via `make_writer()` before the channel is moved)
-/// handles outgoing data. Control operations (resize, kill) are dispatched as
-/// tmux commands over `SshManager::exec`.
+/// handles outgoing data. Resize is routed to the reader task (which owns the
+/// channel) so it can issue the SSH window-change; kill is dispatched as a tmux
+/// command over `SshManager::exec`.
 pub struct SshTmuxTransport {
     session_id: i64,
     server_id: String,
     ssh_manager: Arc<SshManager>,
     alive: Arc<std::sync::atomic::AtomicBool>,
     writer: Arc<Mutex<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>,
+    /// Sends (cols, rows) resize requests to the reader task. The reader owns
+    /// the channel, so it performs the SSH `window_change` that resizes the PTY
+    /// client — the remote tmux window then follows the client size.
+    resize_tx: tokio::sync::mpsc::UnboundedSender<(u16, u16)>,
     /// Handle to the background reader task so we can abort on close.
     read_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
@@ -71,8 +76,17 @@ impl SshTmuxTransport {
 
         let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
 
-        // 5. Spawn background read task
-        let read_task = Self::spawn_reader(session_id, channel, alive.clone(), terminal_tx, buffer_tx);
+        // 5. Spawn background read task. It also owns the resize receiver so it
+        //    can issue SSH window-change requests (the channel can't be shared).
+        let (resize_tx, resize_rx) = tokio::sync::mpsc::unbounded_channel::<(u16, u16)>();
+        let read_task = Self::spawn_reader(
+            session_id,
+            channel,
+            resize_rx,
+            alive.clone(),
+            terminal_tx,
+            buffer_tx,
+        );
 
         Ok(Self {
             session_id,
@@ -80,51 +94,81 @@ impl SshTmuxTransport {
             ssh_manager,
             alive,
             writer: Arc::new(Mutex::new(writer)),
+            resize_tx,
             read_task: Mutex::new(Some(read_task)),
         })
     }
 
     /// Spawn the background tokio task that reads `ChannelMsg` from the SSH
-    /// channel and forwards data via the broadcast channel + ring buffer.
+    /// channel and forwards data via the broadcast channel + ring buffer. It
+    /// also services resize requests: because the channel can't be shared, the
+    /// reader (which owns it) issues the SSH `window_change`. The resize is
+    /// captured into a local and applied *after* the `select!` block — calling
+    /// `channel.window_change()` inside the resize arm would clash with the
+    /// `channel.wait()` borrow held by the other arm.
     fn spawn_reader(
         session_id: i64,
         mut channel: russh::Channel<russh::client::Msg>,
+        mut resize_rx: tokio::sync::mpsc::UnboundedReceiver<(u16, u16)>,
         alive: Arc<std::sync::atomic::AtomicBool>,
         terminal_tx: tokio::sync::broadcast::Sender<crate::TerminalData>,
         buffer_tx: tokio::sync::mpsc::UnboundedSender<(i64, Vec<u8>)>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             while alive.load(std::sync::atomic::Ordering::SeqCst) {
-                match channel.wait().await {
-                    Some(russh::ChannelMsg::Data { ref data }) => {
-                        let bytes = data.to_vec();
-                        let _ = terminal_tx.send(crate::TerminalData {
-                            session_id,
-                            data: bytes.clone(),
-                        });
-                        let _ = buffer_tx.send((session_id, bytes));
+                let mut pending_resize: Option<(u16, u16)> = None;
+                tokio::select! {
+                    msg = channel.wait() => {
+                        match msg {
+                            Some(russh::ChannelMsg::Data { ref data }) => {
+                                let bytes = data.to_vec();
+                                let _ = terminal_tx.send(crate::TerminalData {
+                                    session_id,
+                                    data: bytes.clone(),
+                                });
+                                let _ = buffer_tx.send((session_id, bytes));
+                            }
+                            Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
+                                // Forward stderr as well (tmux may emit on stderr)
+                                let bytes = data.to_vec();
+                                let _ = terminal_tx.send(crate::TerminalData {
+                                    session_id,
+                                    data: bytes.clone(),
+                                });
+                                let _ = buffer_tx.send((session_id, bytes));
+                            }
+                            Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => {
+                                alive.store(false, std::sync::atomic::Ordering::SeqCst);
+                                break;
+                            }
+                            Some(_) => {
+                                // Ignore other message types (ExitStatus, WindowAdjusted, etc.)
+                            }
+                            None => {
+                                // Channel closed
+                                alive.store(false, std::sync::atomic::Ordering::SeqCst);
+                                break;
+                            }
+                        }
                     }
-                    Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                        // Forward stderr as well (tmux may emit on stderr)
-                        let bytes = data.to_vec();
-                        let _ = terminal_tx.send(crate::TerminalData {
-                            session_id,
-                            data: bytes.clone(),
-                        });
-                        let _ = buffer_tx.send((session_id, bytes));
+                    maybe = resize_rx.recv() => {
+                        match maybe {
+                            // Coalesce to the latest pending size to avoid a burst
+                            // of window-changes during a drag-resize.
+                            Some(size) => {
+                                pending_resize = Some(size);
+                                while let Ok(newer) = resize_rx.try_recv() {
+                                    pending_resize = Some(newer);
+                                }
+                            }
+                            None => {} // all senders dropped; keep reading
+                        }
                     }
-                    Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) => {
-                        alive.store(false, std::sync::atomic::Ordering::SeqCst);
-                        break;
-                    }
-                    Some(_) => {
-                        // Ignore other message types (ExitStatus, WindowAdjusted, etc.)
-                    }
-                    None => {
-                        // Channel closed
-                        alive.store(false, std::sync::atomic::Ordering::SeqCst);
-                        break;
-                    }
+                }
+                if let Some((cols, rows)) = pending_resize {
+                    let _ = channel
+                        .window_change(cols as u32, rows as u32, 0, 0)
+                        .await;
                 }
             }
         })
@@ -147,21 +191,15 @@ impl Transport for SshTmuxTransport {
         Ok(())
     }
 
-    /// Resize the remote PTY by running `tmux resize-window` + resizing the
-    /// SSH PTY via a separate exec channel.
+    /// Resize the remote terminal. We resize the SSH PTY client (via an
+    /// `window_change` issued by the reader task, which owns the channel); the
+    /// remote tmux window follows the client size. Resizing the tmux window
+    /// directly via `resize-window` doesn't help because tmux clamps the window
+    /// to the attached client's size — which is exactly what we resize here.
     async fn resize(&self, cols: u16, rows: u16) -> Result<(), TransportError> {
-        let tmux_session_name = format!("racc-{}", self.session_id);
-
-        // Resize the tmux window dimensions
-        let resize_cmd = format!(
-            "tmux resize-window -t {} -x {} -y {}",
-            tmux_session_name, cols, rows
-        );
-        self.ssh_manager
-            .exec(&self.server_id, &resize_cmd)
-            .await
-            .map_err(|e| TransportError::IoError(format!("Failed to resize tmux window: {}", e)))?;
-
+        // Best-effort: if the reader task has exited the request is simply
+        // dropped (the session is gone anyway).
+        let _ = self.resize_tx.send((cols, rows));
         Ok(())
     }
 
