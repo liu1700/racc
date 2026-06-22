@@ -271,6 +271,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       });
     } catch (e) {
       set({ error: String(e) });
+      // Re-throw so RemoveSessionDialog can surface the failure instead of
+      // silently closing while the session stays in the list.
+      throw e;
     }
   },
 

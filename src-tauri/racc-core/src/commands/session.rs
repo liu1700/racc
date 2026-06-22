@@ -628,20 +628,33 @@ pub async fn remove_session(
         }
     }
 
-    // Remove worktree via git if requested (local worktrees only).
+    // Remove worktree via git if requested (local worktrees only). Best-effort:
+    // a failure here (e.g. the folder was already deleted manually, or the
+    // worktree is locked) must NOT block removing the session from Racc —
+    // otherwise the session record survives and reappears in the UI.
     if delete_worktree {
         if let (Some(wt_path), Some(repo_path)) = (&worktree_path, &repo_path) {
-            let output = Command::new("git")
+            match Command::new("git")
                 .args(["worktree", "remove", wt_path, "--force"])
                 .current_dir(repo_path)
                 .output()
-                .map_err(|e| CoreError::Git(format!("Failed to remove worktree: {e}")))?;
-
-            if !output.status.success() {
-                return Err(CoreError::Git(format!(
-                    "git worktree remove failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )));
+            {
+                Ok(output) if output.status.success() => {}
+                Ok(output) => {
+                    log::warn!(
+                        "git worktree remove failed for session {session_id}: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                    // Prune the stale registration so `git worktree list` and
+                    // future worktree adds don't trip over the leftover entry.
+                    let _ = Command::new("git")
+                        .args(["worktree", "prune"])
+                        .current_dir(repo_path)
+                        .output();
+                }
+                Err(e) => {
+                    log::warn!("Failed to run git worktree remove for session {session_id}: {e}");
+                }
             }
         }
     }
