@@ -80,6 +80,17 @@ impl TransportManager {
         Ok(())
     }
 
+    /// Drop the in-memory transport for a session WITHOUT closing it. Unlike
+    /// `remove`, this does NOT call `Transport::close()` — so for a remote
+    /// session the tmux process is left running on the server. Used when the
+    /// existing transport is already dead (e.g. its SSH connection dropped while
+    /// the laptop slept) and we want to spawn a fresh transport that re-attaches
+    /// to the same tmux session. The ring buffer is left in place; the caller's
+    /// subsequent `insert` resets it so the re-attach repaint starts clean.
+    pub async fn discard(&self, session_id: i64) {
+        self.transports.lock().await.remove(&session_id);
+    }
+
     pub async fn is_alive(&self, session_id: i64) -> bool {
         let transports = self.transports.lock().await;
         transports.get(&session_id).map_or(false, |t| t.is_alive())

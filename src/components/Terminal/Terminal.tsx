@@ -12,6 +12,9 @@ export function Terminal() {
   const [term, setTerm] = useState<XTermType | null>(null);
   const activeSession = useSessionStore(useShallow((s) => s.getActiveSession()));
   const sessionId = activeSession?.session.id ?? null;
+  const reconnectNonce = useSessionStore((s) =>
+    sessionId != null ? s.reconnectNonce[sessionId] ?? 0 : 0,
+  );
 
   // Initialize xterm.js instance
   useEffect(() => {
@@ -158,6 +161,7 @@ export function Terminal() {
   usePtyBridge({
     sessionId,
     terminal: term,
+    reconnectNonce,
   });
 
   // Force xterm to re-render when switching sessions (visibility change

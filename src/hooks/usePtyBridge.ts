@@ -6,9 +6,12 @@ import type { Terminal } from "@xterm/xterm";
 interface UsePtyBridgeOptions {
   sessionId: number | null;
   terminal: Terminal | null;
+  /** Bumped when the session's transport is silently re-attached, so we
+   *  re-send the terminal size to the freshly spawned (default-size) PTY. */
+  reconnectNonce?: number;
 }
 
-export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
+export function usePtyBridge({ sessionId, terminal, reconnectNonce = 0 }: UsePtyBridgeOptions) {
   // Output: listen for transport:data events
   useEffect(() => {
     if (!terminal || sessionId == null) return;
@@ -91,11 +94,14 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
     };
   }, [sessionId, terminal]);
 
-  // Resize: sync terminal dimensions to transport
+  // Resize: sync terminal dimensions to transport. Re-runs on reconnect
+  // (reconnectNonce) so the re-attached PTY — which starts at the default
+  // 80x24 — is grown back to the real terminal size instead of clamping the
+  // remote tmux window.
   useEffect(() => {
     if (!terminal || sessionId == null) return;
 
-    // Send initial size
+    // Send initial (or post-reconnect) size
     ptyManager.resize(sessionId, terminal.cols, terminal.rows);
 
     const disposable = terminal.onResize(({ cols, rows }) => {
@@ -103,5 +109,5 @@ export function usePtyBridge({ sessionId, terminal }: UsePtyBridgeOptions) {
     });
 
     return () => disposable.dispose();
-  }, [sessionId, terminal]);
+  }, [sessionId, terminal, reconnectNonce]);
 }

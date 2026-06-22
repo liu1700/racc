@@ -249,6 +249,7 @@ async fn dispatch(app_handle: &AppHandle, method: &str, params: Value) -> Result
         "create_session" => handle_create_session(&ctx, params).await,
         "stop_session" => handle_stop_session(&ctx, params).await,
         "reattach_session" => handle_reattach_session(&ctx, params).await,
+        "reconnect_session" => handle_reconnect_session(&ctx, params).await,
         "list_repos" => handle_list_repos(&ctx).await,
         "get_session_diff" => handle_get_session_diff(&ctx, params).await,
         _ => Err(format!("Unknown method: {}", method)),
@@ -380,6 +381,18 @@ async fn handle_reattach_session(ctx: &AppContext, params: Value) -> Result<Valu
         .map_err(|e| e.to_string())?;
 
     Ok(json!({ "session": session }))
+}
+
+async fn handle_reconnect_session(ctx: &AppContext, params: Value) -> Result<Value, String> {
+    let session_id = params["session_id"]
+        .as_i64()
+        .ok_or("Missing or invalid session_id")?;
+
+    let outcome = racc_core::commands::session::reconnect_session(ctx, session_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    serde_json::to_value(outcome).map_err(|e| e.to_string())
 }
 
 // --- Query handlers ---

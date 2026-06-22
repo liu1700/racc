@@ -87,6 +87,16 @@ pub async fn reattach_session(
 }
 
 #[tauri::command]
+pub async fn reconnect_session(
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
+    session_id: i64,
+) -> Result<racc_core::commands::session::ReconnectOutcome, String> {
+    racc_core::commands::session::reconnect_session(&ctx, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn reconcile_sessions(
     ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
 ) -> Result<Vec<RepoWithSessions>, String> {
