@@ -30,6 +30,21 @@ impl SessionStatus {
     }
 }
 
+/// Result of a silent `reconnect_session` attempt (serialized to the frontend
+/// as a bare string, e.g. `"Reconnected"`).
+#[derive(Debug, Clone, Serialize)]
+pub enum ReconnectOutcome {
+    /// The in-memory transport was already live — nothing was done.
+    AlreadyLive,
+    /// A dead remote transport was re-attached to its still-running tmux session.
+    Reconnected,
+    /// The caller should run the heavier `reattach_session` (local session that
+    /// needs `claude --continue`, or a stopped session).
+    FullReattach,
+    /// The remote tmux session no longer exists; the session was marked Completed.
+    Gone,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Repo {
     pub id: i64,
@@ -830,6 +845,157 @@ pub async fn reattach_session(
         .await;
 
     Ok(session)
+}
+
+/// Silently bring a session's transport back to life when it was lost while the
+/// app or laptop was idle (e.g. the SSH connection dropped after a long sleep).
+///
+/// Called on every session "open" (clicking a task/session). It is idempotent
+/// and **never tears down a healthy session**:
+///   - In-memory transport already alive → [`ReconnectOutcome::AlreadyLive`] (no-op).
+///   - Remote session whose tmux is still running on the server → drop the dead
+///     in-memory transport WITHOUT killing tmux, then re-attach a fresh SSH
+///     channel to the SAME tmux session → [`ReconnectOutcome::Reconnected`].
+///   - Remote session whose tmux is gone → mark `Completed` → [`ReconnectOutcome::Gone`].
+///   - Local session that isn't live (e.g. after an app restart) →
+///     [`ReconnectOutcome::FullReattach`] so the caller runs `reattach_session`.
+///
+/// Unlike `reattach_session`, this does not refuse to act on a "Running" session
+/// — that status is exactly what a slept-then-woken remote session still shows
+/// while its transport is dead.
+pub async fn reconnect_session(
+    ctx: &AppContext,
+    session_id: i64,
+) -> Result<ReconnectOutcome, CoreError> {
+    // A genuinely live transport must never be disturbed (re-attaching would
+    // be wasteful and, worse, the tmux teardown path could kill a live agent).
+    if ctx.transport_manager.is_alive(session_id).await {
+        return Ok(ReconnectOutcome::AlreadyLive);
+    }
+
+    let (server_id, agent, branch, repo_path) = {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        let (server_id, repo_id, agent, branch): (Option<String>, i64, String, Option<String>) =
+            conn.query_row(
+                "SELECT server_id, repo_id, agent, branch FROM sessions WHERE id = ?1",
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
+        let repo_path: String = conn
+            .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
+            .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
+        (server_id, agent, branch, repo_path)
+    };
+
+    // Local sessions can't be silently re-attached — the PTY lived in-process and
+    // is gone. Defer to the full reattach (`claude --continue`).
+    let sid = match server_id {
+        Some(sid) => sid,
+        None => return Ok(ReconnectOutcome::FullReattach),
+    };
+
+    // Remote: ensure a live SSH connection (it dropped while we slept), then
+    // check whether the tmux session is still there to attach to.
+    crate::commands::server::ensure_connected(ctx, &sid).await?;
+
+    let tmux_name = format!("racc-{}", session_id);
+    let probe = format!("tmux has-session -t {}", tmux_name);
+    let has = match ctx.ssh_manager.exec(&sid, &probe).await {
+        Ok(out) => out,
+        Err(_) => {
+            // `is_connected` only tracks a status flag that russh does NOT clear
+            // when the TCP link dies on sleep — so `ensure_connected` may have
+            // handed back a stale, dead handle. Drop it, reconnect fresh, retry.
+            let _ = ctx.ssh_manager.disconnect(&sid).await;
+            crate::commands::server::ensure_connected(ctx, &sid).await?;
+            ctx.ssh_manager
+                .exec(&sid, &probe)
+                .await
+                .map_err(|e| CoreError::Ssh(format!("Failed to probe tmux session: {}", e)))?
+        }
+    };
+
+    if has.exit_code != 0 {
+        // The remote tmux session is gone (server rebooted, OOM-killed, manually
+        // killed, …). Reflect that as Completed; there's nothing to attach to.
+        {
+            let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+            conn.execute(
+                "UPDATE sessions SET status = 'Completed', updated_at = datetime('now') WHERE id = ?1",
+                [session_id],
+            )?;
+        }
+        ctx.event_bus
+            .emit(RaccEvent::SessionStatusChanged {
+                session_id,
+                status: "Completed".to_string(),
+                pr_url: None,
+                source: "local".to_string(),
+            })
+            .await;
+        return Ok(ReconnectOutcome::Gone);
+    }
+
+    // tmux is alive → drop the dead in-memory transport WITHOUT killing tmux,
+    // then re-attach a fresh SSH channel to the same session.
+    ctx.transport_manager.discard(session_id).await;
+
+    let repo_name = std::path::Path::new(&repo_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+    let remote_worktree = format!(
+        "~/racc-worktrees/{}/{}",
+        repo_name,
+        branch.as_deref().unwrap_or("main")
+    );
+    let rtk_remote = if agent == "claude-code" {
+        crate::rtk::ensure_rtk_remote(&ctx.ssh_manager, &sid).await
+    } else {
+        false
+    };
+    // build_command ignores cwd; cd first so behaviour matches the create/reattach
+    // paths. For a plain `tmux attach` this command body is never executed.
+    let agent_cmd = format!(
+        "cd {} && {}",
+        remote_worktree,
+        agent::build_command(&agent, &remote_worktree, false, rtk_remote)
+    );
+    let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
+        session_id,
+        &sid,
+        &agent_cmd,
+        80,
+        24,
+        ctx.ssh_manager.clone(),
+        ctx.terminal_tx.clone(),
+        ctx.transport_manager.buffer_sender(),
+    )
+    .await
+    .map_err(|e| CoreError::Transport(e.to_string()))?;
+    ctx.transport_manager
+        .insert(session_id, Box::new(transport))
+        .await;
+
+    // Normalise status to Running (it may already be) and notify listeners.
+    {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        conn.execute(
+            "UPDATE sessions SET status = 'Running', updated_at = datetime('now') WHERE id = ?1",
+            [session_id],
+        )?;
+    }
+    ctx.event_bus
+        .emit(RaccEvent::SessionStatusChanged {
+            session_id,
+            status: "Running".to_string(),
+            pr_url: None,
+            source: "local".to_string(),
+        })
+        .await;
+
+    Ok(ReconnectOutcome::Reconnected)
 }
 
 /// Startup reconciliation — called once before the supervisor loop starts.

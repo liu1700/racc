@@ -13,6 +13,10 @@ interface SessionState {
 
   sessionLastOutput: Record<number, string>;
 
+  /** Bumped per session each time its transport is silently re-attached, so the
+   *  terminal can re-sync state (a reconnected PTY starts at the default size). */
+  reconnectNonce: Record<number, number>;
+
   updateSessionLastOutput: (sessionId: number, line: string) => void;
   clearSessionLastOutput: (sessionId: number) => void;
   updateSessionPrUrl: (sessionId: number, prUrl: string) => void;
@@ -47,6 +51,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   error: null,
 
   sessionLastOutput: {},
+  reconnectNonce: {},
 
   getActiveSession: () => {
     const { repos, activeSessionId } = get();
@@ -215,19 +220,48 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  // Open a session for viewing. Selects it, and reattaches if its transport is
-  // not actually live (e.g. after an app restart a remote session is "Running"
-  // in the DB but its in-memory transport was lost — clicking it would otherwise
-  // show a blank terminal).
+  // Open a session for viewing. Selects it, then silently re-establishes its
+  // transport if it isn't live. This covers two cases that would otherwise show
+  // a frozen/blank terminal: (1) the SSH connection dropped while the laptop
+  // slept — the remote tmux is still running, so we just re-attach to it; and
+  // (2) after an app restart a remote session is "Running" in the DB but its
+  // in-memory transport was lost. `reconnect_session` is idempotent and never
+  // tears down a live session, so it's safe to call on every open.
   openSession: async (sessionId) => {
     set({ activeSessionId: sessionId });
     try {
-      const alive = await transport.call("transport_is_alive", { sessionId }) as boolean;
-      if (!alive) {
+      const outcome = await transport.call("reconnect_session", { sessionId }) as
+        | "AlreadyLive"
+        | "Reconnected"
+        | "FullReattach"
+        | "Gone";
+      if (outcome === "FullReattach") {
+        // Local session (or one needing `claude --continue`) — heavier path.
         await get().reattachSession(sessionId);
+        return; // reattachSession already refreshes the repo list
       }
+      if (outcome === "Reconnected") {
+        // Re-arm output parsing for the freshly re-attached transport, and bump
+        // the nonce so the terminal re-sends its size (the new PTY defaults to
+        // 80x24, which would otherwise clamp the tmux window).
+        startTracking(sessionId);
+        set((s) => ({
+          reconnectNonce: {
+            ...s.reconnectNonce,
+            [sessionId]: (s.reconnectNonce[sessionId] ?? 0) + 1,
+          },
+        }));
+      }
+      if (outcome === "Reconnected" || outcome === "Gone") {
+        // Reflect the status change (Running re-attach, or Completed if gone).
+        const repos = await transport.call("list_repos") as RepoWithSessions[];
+        set({ repos });
+      }
+      // AlreadyLive: nothing to do.
     } catch (e) {
-      set({ error: String(e) });
+      // A passive click shouldn't surface a scary error if the server is
+      // momentarily unreachable; leave the terminal as-is and log it.
+      console.warn("[sessionStore] reconnect on open failed:", e);
     }
   },
 

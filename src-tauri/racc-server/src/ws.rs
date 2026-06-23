@@ -169,6 +169,13 @@ async fn dispatch(
                 .map_err(|e| e.to_string())?;
             to_json(&result)
         }
+        "reconnect_session" => {
+            let session_id = param_i64(&params, "session_id")?;
+            let result = session::reconnect_session(ctx, session_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
         "list_repos" => {
             let result = session::list_repos(ctx)
                 .await

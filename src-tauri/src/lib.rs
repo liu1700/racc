@@ -135,6 +135,7 @@ pub fn run() {
             commands::session::stop_session,
             commands::session::remove_session,
             commands::session::reattach_session,
+            commands::session::reconnect_session,
             commands::session::reconcile_sessions,
             commands::session::update_session_pr_url,
             commands::git::create_worktree,
