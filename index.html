@@ -2,9 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/racc.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Racc</title>
+
+    <!-- PWA: installable / "Add to Home Screen" on Android & iOS.
+         NOTE: service-worker registration and the install prompt require a
+         secure context (HTTPS or localhost). Over a plain http:// Tailscale IP
+         the app still works, but won't register the SW or offer "Install".
+         Expose racc-server via `tailscale serve` (HTTPS) to make it installable. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1a1a1f" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+
+    <!-- Android: run standalone (no browser chrome) when launched from home screen -->
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iOS: standalone launch + status bar styling + home-screen icon -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Racc" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <script>
+      // Register the service worker only in a secure context (HTTPS/localhost);
+      // on insecure origins navigator.serviceWorker is undefined, so this no-ops.
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .catch((err) =>
+              console.warn("[pwa] service worker registration failed:", err),
+            );
+        });
+      }
+    </script>
   </head>
   <body class="bg-surface-0 text-white">
     <div id="root"></div>

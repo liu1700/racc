@@ -309,8 +309,7 @@ async fn dispatch(
         // ── Transport ────────────────────────────────────────────
         "transport_write" => {
             let session_id = param_i64(&params, "session_id")?;
-            let data_b64 = param_str(&params, "data")?;
-            let data = base64_decode(&data_b64)?;
+            let data = param_bytes(&params, "data")?;
             transport::transport_write(ctx, session_id, data)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -348,8 +347,12 @@ async fn dispatch(
             to_json(&result)
         }
         "add_server" => {
-            let config: server::ServerConfig = serde_json::from_value(params)
-                .map_err(|e| format!("Invalid server config: {}", e))?;
+            // The frontend sends the config nested under a `config` key (matching
+            // Tauri's named-argument shape), so read that field rather than the whole
+            // params object — same as `update_server` / `test_connection_config`.
+            let config: server::ServerConfig = serde_json::from_value(
+                params.get("config").cloned().unwrap_or(json!({}))
+            ).map_err(|e| format!("Invalid server config: {}", e))?;
             let result = server::add_server(ctx, config)
                 .map_err(|e| e.to_string())?;
             to_json(&result)
@@ -580,6 +583,25 @@ fn param_u16(params: &Value, key: &str) -> Result<u16, String> {
         .and_then(|v| v.as_u64())
         .map(|v| v as u16)
         .ok_or_else(|| format!("Missing required u16 parameter: {}", key))
+}
+
+/// Read a byte-buffer parameter. The frontend sends terminal-input data as a
+/// JSON array of byte values (the same shape Tauri deserializes into `Vec<u8>`);
+/// a base64 string is also accepted for robustness.
+fn param_bytes(params: &Value, key: &str) -> Result<Vec<u8>, String> {
+    match params.get(key) {
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n <= 255)
+                    .map(|n| n as u8)
+                    .ok_or_else(|| format!("Invalid byte in array parameter: {}", key))
+            })
+            .collect(),
+        Some(Value::String(s)) => base64_decode(s),
+        _ => Err(format!("Missing required bytes parameter: {}", key)),
+    }
 }
 
 fn to_json<T: serde::Serialize>(value: &T) -> Result<Value, String> {

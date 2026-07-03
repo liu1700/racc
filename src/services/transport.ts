@@ -89,6 +89,24 @@ interface PendingRequest {
   reject: (reason: any) => void;
 }
 
+// Tauri's invoke() automatically maps camelCase JS arg names (e.g. `repoId`) to
+// snake_case Rust params (`repo_id`). The WebSocket bridge does not, and the
+// racc-server / ws_server handlers read snake_case names — so without this,
+// every parameterised command fails in browser mode with
+// "Missing required integer parameter: repo_id" and the like. Convert top-level
+// param keys here so browser mode matches desktop behaviour. Values (including
+// nested objects) are passed through untouched; commands only use flat params.
+function toSnakeCaseKeys(
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    const snake = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+    out[snake] = value;
+  }
+  return out;
+}
+
 class WebSocketTransport implements RaccTransport {
   private ws: WebSocket;
   private ready: Promise<void>;
@@ -168,7 +186,11 @@ class WebSocketTransport implements RaccTransport {
     await this.ready;
 
     const id = String(this.nextId++);
-    const request = { id, method, params: params ?? {} };
+    const request = {
+      id,
+      method,
+      params: params ? toSnakeCaseKeys(params) : {},
+    };
 
     return new Promise<any>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
