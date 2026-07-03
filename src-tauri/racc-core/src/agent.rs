@@ -197,10 +197,23 @@ pub fn build_resume_command(agent: &str, agent_session_id: Option<&str>, rtk_rem
 /// leaving a dead shell prompt — which must be surfaced as an Error session,
 /// not left as a phantom "Running" one (issue #70). Matches the exact phrases
 /// (not just "No conversation found") so a resumed transcript that merely
-/// *mentions* the phrase can't false-flag a healthy session.
+/// *mentions* the phrase can't false-flag a healthy session. Whitespace-
+/// squashed like the other detectors: the message is plain CLI output today,
+/// but this keeps it working if a TUI repaint ever carries it.
 pub fn is_resume_failure(text: &str) -> bool {
-    text.contains("No conversation found with session ID")
-        || text.contains("No conversation found to continue")
+    let t = squash_whitespace(text);
+    t.contains("NoconversationfoundwithsessionID")
+        || t.contains("Noconversationfoundtocontinue")
+}
+
+/// Collapse all whitespace out of TUI output before matching marker phrases.
+/// Claude Code's TUI positions text with cursor-motion escape sequences, and
+/// [`strip_ansi`] removes those sequences entirely — so the spaces between
+/// words are often lost ("trust this folder" arrives as "trustthisfolder",
+/// varying by repaint). Matching whitespace-free text against whitespace-free
+/// needles makes detection immune to that rendering detail.
+fn squash_whitespace(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// Detect Claude Code's first-run "trust this folder" dialog. The injector
@@ -208,7 +221,8 @@ pub fn is_resume_failure(text: &str) -> bool {
 /// folder") so a fired task isn't blocked on a manual confirmation, and so the
 /// task text isn't typed into the dialog and lost.
 pub fn is_trust_dialog(text: &str) -> bool {
-    text.contains("trust this folder") || text.contains("Do you trust")
+    let t = squash_whitespace(text);
+    t.contains("trustthisfolder") || t.contains("Doyoutrust")
 }
 
 /// Detect that an agent has reached its interactive input prompt and is ready to
@@ -219,10 +233,11 @@ pub fn is_trust_dialog(text: &str) -> bool {
 pub fn is_agent_ready(agent_type: &AgentType, text: &str) -> bool {
     match agent_type {
         AgentType::ClaudeCode => {
-            text.contains("for shortcuts")
-                || text.contains("shift+tab")
-                || text.contains("bypass permissions")
-                || text.contains("auto-accept edits")
+            let t = squash_whitespace(text);
+            t.contains("forshortcuts")
+                || t.contains("shift+tab")
+                || t.contains("bypasspermissions")
+                || t.contains("auto-acceptedits")
         }
         _ => {
             text.contains("❯")
@@ -412,5 +427,25 @@ mod tests {
     fn test_generic_ready_still_uses_prompt_chars() {
         assert!(is_agent_ready(&AgentType::Generic, "user@host:~$ "));
         assert!(!is_agent_ready(&AgentType::Generic, "still working..."));
+    }
+
+    #[test]
+    fn test_detection_survives_tui_space_eating() {
+        // Real PTY captures: Claude Code's TUI positions words with
+        // cursor-motion sequences, so strip_ansi leaves them concatenated.
+        // Detection must work on both the spaced and space-eaten renderings.
+        let trust_eaten = "Quicksafetycheck:Isthisaprojectyoucreatedoroneyoutrust?\
+                           ❯1.Yes,Itrustthisfolder2.No,exitEntertoconfirm·Esctocancel";
+        assert!(is_trust_dialog(trust_eaten));
+        // The eaten trust dialog must still NOT look "ready".
+        assert!(!is_agent_ready(&AgentType::ClaudeCode, trust_eaten));
+
+        let ready_eaten = "❯?forshortcuts·←foragents";
+        assert!(is_agent_ready(&AgentType::ClaudeCode, ready_eaten));
+
+        let fail_eaten = "NoconversationfoundwithsessionID:fa52506f-aa98-4a6d-88d0-0cfe073a691a";
+        assert!(is_resume_failure(fail_eaten));
+        let continue_eaten = "Noconversationfoundtocontinue";
+        assert!(is_resume_failure(continue_eaten));
     }
 }
