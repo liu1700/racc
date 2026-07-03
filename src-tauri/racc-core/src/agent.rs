@@ -120,27 +120,87 @@ pub fn analyze_output(output: &[u8], agent_type: &AgentType, window_size: usize)
     AgentSignal::Idle
 }
 
+/// PATH prefix that makes `claude` resolvable: ~/.local/bin is where the
+/// official installer drops it, and .racc/bin is prepended for RTK when
+/// available on a remote server.
+fn claude_path_prefix(rtk_remote: bool) -> &'static str {
+    if rtk_remote {
+        "PATH=$HOME/.racc/bin:$HOME/.local/bin:$PATH "
+    } else {
+        "PATH=$HOME/.local/bin:$PATH "
+    }
+}
+
 /// Build the shell command to launch an agent (moved from session.rs).
 /// Returns only the launch command — task description is sent separately
 /// via PTY write after the agent initializes, avoiding all shell escaping issues.
-pub fn build_command(agent: &str, _cwd: &str, skip_permissions: bool, rtk_remote: bool) -> String {
+/// For claude-code, `session_uuid` pins the conversation's session ID
+/// (`--session-id <uuid>`) so a later reattach can deterministically resume it
+/// with `claude --resume <uuid>` (issue #70).
+pub fn build_command(
+    agent: &str,
+    _cwd: &str,
+    skip_permissions: bool,
+    rtk_remote: bool,
+    session_uuid: Option<&str>,
+) -> String {
     match agent {
         "claude-code" => {
             let dangerously = if skip_permissions { " --dangerously-skip-permissions" } else { "" };
-            // Include ~/.local/bin so a `claude` installed by the one-click
-            // server setup (official installer drops it there) is found, and
-            // prepend .racc/bin for RTK when available.
-            let prefix = if rtk_remote {
-                "PATH=$HOME/.racc/bin:$HOME/.local/bin:$PATH "
-            } else {
-                "PATH=$HOME/.local/bin:$PATH "
-            };
-            format!("{}claude{}\n", prefix, dangerously)
+            let session_arg = session_uuid
+                .map(|u| format!(" --session-id {}", u))
+                .unwrap_or_default();
+            format!("{}claude{}{}\n", claude_path_prefix(rtk_remote), dangerously, session_arg)
         }
         "aider" => "aider\n".to_string(),
         "codex" => "codex\n".to_string(),
         _ => format!("{}\n", agent),
     }
+}
+
+/// Mint the persistent conversation ID for agents that support resuming by
+/// session id (claude-code only today). Generated at session-create time,
+/// stored in `sessions.agent_session_id`, and consumed by
+/// [`build_resume_command`]; agents with no resume-by-id concept get None.
+pub fn new_agent_session_id(agent: &str) -> Option<String> {
+    match agent {
+        "claude-code" => Some(uuid::Uuid::new_v4().to_string()),
+        _ => None,
+    }
+}
+
+/// Build the shell command to bring an agent back after its process died (app
+/// restart killed the local PTY, or a remote tmux session is gone). For
+/// claude-code with a recorded session id we resume that exact conversation
+/// (`--resume <uuid>`); legacy rows (NULL `agent_session_id`) fall back to
+/// `--continue`, which picks the most recent conversation in the cwd. Agents
+/// with no resume concept are simply relaunched — for them, relaunch IS resume.
+pub fn build_resume_command(agent: &str, agent_session_id: Option<&str>, rtk_remote: bool) -> String {
+    match agent {
+        "claude-code" => {
+            let prefix = claude_path_prefix(rtk_remote);
+            // Defense-in-depth: the id is interpolated into a shell command
+            // (local PTY / remote tmux), so only accept a well-formed UUID —
+            // we only ever mint UUIDs, anything else means a tampered DB.
+            match agent_session_id.filter(|u| uuid::Uuid::parse_str(u).is_ok()) {
+                Some(uuid) => format!("{}claude --resume {}\n", prefix, uuid),
+                None => format!("{}claude --continue\n", prefix),
+            }
+        }
+        _ => build_command(agent, "", false, rtk_remote, None),
+    }
+}
+
+/// Detect that `claude --resume <uuid>` / `claude --continue` failed to find a
+/// transcript. Claude prints "No conversation found with session ID: <uuid>"
+/// (resume) or "No conversation found to continue" (continue) and exits,
+/// leaving a dead shell prompt — which must be surfaced as an Error session,
+/// not left as a phantom "Running" one (issue #70). Matches the exact phrases
+/// (not just "No conversation found") so a resumed transcript that merely
+/// *mentions* the phrase can't false-flag a healthy session.
+pub fn is_resume_failure(text: &str) -> bool {
+    text.contains("No conversation found with session ID")
+        || text.contains("No conversation found to continue")
 }
 
 /// Detect Claude Code's first-run "trust this folder" dialog. The injector
@@ -255,15 +315,68 @@ mod tests {
 
     #[test]
     fn test_build_command_claude() {
-        let cmd = build_command("claude-code", "/path", false, false);
+        let cmd = build_command("claude-code", "/path", false, false, None);
         assert!(cmd.contains("claude"));
+        assert!(!cmd.contains("--session-id"));
         assert!(!cmd.contains("fix")); // task is no longer included in command
     }
 
     #[test]
     fn test_build_command_claude_skip_permissions() {
-        let cmd = build_command("claude-code", "/path", true, false);
+        let cmd = build_command("claude-code", "/path", true, false, None);
         assert!(cmd.contains("--dangerously-skip-permissions"));
+    }
+
+    #[test]
+    fn test_build_command_claude_with_session_uuid() {
+        let cmd = build_command("claude-code", "/path", true, false, Some("abc-123"));
+        assert!(cmd.contains("--session-id abc-123"));
+        assert!(cmd.ends_with("\n"));
+    }
+
+    #[test]
+    fn test_build_command_other_agents_ignore_session_uuid() {
+        let cmd = build_command("aider", "/path", false, false, Some("abc-123"));
+        assert_eq!(cmd, "aider\n");
+    }
+
+    #[test]
+    fn test_build_resume_command() {
+        let resume =
+            build_resume_command("claude-code", Some("11111111-2222-3333-4444-555555555555"), false);
+        assert!(resume.contains("claude --resume 11111111-2222-3333-4444-555555555555"));
+        // Legacy rows (no recorded session id) keep the --continue fallback.
+        let legacy = build_resume_command("claude-code", None, false);
+        assert!(legacy.contains("claude --continue"));
+        assert!(!legacy.contains("--resume"));
+        // Agents with no resume concept are simply relaunched.
+        assert_eq!(build_resume_command("aider", None, false), "aider\n");
+    }
+
+    #[test]
+    fn test_build_resume_command_rejects_non_uuid() {
+        // A non-UUID id means a tampered DB — never interpolate it into the
+        // shell command; fall back to --continue.
+        let cmd = build_resume_command("claude-code", Some("x; rm -rf ~"), false);
+        assert!(!cmd.contains("rm -rf"));
+        assert!(cmd.contains("claude --continue"));
+    }
+
+    #[test]
+    fn test_new_agent_session_id() {
+        let id = new_agent_session_id("claude-code").expect("claude gets a session id");
+        assert_eq!(id.len(), 36); // uuid v4 shape
+        assert!(new_agent_session_id("aider").is_none());
+        assert!(new_agent_session_id("codex").is_none());
+    }
+
+    #[test]
+    fn test_is_resume_failure() {
+        assert!(is_resume_failure(
+            "No conversation found with session ID: 11111111-2222-3333-4444-555555555555"
+        ));
+        assert!(is_resume_failure("No conversation found to continue"));
+        assert!(!is_resume_failure("Resumed. ? for shortcuts"));
     }
 
     #[test]

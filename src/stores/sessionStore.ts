@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { transport } from "../services/transport";
-import type { Repo, Session, RepoWithSessions } from "../types/session";
+import type { Repo, Session, RepoWithSessions, SessionStatus } from "../types/session";
 import { startTracking, stopTracking, setOutputCallback, setPrUrlCallback } from "../services/ptyOutputParser";
 
 interface SessionState {
@@ -20,6 +20,7 @@ interface SessionState {
   updateSessionLastOutput: (sessionId: number, line: string) => void;
   clearSessionLastOutput: (sessionId: number) => void;
   updateSessionPrUrl: (sessionId: number, prUrl: string) => void;
+  updateSessionStatus: (sessionId: number, status: SessionStatus) => void;
 
   getActiveSession: () => { session: Session; repo: Repo } | null;
 
@@ -142,6 +143,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       stopTracking(session_id);
       const repos = await transport.call("list_repos") as RepoWithSessions[];
       set({ repos });
+    });
+
+    // Live session-status updates from the backend — e.g. the resume watcher
+    // flipping a session to Error when `claude --resume` finds no conversation
+    // (issue #70). This lands 1-2s AFTER reattach_session resolves, so only a
+    // push (not the post-reattach list refresh) can surface it. Tauri wraps
+    // RaccEvents as {event, data} on "racc://event"; browser mode delivers
+    // them unwrapped, keyed by event name.
+    const applyStatusChange = (data: { session_id: number; status: string }) => {
+      if (typeof data?.session_id !== "number") return;
+      get().updateSessionStatus(data.session_id, data.status as SessionStatus);
+    };
+    transport.on("session_status_changed", applyStatusChange);
+    transport.on("racc://event", (evt: { event: string; data: any }) => {
+      if (evt?.event === "session_status_changed") applyStatusChange(evt.data);
     });
   },
 
@@ -347,6 +363,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         ...rws,
         sessions: rws.sessions.map((s) =>
           s.id === sessionId ? { ...s, pr_url: prUrl } : s,
+        ),
+      })),
+    });
+  },
+
+  updateSessionStatus: (sessionId, status) => {
+    set({
+      repos: get().repos.map((rws) => ({
+        ...rws,
+        sessions: rws.sessions.map((s) =>
+          s.id === sessionId ? { ...s, status } : s,
         ),
       })),
     });
