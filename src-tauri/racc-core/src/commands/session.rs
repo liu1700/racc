@@ -760,6 +760,26 @@ pub async fn reattach_session(
         if existing {
             let _ = ctx.transport_manager.remove(session_id).await;
         }
+
+        // Probe tmux AFTER the remove above (removing a tracked transport
+        // kills its tmux session), so this reflects what spawn will find.
+        // If tmux is gone, spawn recreates it and actually RUNS the resume
+        // command — watch its outcome like the local path so a failed resume
+        // surfaces as Error, not phantom Running. If tmux is alive we only
+        // re-attach: no resume runs, and the scrollback repaint could carry
+        // stale failure text that would false-flag a live session, so don't
+        // watch. Probe errors count as "alive" (conservative: never false-flag
+        // over a flaky SSH link).
+        let tmux_gone = ctx
+            .ssh_manager
+            .exec(sid, &format!("tmux has-session -t racc-{}", session_id))
+            .await
+            .map(|out| out.exit_code != 0)
+            .unwrap_or(false);
+        if tmux_gone && agent == "claude-code" {
+            spawn_resume_watcher(ctx, session_id);
+        }
+
         let repo_name = std::path::Path::new(&repo_path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -845,10 +865,6 @@ pub async fn reattach_session(
         // transcript was never persisted or was deleted — flip the session to
         // Error so the user sees a dead session instead of a phantom
         // "Running" one sitting at a bare shell prompt (issue #70).
-        // Local-only on purpose: a remote reattach usually just re-attaches
-        // tmux (no resume command runs), and the tmux scrollback repaint could
-        // contain a stale "No conversation found" that would false-flag a
-        // live session as Error.
         if agent == "claude-code" {
             spawn_resume_watcher(ctx, session_id);
         }
@@ -885,7 +901,9 @@ pub async fn reattach_session(
     Ok(session)
 }
 
-/// Watch a just-reattached local claude-code session for the resume outcome.
+/// Watch a claude-code session that was just issued a resume command (local
+/// PTY reattach, or a remote reattach whose tmux session had to be recreated)
+/// for the resume outcome.
 ///
 /// `claude --resume <uuid>` / `claude --continue` print "No conversation
 /// found ..." and exit when the transcript is missing (e.g. claude was killed
