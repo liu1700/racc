@@ -230,6 +230,13 @@ pub async fn create_session(
     let task_description = task_description.unwrap_or_default();
     let skip_permissions = skip_permissions.unwrap_or(false);
 
+    // Pin the claude conversation's session ID at spawn time (issue #70):
+    // launching with `--session-id <uuid>` and persisting the uuid lets
+    // reattach deterministically `--resume <uuid>` instead of betting that
+    // `--continue` picks the right conversation for the cwd. NULL for agents
+    // with no resume-by-id concept.
+    let agent_session_id = agent::new_agent_session_id(&agent);
+
     let (repo_path, repo_name) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
         let row: (String, String) = conn
@@ -290,9 +297,9 @@ pub async fn create_session(
     let (session_id, worktree_path_clone, created_at, updated_at) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id)
-             VALUES (?1, ?2, ?3, ?4, 'Running', ?5)",
-            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id],
+            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id, agent_session_id)
+             VALUES (?1, ?2, ?3, ?4, 'Running', ?5, ?6)",
+            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id, agent_session_id],
         )?;
 
         let id = conn.last_insert_rowid();
@@ -384,7 +391,13 @@ pub async fn create_session(
         let agent_cmd = format!(
             "cd {} && {}",
             remote_worktree,
-            agent::build_command(&agent, &remote_worktree, skip_permissions, rtk_remote)
+            agent::build_command(
+                &agent,
+                &remote_worktree,
+                skip_permissions,
+                rtk_remote,
+                agent_session_id.as_deref()
+            )
         );
         // Subscribe right before spawn so we capture the agent's first output
         // (the tmux attach repaint already shows the ready prompt).
@@ -409,7 +422,8 @@ pub async fn create_session(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd = agent::build_command(&agent, cwd, skip_permissions, false);
+        let agent_cmd =
+            agent::build_command(&agent, cwd, skip_permissions, false, agent_session_id.as_deref());
 
         // RTK setup for Claude Code sessions
         let extra_env = if agent == "claude-code" {
@@ -686,49 +700,55 @@ pub async fn reattach_session(
     ctx: &AppContext,
     session_id: i64,
 ) -> Result<Session, CoreError> {
-    let (_status, worktree_path, repo_id, agent, branch, created_at, updated_at, pr_url, server_id, repo_path) = {
+    let (status, worktree_path, repo_id): (String, Option<String>, i64) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
+        conn.query_row(
+            "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?
+    }; // lock released before the async liveness probe
 
-        let (status, worktree_path, repo_id): (String, Option<String>, i64) = conn
-            .query_row(
-                "SELECT status, worktree_path, repo_id FROM sessions WHERE id = ?1",
-                [session_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
+    // Refuse only when the session is genuinely live. A stale 'Running' row
+    // with no transport behind it (app killed while sessions ran, before
+    // reconciliation corrected the DB) must not block recovery — that stale
+    // state is exactly what reattach exists to fix (issue #70).
+    if status == "Running" && ctx.transport_manager.is_alive(session_id).await {
+        return Err(CoreError::Other(
+            "Session is already running".to_string(),
+        ));
+    }
 
-        if status == "Running" {
-            return Err(CoreError::Other(
-                "Session is already running".to_string(),
-            ));
+    // Verify worktree still exists if this is a worktree session
+    if let Some(ref wt_path) = worktree_path {
+        if !std::path::Path::new(wt_path).exists() {
+            return Err(CoreError::NotFound(format!(
+                "Worktree directory no longer exists: {wt_path}"
+            )));
         }
+    }
 
-        // Verify worktree still exists if this is a worktree session
-        if let Some(ref wt_path) = worktree_path {
-            if !std::path::Path::new(wt_path).exists() {
-                return Err(CoreError::NotFound(format!(
-                    "Worktree directory no longer exists: {wt_path}"
-                )));
-            }
-        }
+    let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, repo_path) = {
+        let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
 
         conn.execute(
             "UPDATE sessions SET status = 'Running', updated_at = datetime('now') WHERE id = ?1",
             [session_id],
         )?;
 
-        let (agent, branch, created_at, updated_at, pr_url, server_id): (String, Option<String>, String, String, Option<String>, Option<String>) = conn
+        let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id): (String, Option<String>, String, String, Option<String>, Option<String>, Option<String>) = conn
             .query_row(
-                "SELECT agent, branch, created_at, updated_at, pr_url, server_id FROM sessions WHERE id = ?1",
+                "SELECT agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id FROM sessions WHERE id = ?1",
                 [session_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
             )?;
 
         let repo_path: String = conn
             .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
             .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
 
-        (status, worktree_path, repo_id, agent, branch, created_at, updated_at, pr_url, server_id, repo_path)
+        (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, repo_path)
     }; // DB lock released here -- safe for async transport work below
 
     if let Some(ref sid) = server_id {
@@ -755,12 +775,14 @@ pub async fn reattach_session(
             false
         };
 
-        // cd into the worktree first (build_command ignores cwd); only used if
-        // tmux has to recreate the session, but keeps behaviour consistent.
+        // cd into the worktree first (the command ignores cwd); only executed
+        // if tmux has to recreate the session — in that case the original
+        // claude process is gone, so resume the recorded conversation instead
+        // of starting a fresh one.
         let agent_cmd = format!(
             "cd {} && {}",
             remote_worktree,
-            agent::build_command(&agent, &remote_worktree, false, rtk_remote)
+            agent::build_resume_command(&agent, agent_session_id.as_deref(), rtk_remote)
         );
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
@@ -778,7 +800,7 @@ pub async fn reattach_session(
             .insert(session_id, Box::new(transport))
             .await;
     } else {
-        // Local session: spawn a new PTY with `claude --continue`
+        // Local session: spawn a new PTY and resume the recorded conversation.
         let cwd = worktree_path.as_deref().unwrap_or(&repo_path);
 
         // RTK setup for Claude Code sessions
@@ -813,11 +835,27 @@ pub async fn reattach_session(
             .insert(session_id, Box::new(transport))
             .await;
 
-        // Send `claude --continue` to resume the previous session
-        let continue_cmd = "claude --continue\n".to_string();
+        // For claude-code, resume the exact recorded conversation
+        // (`--resume <uuid>`); legacy rows without one fall back to
+        // `--continue`. Other agents are simply relaunched.
+        let resume_cmd = agent::build_resume_command(&agent, agent_session_id.as_deref(), false);
+
+        // Watch the resume outcome (subscribe BEFORE typing the command so no
+        // output is missed): if claude reports "No conversation found" — the
+        // transcript was never persisted or was deleted — flip the session to
+        // Error so the user sees a dead session instead of a phantom
+        // "Running" one sitting at a bare shell prompt (issue #70).
+        // Local-only on purpose: a remote reattach usually just re-attaches
+        // tmux (no resume command runs), and the tmux scrollback repaint could
+        // contain a stale "No conversation found" that would false-flag a
+        // live session as Error.
+        if agent == "claude-code" {
+            spawn_resume_watcher(ctx, session_id);
+        }
+
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         ctx.transport_manager
-            .write(session_id, continue_cmd.as_bytes())
+            .write(session_id, resume_cmd.as_bytes())
             .await
             .map_err(|e| CoreError::Transport(e.to_string()))?;
     }
@@ -847,6 +885,80 @@ pub async fn reattach_session(
     Ok(session)
 }
 
+/// Watch a just-reattached local claude-code session for the resume outcome.
+///
+/// `claude --resume <uuid>` / `claude --continue` print "No conversation
+/// found ..." and exit when the transcript is missing (e.g. claude was killed
+/// before its first persistence — issue #70). Without this check the session
+/// would sit at a dead shell prompt marked Running forever. On failure the
+/// session is flipped to Error and listeners are notified; once the agent
+/// reaches its ready prompt (resume worked) the watcher just exits.
+fn spawn_resume_watcher(ctx: &AppContext, session_id: i64) {
+    let mut rx = ctx.terminal_tx.subscribe();
+    let db = ctx.db.clone();
+    let event_bus = ctx.event_bus.clone();
+    tokio::spawn(async move {
+        // Failure prints within a couple of seconds; a successful resume shows
+        // the TUI prompt well before this. Past the deadline, assume healthy.
+        let timeout = tokio::time::sleep(std::time::Duration::from_secs(30));
+        tokio::pin!(timeout);
+        let mut buffer = Vec::new();
+        loop {
+            tokio::select! {
+                result = rx.recv() => {
+                    match result {
+                        Ok(data) if data.session_id == session_id => {
+                            buffer.extend_from_slice(&data.data);
+                            let text = agent::strip_ansi(&buffer);
+
+                            // Ready prompt first: a successful resume repaints
+                            // the old transcript, which could itself contain
+                            // the failure marker text.
+                            if agent::is_agent_ready(&agent::AgentType::ClaudeCode, &text) {
+                                break;
+                            }
+
+                            if agent::is_resume_failure(&text) {
+                                log::warn!(
+                                    "Session {session_id}: claude found no conversation to resume; marking Error"
+                                );
+                                // Guard is consumed inside the closure, so the
+                                // lock is released before the await below.
+                                if db.lock().is_ok_and(|conn| {
+                                    conn.execute(
+                                        "UPDATE sessions SET status = 'Error', updated_at = datetime('now') WHERE id = ?1",
+                                        [session_id],
+                                    )
+                                    .is_ok()
+                                }) {
+                                    event_bus
+                                        .emit(RaccEvent::SessionStatusChanged {
+                                            session_id,
+                                            status: "Error".to_string(),
+                                            pr_url: None,
+                                            source: "local".to_string(),
+                                        })
+                                        .await;
+                                }
+                                break;
+                            }
+
+                            // Keep buffer manageable.
+                            if buffer.len() > 16384 {
+                                buffer.drain(..8192);
+                            }
+                        }
+                        Ok(_) => {} // different session
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(_) => break,
+                    }
+                }
+                _ = &mut timeout => break,
+            }
+        }
+    });
+}
+
 /// Silently bring a session's transport back to life when it was lost while the
 /// app or laptop was idle (e.g. the SSH connection dropped after a long sleep).
 ///
@@ -873,19 +985,19 @@ pub async fn reconnect_session(
         return Ok(ReconnectOutcome::AlreadyLive);
     }
 
-    let (server_id, agent, branch, repo_path) = {
+    let (server_id, agent, branch, repo_path, agent_session_id) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
-        let (server_id, repo_id, agent, branch): (Option<String>, i64, String, Option<String>) =
+        let (server_id, repo_id, agent, branch, agent_session_id): (Option<String>, i64, String, Option<String>, Option<String>) =
             conn.query_row(
-                "SELECT server_id, repo_id, agent, branch FROM sessions WHERE id = ?1",
+                "SELECT server_id, repo_id, agent, branch, agent_session_id FROM sessions WHERE id = ?1",
                 [session_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )
             .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
         let repo_path: String = conn
             .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
             .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
-        (server_id, agent, branch, repo_path)
+        (server_id, agent, branch, repo_path, agent_session_id)
     };
 
     // Local sessions can't be silently re-attached — the PTY lived in-process and
@@ -955,12 +1067,14 @@ pub async fn reconnect_session(
     } else {
         false
     };
-    // build_command ignores cwd; cd first so behaviour matches the create/reattach
-    // paths. For a plain `tmux attach` this command body is never executed.
+    // The command ignores cwd; cd first so behaviour matches the create/reattach
+    // paths. For a plain `tmux attach` this command body is never executed — it
+    // only runs if tmux died between the probe above and this spawn, in which
+    // case the original claude is gone and resuming is the right move.
     let agent_cmd = format!(
         "cd {} && {}",
         remote_worktree,
-        agent::build_command(&agent, &remote_worktree, false, rtk_remote)
+        agent::build_resume_command(&agent, agent_session_id.as_deref(), rtk_remote)
     );
     let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
         session_id,

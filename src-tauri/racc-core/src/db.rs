@@ -105,6 +105,19 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, CoreError> {
         )?;
     }
 
+    if version < 3 {
+        // Issue #70: record which claude conversation belongs to a session so
+        // reattach can `claude --resume <uuid>` the exact conversation instead
+        // of betting on `--continue` (cwd + recency). NULL for non-claude
+        // agents and for legacy rows, which keep the --continue fallback.
+        conn.execute_batch(
+            "
+            ALTER TABLE sessions ADD COLUMN agent_session_id TEXT;
+            PRAGMA user_version = 3;
+            ",
+        )?;
+    }
+
     Ok(conn)
 }
 
