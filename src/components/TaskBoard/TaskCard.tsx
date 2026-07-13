@@ -18,8 +18,10 @@ function openUrl(url: string): void {
 }
 import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
+import { useMergeStore } from "../../stores/mergeStore";
 import { FireTaskDialog } from "./FireTaskDialog";
 import { parsePrDisplay } from "../../utils/prUrl";
+import { getTaskMergeState, taskCanUseMergeManager } from "../../utils/mergeManager";
 import { useIMEComposition } from "../../hooks/useIMEComposition";
 
 interface Props {
@@ -48,6 +50,10 @@ export function TaskCard({ task, onSessionSelect }: Props) {
   const updateTaskDescription = useTaskStore((s) => s.updateTaskDescription);
   const deleteTask = useTaskStore((s) => s.deleteTask);
   const resendTask = useTaskStore((s) => s.resendTask);
+  const mergeItems = useMergeStore((s) => s.items);
+  const setReadyToMerge = useMergeStore((s) => s.setReady);
+  const mergeState = getTaskMergeState(mergeItems, task.id);
+  const [mergePending, setMergePending] = useState(false);
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
     "idle"
   );
@@ -72,6 +78,17 @@ export function TaskCard({ task, onSessionSelect }: Props) {
       // dialog so the user can pick server/worktree/branch manually.
       setResendState("idle");
       setFireOpen(true);
+    }
+  };
+
+  const handleReadyToMerge = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const ready = e.target.checked;
+    setMergePending(true);
+    try {
+      await setReadyToMerge(task.id, ready);
+    } finally {
+      setMergePending(false);
     }
   };
 
@@ -104,6 +121,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
     if (!linkedSession?.pr_url) return null;
     return parsePrDisplay(linkedSession.pr_url);
   }, [linkedSession?.pr_url]);
+  const supportsMergeManager = taskCanUseMergeManager(task.status, linkedSession?.pr_url);
 
   const statusBorder = {
     open: "border-l-accent",
@@ -226,11 +244,43 @@ export function TaskCard({ task, onSessionSelect }: Props) {
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500">
               <span>{formatElapsed(task.updated_at)}</span>
+              {supportsMergeManager && (
+                mergeState === "queued" || mergeState == null ? (
+                  <label
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-auto flex cursor-pointer items-center gap-1.5 text-[10px] text-amber-400"
+                    title="Add this pull request to Merge Manager"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mergeState === "queued"}
+                      disabled={mergePending}
+                      onChange={(e) => void handleReadyToMerge(e)}
+                      className="accent-amber-400"
+                    />
+                    {mergePending ? "Updating…" : "Ready to merge"}
+                  </label>
+                ) : (
+                  <span className={`ml-auto text-[10px] ${
+                    mergeState === "succeeded"
+                      ? "text-status-completed"
+                      : mergeState === "shipping"
+                        ? "text-status-running"
+                        : "text-amber-400"
+                  }`}>
+                    {mergeState === "succeeded"
+                      ? "✓ Shipped"
+                      : mergeState === "shipping"
+                        ? "Shipping…"
+                        : "Needs merge review"}
+                  </span>
+                )
+              )}
               <button
                 onClick={handleResend}
                 disabled={resendState === "sending"}
                 title="Restart this task: stop the current session and launch a fresh one with the same server/branch/worktree"
-                className="ml-auto rounded bg-surface-3 px-2 py-0.5 text-zinc-400 transition-colors hover:bg-accent/20 hover:text-accent disabled:opacity-50"
+                className={`${supportsMergeManager ? "" : "ml-auto"} rounded bg-surface-3 px-2 py-0.5 text-zinc-400 transition-colors hover:bg-accent/20 hover:text-accent disabled:opacity-50`}
               >
                 {resendState === "sending"
                   ? "Sending…"

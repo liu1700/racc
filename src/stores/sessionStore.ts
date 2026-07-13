@@ -25,6 +25,7 @@ interface SessionState {
   getActiveSession: () => { session: Session; repo: Repo } | null;
 
   initialize: () => Promise<void>;
+  refreshRepos: (trackSessionId?: number) => Promise<void>;
   importRepo: (path: string) => Promise<void>;
   removeRepo: (repoId: number) => Promise<void>;
   createSession: (
@@ -159,6 +160,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     transport.on("racc://event", (evt: { event: string; data: any }) => {
       if (evt?.event === "session_status_changed") applyStatusChange(evt.data);
     });
+  },
+
+  refreshRepos: async (trackSessionId) => {
+    const repos = await transport.call("list_repos") as RepoWithSessions[];
+    set({ repos });
+    if (trackSessionId != null) startTracking(trackSessionId);
   },
 
   importRepo: async (path) => {

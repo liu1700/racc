@@ -118,12 +118,64 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, CoreError> {
         )?;
     }
 
+    if version < 4 {
+        conn.execute_batch(
+            "
+            CREATE TABLE merge_settings (
+                repo_id INTEGER PRIMARY KEY,
+                target_branch TEXT NOT NULL,
+                agent TEXT NOT NULL DEFAULT 'claude-code',
+                instructions TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE merge_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id INTEGER NOT NULL,
+                session_id INTEGER,
+                target_branch TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                integration_branch TEXT,
+                prompt TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'starting',
+                result_json TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_merge_runs_repo_status
+                ON merge_runs(repo_id, status);
+
+            CREATE TABLE merge_queue_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id INTEGER NOT NULL,
+                task_id INTEGER NOT NULL,
+                source_session_id INTEGER NOT NULL,
+                pr_url TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                run_id INTEGER,
+                result_message TEXT,
+                added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(repo_id, pr_url),
+                UNIQUE(repo_id, task_id)
+            );
+            CREATE INDEX idx_merge_queue_repo_status
+                ON merge_queue_items(repo_id, status);
+
+            PRAGMA user_version = 4;
+            ",
+        )?;
+    }
+
     Ok(conn)
 }
 
 pub fn reset_db(conn: &Connection) -> Result<(), CoreError> {
     conn.execute_batch(
         "
+        DROP TABLE IF EXISTS merge_queue_items;
+        DROP TABLE IF EXISTS merge_runs;
+        DROP TABLE IF EXISTS merge_settings;
         DROP TABLE IF EXISTS servers;
         DROP TABLE IF EXISTS insights;
         DROP TABLE IF EXISTS session_events;
@@ -134,4 +186,35 @@ pub fn reset_db(conn: &Connection) -> Result<(), CoreError> {
         ",
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_v4_creates_merge_manager_tables() {
+        let path =
+            std::env::temp_dir().join(format!("racc-merge-migration-{}.db", uuid::Uuid::new_v4()));
+        let conn = init_db(path.clone()).expect("database should initialize");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("user_version should be readable");
+        assert_eq!(version, 4);
+
+        for table in ["merge_settings", "merge_runs", "merge_queue_items"] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup should succeed");
+            assert_eq!(exists, 1, "missing table {table}");
+        }
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
 }

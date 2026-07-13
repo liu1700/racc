@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use racc_core::commands::{cost, file, git, insights, server, session, setup, task, transport};
+use racc_core::commands::{cost, file, git, insights, merge, server, session, setup, task, transport};
 use racc_core::AppContext;
 
 /// HTTP handler that upgrades to WebSocket.
@@ -304,6 +304,62 @@ async fn dispatch(
             let result = task::copy_file_to_task_images(repo_path, source_path, filename)
                 .map_err(|e| e.to_string())?;
             Ok(json!(result))
+        }
+
+        // ── Merge Manager ───────────────────────────────────────
+        "get_merge_manager" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let result = merge::get_merge_manager(ctx, repo_id).map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "set_task_ready_to_merge" => {
+            let task_id = param_i64(&params, "task_id")?;
+            let ready = params
+                .get("ready")
+                .and_then(|value| value.as_bool())
+                .ok_or_else(|| "Missing required boolean parameter: ready".to_string())?;
+            let result = merge::set_task_ready_to_merge(ctx, task_id, ready)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "update_merge_settings" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let target_branch = param_str(&params, "target_branch")?;
+            let agent = param_str(&params, "agent")?;
+            let instructions = param_str(&params, "instructions")?;
+            let result = merge::update_merge_settings(
+                ctx,
+                repo_id,
+                &target_branch,
+                &agent,
+                &instructions,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "start_merge_run" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let result = merge::start_merge_run(ctx, repo_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "resolve_merge_run" => {
+            let run_id = param_i64(&params, "run_id")?;
+            let status = param_str(&params, "status")?;
+            let result = merge::resolve_merge_run(ctx, run_id, &status)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "retry_merge_run" => {
+            let run_id = param_i64(&params, "run_id")?;
+            let result = merge::retry_merge_run(ctx, run_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
         }
 
         // ── Transport ────────────────────────────────────────────

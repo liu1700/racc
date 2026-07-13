@@ -26,6 +26,8 @@ pub enum RaccEvent {
     TaskDeleted {
         task_id: i64,
     },
+    #[serde(rename = "merge_manager_changed")]
+    MergeManagerChanged { repo_id: i64, run_id: Option<i64> },
 }
 
 #[async_trait]
