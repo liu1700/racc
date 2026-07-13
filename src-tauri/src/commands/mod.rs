@@ -5,6 +5,7 @@ pub mod file;
 pub mod git;
 pub mod insights;
 pub mod merge;
+pub mod planner;
 pub mod server;
 pub mod session;
 pub mod shell;

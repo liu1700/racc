@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use racc_core::commands::{cost, file, git, insights, merge, server, session, setup, task, transport};
+use racc_core::commands::{cost, file, git, insights, merge, planner, server, session, setup, task, transport};
 use racc_core::AppContext;
 
 /// HTTP handler that upgrades to WebSocket.
@@ -164,7 +164,8 @@ async fn dispatch(
         }
         "reattach_session" => {
             let session_id = param_i64(&params, "session_id")?;
-            let result = session::reattach_session(ctx, session_id)
+            let skip_permissions = params.get("skip_permissions").and_then(|v| v.as_bool());
+            let result = session::reattach_session(ctx, session_id, skip_permissions)
                 .await
                 .map_err(|e| e.to_string())?;
             to_json(&result)
@@ -304,6 +305,42 @@ async fn dispatch(
             let result = task::copy_file_to_task_images(repo_path, source_path, filename)
                 .map_err(|e| e.to_string())?;
             Ok(json!(result))
+        }
+
+        // ── Task Planner ────────────────────────────────────────
+        "get_latest_task_plan" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let result = planner::get_latest_task_plan(ctx, repo_id)
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "start_task_plan" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let source_input = param_str(&params, "source_input")?;
+            let agent = param_str(&params, "agent")?;
+            let result = planner::start_task_plan(ctx, repo_id, source_input, agent)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "confirm_task_plan" => {
+            let run_id = param_i64(&params, "run_id")?;
+            let selected_keys = params
+                .get("selected_keys")
+                .and_then(|value| value.as_array())
+                .ok_or_else(|| "Missing required array parameter: selected_keys".to_string())?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| "selected_keys must contain only strings".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let result = planner::confirm_task_plan(ctx, run_id, selected_keys)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
         }
 
         // ── Merge Manager ───────────────────────────────────────

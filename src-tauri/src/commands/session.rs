@@ -80,8 +80,9 @@ pub async fn remove_session(
 pub async fn reattach_session(
     ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     session_id: i64,
+    skip_permissions: Option<bool>,
 ) -> Result<Session, String> {
-    racc_core::commands::session::reattach_session(&ctx, session_id)
+    racc_core::commands::session::reattach_session(&ctx, session_id, skip_permissions)
         .await
         .map_err(|e| e.to_string())
 }

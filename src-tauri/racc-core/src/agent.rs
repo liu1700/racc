@@ -197,20 +197,37 @@ pub fn new_agent_session_id(agent: &str) -> Option<String> {
 /// `--continue`, which picks the most recent conversation in the cwd. Codex
 /// similarly resumes its most recent transcript in the cwd with
 /// `codex resume --last`. Agents with no resume concept are simply relaunched.
-pub fn build_resume_command(agent: &str, agent_session_id: Option<&str>, rtk_remote: bool) -> String {
+pub fn build_resume_command(
+    agent: &str,
+    agent_session_id: Option<&str>,
+    skip_permissions: bool,
+    rtk_remote: bool,
+) -> String {
     match agent {
         "claude-code" => {
             let prefix = claude_path_prefix(rtk_remote);
+            let dangerously = if skip_permissions {
+                " --dangerously-skip-permissions"
+            } else {
+                ""
+            };
             // Defense-in-depth: the id is interpolated into a shell command
             // (local PTY / remote tmux), so only accept a well-formed UUID —
             // we only ever mint UUIDs, anything else means a tampered DB.
             match agent_session_id.filter(|u| uuid::Uuid::parse_str(u).is_ok()) {
-                Some(uuid) => format!("{}claude --resume {}\n", prefix, uuid),
-                None => format!("{}claude --continue\n", prefix),
+                Some(uuid) => format!("{}claude{} --resume {}\n", prefix, dangerously, uuid),
+                None => format!("{}claude{} --continue\n", prefix, dangerously),
             }
         }
-        "codex" => "codex resume --last\n".to_string(),
-        _ => build_command(agent, "", false, rtk_remote, None),
+        "codex" => {
+            let dangerously = if skip_permissions {
+                " --dangerously-bypass-approvals-and-sandbox"
+            } else {
+                ""
+            };
+            format!("codex resume --last{}\n", dangerously)
+        }
+        _ => build_command(agent, "", skip_permissions, rtk_remote, None),
     }
 }
 
@@ -404,27 +421,38 @@ mod tests {
     #[test]
     fn test_build_resume_command() {
         let resume =
-            build_resume_command("claude-code", Some("11111111-2222-3333-4444-555555555555"), false);
+            build_resume_command("claude-code", Some("11111111-2222-3333-4444-555555555555"), false, false);
         assert!(resume.contains("claude --resume 11111111-2222-3333-4444-555555555555"));
         // Legacy rows (no recorded session id) keep the --continue fallback.
-        let legacy = build_resume_command("claude-code", None, false);
+        let legacy = build_resume_command("claude-code", None, false, false);
         assert!(legacy.contains("claude --continue"));
         assert!(!legacy.contains("--resume"));
         // Codex owns its session IDs, so resume the most recent transcript in
         // the current worktree rather than launching a blank conversation.
         assert_eq!(
-            build_resume_command("codex", None, false),
+            build_resume_command("codex", None, false, false),
             "codex resume --last\n"
         );
+        assert_eq!(
+            build_resume_command("codex", None, true, false),
+            "codex resume --last --dangerously-bypass-approvals-and-sandbox\n"
+        );
+        assert!(build_resume_command(
+            "claude-code",
+            Some("11111111-2222-3333-4444-555555555555"),
+            true,
+            false,
+        )
+        .contains("--dangerously-skip-permissions"));
         // Agents with no resume concept are simply relaunched.
-        assert_eq!(build_resume_command("aider", None, false), "aider\n");
+        assert_eq!(build_resume_command("aider", None, false, false), "aider\n");
     }
 
     #[test]
     fn test_build_resume_command_rejects_non_uuid() {
         // A non-UUID id means a tampered DB — never interpolate it into the
         // shell command; fall back to --continue.
-        let cmd = build_resume_command("claude-code", Some("x; rm -rf ~"), false);
+        let cmd = build_resume_command("claude-code", Some("x; rm -rf ~"), false, false);
         assert!(!cmd.contains("rm -rf"));
         assert!(cmd.contains("claude --continue"));
     }

@@ -246,6 +246,9 @@ async fn dispatch(app_handle: &AppHandle, method: &str, params: Value) -> Result
         "update_task_status" => handle_update_task_status(&ctx, params).await,
         "update_task_description" => handle_update_task_description(&ctx, params),
         "delete_task" => handle_delete_task(&ctx, params).await,
+        "get_latest_task_plan" => handle_get_latest_task_plan(&ctx, params),
+        "start_task_plan" => handle_start_task_plan(&ctx, params).await,
+        "confirm_task_plan" => handle_confirm_task_plan(&ctx, params).await,
         "create_session" => handle_create_session(&ctx, params).await,
         "stop_session" => handle_stop_session(&ctx, params).await,
         "reattach_session" => handle_reattach_session(&ctx, params).await,
@@ -330,6 +333,59 @@ async fn handle_delete_task(ctx: &AppContext, params: Value) -> Result<Value, St
     Ok(json!({}))
 }
 
+fn handle_get_latest_task_plan(ctx: &AppContext, params: Value) -> Result<Value, String> {
+    let repo_id = params["repo_id"]
+        .as_i64()
+        .ok_or("Missing or invalid repo_id")?;
+    let run = racc_core::commands::planner::get_latest_task_plan(ctx, repo_id)
+        .map_err(|error| error.to_string())?;
+    serde_json::to_value(run).map_err(|error| error.to_string())
+}
+
+async fn handle_start_task_plan(ctx: &AppContext, params: Value) -> Result<Value, String> {
+    let repo_id = params["repo_id"]
+        .as_i64()
+        .ok_or("Missing or invalid repo_id")?;
+    let source_input = params["source_input"]
+        .as_str()
+        .ok_or("Missing or invalid source_input")?
+        .to_string();
+    let agent = params["agent"]
+        .as_str()
+        .ok_or("Missing or invalid agent")?
+        .to_string();
+    let run = racc_core::commands::planner::start_task_plan(
+        ctx,
+        repo_id,
+        source_input,
+        agent,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    serde_json::to_value(run).map_err(|error| error.to_string())
+}
+
+async fn handle_confirm_task_plan(ctx: &AppContext, params: Value) -> Result<Value, String> {
+    let run_id = params["run_id"]
+        .as_i64()
+        .ok_or("Missing or invalid run_id")?;
+    let selected_keys = params["selected_keys"]
+        .as_array()
+        .ok_or("Missing or invalid selected_keys")?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "selected_keys must contain only strings".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let tasks = racc_core::commands::planner::confirm_task_plan(ctx, run_id, selected_keys)
+        .await
+        .map_err(|error| error.to_string())?;
+    serde_json::to_value(tasks).map_err(|error| error.to_string())
+}
+
 // --- Session handlers ---
 
 async fn handle_create_session(ctx: &AppContext, params: Value) -> Result<Value, String> {
@@ -376,7 +432,8 @@ async fn handle_reattach_session(ctx: &AppContext, params: Value) -> Result<Valu
         .as_i64()
         .ok_or("Missing or invalid session_id")?;
 
-    let session = racc_core::commands::session::reattach_session(ctx, session_id)
+    let skip_permissions = params["skip_permissions"].as_bool();
+    let session = racc_core::commands::session::reattach_session(ctx, session_id, skip_permissions)
         .await
         .map_err(|e| e.to_string())?;
 

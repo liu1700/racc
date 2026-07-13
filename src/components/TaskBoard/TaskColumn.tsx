@@ -19,6 +19,7 @@ interface Props {
   repoPath: string;
   onSessionSelect?: () => void;
   onCreateTask?: (description: string) => Promise<Task>;
+  onGenerateTasks?: () => void;
   inputOpen?: boolean;
   onInputOpenChange?: (open: boolean) => void;
   draftValue?: string;
@@ -34,6 +35,7 @@ export function TaskColumn({
   repoPath,
   onSessionSelect,
   onCreateTask,
+  onGenerateTasks,
   inputOpen = false,
   onInputOpenChange,
   draftValue = "",
@@ -115,12 +117,20 @@ export function TaskColumn({
               onRemoveImage={(fn) => onRemoveImage?.(fn)}
             />
           ) : (
-            <button
-              onClick={() => onInputOpenChange?.(true)}
-              className="w-full rounded border border-dashed border-surface-3 py-1.5 text-center text-[10px] text-zinc-600 transition-colors hover:border-accent hover:text-accent"
-            >
-              + New Task
-            </button>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={() => onInputOpenChange?.(true)}
+                className="rounded border border-dashed border-surface-3 py-1.5 text-center text-[10px] text-zinc-600 transition-colors hover:border-accent hover:text-accent"
+              >
+                + New Task
+              </button>
+              <button
+                onClick={onGenerateTasks}
+                className="rounded border border-dashed border-surface-3 py-1.5 text-center text-[10px] text-zinc-600 transition-colors hover:border-accent hover:text-accent"
+              >
+                ✦ Generate
+              </button>
+            </div>
           )}
         </div>
       )}

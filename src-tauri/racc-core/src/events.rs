@@ -28,6 +28,8 @@ pub enum RaccEvent {
     },
     #[serde(rename = "merge_manager_changed")]
     MergeManagerChanged { repo_id: i64, run_id: Option<i64> },
+    #[serde(rename = "task_plan_changed")]
+    TaskPlanChanged { repo_id: i64, run_id: i64 },
 }
 
 #[async_trait]

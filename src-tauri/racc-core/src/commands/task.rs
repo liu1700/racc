@@ -20,7 +20,7 @@ pub struct Task {
     pub updated_at: String,
 }
 
-fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
+pub(crate) fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     Ok(Task {
         id: row.get(0)?,
         repo_id: row.get(1)?,
@@ -37,8 +37,27 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     })
 }
 
-const SELECT_TASK: &str =
+pub(crate) const SELECT_TASK: &str =
     "SELECT id, repo_id, description, images, status, session_id, supervisor_status, retry_count, last_retry_at, max_retries, created_at, updated_at FROM tasks";
+
+pub(crate) fn insert_task(
+    conn: &rusqlite::Connection,
+    repo_id: i64,
+    description: &str,
+    images: &str,
+) -> Result<Task, CoreError> {
+    conn.execute(
+        "INSERT INTO tasks (repo_id, description, images) VALUES (?1, ?2, ?3)",
+        rusqlite::params![repo_id, description, images],
+    )?;
+
+    let id = conn.last_insert_rowid();
+    Ok(conn.query_row(
+        &format!("{SELECT_TASK} WHERE id = ?1"),
+        [id],
+        row_to_task,
+    )?)
+}
 
 pub async fn create_task(
     ctx: &AppContext,
@@ -49,17 +68,7 @@ pub async fn create_task(
     let images = images.unwrap_or_else(|| "[]".to_string());
     let task = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
-        conn.execute(
-            "INSERT INTO tasks (repo_id, description, images) VALUES (?1, ?2, ?3)",
-            rusqlite::params![repo_id, description, images],
-        )?;
-
-        let id = conn.last_insert_rowid();
-        conn.query_row(
-            &format!("{SELECT_TASK} WHERE id = ?1"),
-            [id],
-            row_to_task,
-        )?
+        insert_task(&conn, repo_id, &description, &images)?
     };
 
     ctx.event_bus

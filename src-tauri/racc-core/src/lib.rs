@@ -23,6 +23,7 @@ pub struct TerminalData {
     pub data: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct AppContext {
     pub db: Arc<std::sync::Mutex<Connection>>,
     pub transport_manager: TransportManager,
