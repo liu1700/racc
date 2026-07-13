@@ -178,10 +178,11 @@ pub fn build_command(
     }
 }
 
-/// Mint the persistent conversation ID for agents that support resuming by
-/// session id (claude-code only today). Generated at session-create time,
+/// Mint the persistent conversation ID for agents that let the caller choose
+/// one at launch (claude-code only today). Generated at session-create time,
 /// stored in `sessions.agent_session_id`, and consumed by
-/// [`build_resume_command`]; agents with no resume-by-id concept get None.
+/// [`build_resume_command`]. Codex assigns its own ID, so it is resumed by the
+/// most recent transcript in the session's isolated working directory.
 pub fn new_agent_session_id(agent: &str) -> Option<String> {
     match agent {
         "claude-code" => Some(uuid::Uuid::new_v4().to_string()),
@@ -193,8 +194,9 @@ pub fn new_agent_session_id(agent: &str) -> Option<String> {
 /// restart killed the local PTY, or a remote tmux session is gone). For
 /// claude-code with a recorded session id we resume that exact conversation
 /// (`--resume <uuid>`); legacy rows (NULL `agent_session_id`) fall back to
-/// `--continue`, which picks the most recent conversation in the cwd. Agents
-/// with no resume concept are simply relaunched — for them, relaunch IS resume.
+/// `--continue`, which picks the most recent conversation in the cwd. Codex
+/// similarly resumes its most recent transcript in the cwd with
+/// `codex resume --last`. Agents with no resume concept are simply relaunched.
 pub fn build_resume_command(agent: &str, agent_session_id: Option<&str>, rtk_remote: bool) -> String {
     match agent {
         "claude-code" => {
@@ -207,6 +209,7 @@ pub fn build_resume_command(agent: &str, agent_session_id: Option<&str>, rtk_rem
                 None => format!("{}claude --continue\n", prefix),
             }
         }
+        "codex" => "codex resume --last\n".to_string(),
         _ => build_command(agent, "", false, rtk_remote, None),
     }
 }
@@ -407,6 +410,12 @@ mod tests {
         let legacy = build_resume_command("claude-code", None, false);
         assert!(legacy.contains("claude --continue"));
         assert!(!legacy.contains("--resume"));
+        // Codex owns its session IDs, so resume the most recent transcript in
+        // the current worktree rather than launching a blank conversation.
+        assert_eq!(
+            build_resume_command("codex", None, false),
+            "codex resume --last\n"
+        );
         // Agents with no resume concept are simply relaunched.
         assert_eq!(build_resume_command("aider", None, false), "aider\n");
     }

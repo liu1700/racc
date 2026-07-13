@@ -912,8 +912,8 @@ pub async fn reattach_session(
 
         // cd into the worktree first (the command ignores cwd); only executed
         // if tmux has to recreate the session — in that case the original
-        // claude process is gone, so resume the recorded conversation instead
-        // of starting a fresh one.
+        // agent process is gone, so resume the recorded conversation instead
+        // of starting a fresh one. Codex uses the cwd to select its transcript.
         let agent_cmd = format!(
             "cd {} && {}",
             remote_worktree,
@@ -972,7 +972,8 @@ pub async fn reattach_session(
 
         // For claude-code, resume the exact recorded conversation
         // (`--resume <uuid>`); legacy rows without one fall back to
-        // `--continue`. Other agents are simply relaunched.
+        // `--continue`. Codex resumes the latest transcript scoped to this cwd.
+        // Agents without resume support are simply relaunched.
         let resume_cmd = agent::build_resume_command(&agent, agent_session_id.as_deref(), false);
 
         // Watch the resume outcome (subscribe BEFORE typing the command so no
@@ -1203,7 +1204,8 @@ pub async fn reconnect_session(
     // The command ignores cwd; cd first so behaviour matches the create/reattach
     // paths. For a plain `tmux attach` this command body is never executed — it
     // only runs if tmux died between the probe above and this spawn, in which
-    // case the original claude is gone and resuming is the right move.
+    // case the original agent is gone and resuming is the right move. Codex
+    // uses the cwd to select its transcript.
     let agent_cmd = format!(
         "cd {} && {}",
         remote_worktree,
