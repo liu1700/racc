@@ -35,6 +35,7 @@ interface SessionState {
     skipPermissions?: boolean,
     serverId?: string,
     taskDescription?: string,
+    agent?: string,
   ) => Promise<void>;
   reattachSession: (sessionId: number, skipPermissions?: boolean) => Promise<void>;
   openSession: (sessionId: number) => Promise<void>;
@@ -202,7 +203,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  createSession: async (repoId, useWorktree, branch, skipPermissions = true, serverId, taskDescription) => {
+  createSession: async (
+    repoId,
+    useWorktree,
+    branch,
+    skipPermissions = true,
+    serverId,
+    taskDescription,
+    agent = "claude-code",
+  ) => {
     set({ error: null });
     try {
       // PTY is now spawned by Rust-side create_session
@@ -210,7 +219,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         repoId,
         useWorktree,
         branch: branch || null,
-        agent: "claude-code",
+        agent,
         taskDescription: taskDescription || null,
         serverId: serverId || null,
         skipPermissions,

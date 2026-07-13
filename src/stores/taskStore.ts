@@ -38,7 +38,8 @@ interface TaskState {
     useWorktree: boolean,
     branch: string | undefined,
     skipPermissions: boolean,
-    serverId?: string
+    serverId?: string,
+    agent?: string,
   ) => Promise<void>;
   resendTask: (taskId: number) => Promise<void>;
   updateTaskStatus: (
@@ -118,7 +119,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     useWorktree: boolean,
     branch: string | undefined,
     skipPermissions: boolean,
-    serverId?: string
+    serverId?: string,
+    agent = "claude-code",
   ) => {
     // Import sessionStore dynamically to avoid circular deps
     const { useSessionStore } = await import("./sessionStore");
@@ -154,8 +156,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // Tell sessionStore not to auto-switch to terminal tab
     useSessionStore.setState({ _skipTerminalSwitch: true });
 
-    // Create session with task description — Rust builds the `claude '...'` command
-    await createSession(repoId, useWorktree, branch, skipPermissions, serverId, prompt);
+    // Create the selected agent session, then inject the task once its TUI is ready.
+    await createSession(
+      repoId,
+      useWorktree,
+      branch,
+      skipPermissions,
+      serverId,
+      prompt,
+      agent,
+    );
 
     // Find the newly created session by diffing session IDs
     const afterRepos = useSessionStore.getState().repos;
@@ -171,7 +181,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     await get().updateTaskStatus(taskId, "working", newSession.id);
   },
 
-  // Restart a fired task: kill its current Claude Code session (stops the remote
+  // Restart a fired task: kill its current agent session (stops the remote
   // tmux + agent) and launch a fresh one with the SAME settings — same machine,
   // branch and worktree, which are already trusted and logged in. Used when a
   // session is stuck (e.g. the first-run trust dialog ate the prompt) or dead;
@@ -209,7 +219,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       !!linked?.worktree_path,
       linked?.branch ?? undefined,
       true,
-      linked?.server_id ?? undefined
+      linked?.server_id ?? undefined,
+      linked?.agent ?? "claude-code",
     );
   },
 

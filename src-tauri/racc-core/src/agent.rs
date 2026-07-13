@@ -67,7 +67,20 @@ impl HealthPatterns {
                     stuck_timeout_secs: 120,
                 }
             }
-            AgentType::Codex | AgentType::Generic => {
+            AgentType::Codex => {
+                static COMPLETION: OnceLock<Regex> = OnceLock::new();
+                static ERROR: OnceLock<Regex> = OnceLock::new();
+                Self {
+                    completion: COMPLETION.get_or_init(|| {
+                        Regex::new(r"(?m)(›\s*(?:Ask Codex to do anything)?\s*$|\$\s*$|#\s*$|>\s*$)").unwrap()
+                    }),
+                    error: ERROR.get_or_init(|| {
+                        Regex::new(r"(?m)(^Error:|panicked at|FATAL|exit code [1-9])").unwrap()
+                    }),
+                    stuck_timeout_secs: 180,
+                }
+            }
+            AgentType::Generic => {
                 static COMPLETION: OnceLock<Regex> = OnceLock::new();
                 static ERROR: OnceLock<Regex> = OnceLock::new();
                 Self {
@@ -153,7 +166,14 @@ pub fn build_command(
             format!("{}claude{}{}\n", claude_path_prefix(rtk_remote), dangerously, session_arg)
         }
         "aider" => "aider\n".to_string(),
-        "codex" => "codex\n".to_string(),
+        "codex" => {
+            let dangerously = if skip_permissions {
+                " --dangerously-bypass-approvals-and-sandbox"
+            } else {
+                ""
+            };
+            format!("codex{}\n", dangerously)
+        }
         _ => format!("{}\n", agent),
     }
 }
@@ -239,7 +259,16 @@ pub fn is_agent_ready(agent_type: &AgentType, text: &str) -> bool {
                 || t.contains("bypasspermissions")
                 || t.contains("auto-acceptedits")
         }
-        _ => {
+        // Codex uses `›` for its composer prompt. Keep the generic markers as
+        // fallbacks for CLI versions/themes that render a different glyph.
+        AgentType::Codex => {
+            text.contains('›')
+                || text.contains("❯")
+                || text.contains("╭")
+                || text.ends_with("$ ")
+                || text.ends_with("> ")
+        }
+        AgentType::Aider | AgentType::Generic => {
             text.contains("❯")
                 || text.contains("╭")
                 || text.ends_with("$ ")
@@ -248,15 +277,17 @@ pub fn is_agent_ready(agent_type: &AgentType, text: &str) -> bool {
     }
 }
 
-/// Build PTY input to inject a task into an already-running agent.
+/// Build the prompt text to inject into an already-running agent.
+///
+/// Submission (Enter) is deliberately sent as a separate PTY write by the
+/// session injector. Agent TUIs can interpret a large, combined `text + \r`
+/// write as a paste and leave the text in the composer without submitting it.
 pub fn inject_task_input(agent_type: &AgentType, task_description: &str) -> Vec<u8> {
-    // Use \r (carriage return) to simulate Enter in PTY raw mode.
-    // Agent TUIs (Claude Code, etc.) expect \r, not \n.
     match agent_type {
-        AgentType::ClaudeCode => format!("{}\r", task_description).into_bytes(),
-        AgentType::Aider => format!("/ask {}\r", task_description).into_bytes(),
-        AgentType::Codex => format!("{}\r", task_description).into_bytes(),
-        AgentType::Generic => format!("{}\r", task_description).into_bytes(),
+        AgentType::Aider => format!("/ask {}", task_description).into_bytes(),
+        AgentType::ClaudeCode | AgentType::Codex | AgentType::Generic => {
+            task_description.as_bytes().to_vec()
+        }
     }
 }
 
@@ -350,6 +381,18 @@ mod tests {
     }
 
     #[test]
+    fn test_build_command_codex_skip_permissions() {
+        let safe = build_command("codex", "/path", false, false, None);
+        assert_eq!(safe, "codex\n");
+
+        let skipped = build_command("codex", "/path", true, false, None);
+        assert_eq!(
+            skipped,
+            "codex --dangerously-bypass-approvals-and-sandbox\n"
+        );
+    }
+
+    #[test]
     fn test_build_command_other_agents_ignore_session_uuid() {
         let cmd = build_command("aider", "/path", false, false, Some("abc-123"));
         assert_eq!(cmd, "aider\n");
@@ -397,7 +440,16 @@ mod tests {
     #[test]
     fn test_inject_task_aider() {
         let input = inject_task_input(&AgentType::Aider, "fix the bug");
-        assert_eq!(String::from_utf8(input).unwrap(), "/ask fix the bug\r");
+        assert_eq!(String::from_utf8(input).unwrap(), "/ask fix the bug");
+    }
+
+    #[test]
+    fn test_task_input_does_not_include_submit_key() {
+        for agent_type in [AgentType::ClaudeCode, AgentType::Codex, AgentType::Generic] {
+            let input = inject_task_input(&agent_type, "fix the bug");
+            assert_eq!(input, b"fix the bug");
+            assert!(!input.ends_with(b"\r"));
+        }
     }
 
     #[test]
@@ -427,6 +479,19 @@ mod tests {
     fn test_generic_ready_still_uses_prompt_chars() {
         assert!(is_agent_ready(&AgentType::Generic, "user@host:~$ "));
         assert!(!is_agent_ready(&AgentType::Generic, "still working..."));
+    }
+
+    #[test]
+    fn test_codex_ready_uses_composer_prompt() {
+        assert!(is_agent_ready(&AgentType::Codex, "›  Ask Codex to do anything"));
+        assert!(!is_agent_ready(&AgentType::Codex, "Loading model..."));
+    }
+
+    #[test]
+    fn test_analyze_output_completion_codex() {
+        let output = b"Finished updating the files\n\xe2\x80\xba  Ask Codex to do anything\n";
+        let signal = analyze_output(output, &AgentType::Codex, 4096);
+        assert!(matches!(signal, AgentSignal::Completion));
     }
 
     #[test]

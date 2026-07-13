@@ -7,7 +7,25 @@ use crate::AppContext;
 use crate::error::CoreError;
 use crate::events::RaccEvent;
 use crate::transport::local_pty::LocalPtyTransport;
+use crate::transport::manager::TransportManager;
 use crate::rtk;
+
+/// Type a task into an agent composer, then submit it with a distinct Enter
+/// event. Keeping these as separate PTY writes is important: both Claude Code
+/// and Codex can treat a single large `prompt + Enter` write as pasted text and
+/// leave it sitting in the composer instead of starting the agent.
+async fn inject_and_submit_task(
+    transport_manager: &TransportManager,
+    session_id: i64,
+    agent_type: &agent::AgentType,
+    task_description: &str,
+) -> Result<(), crate::transport::TransportError> {
+    let task_input = agent::inject_task_input(agent_type, task_description);
+    transport_manager.write(session_id, &task_input).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    // Agent TUIs in PTY raw mode expect carriage return for Enter.
+    transport_manager.write(session_id, b"\r").await
+}
 
 // --- Types ---
 
@@ -544,7 +562,7 @@ pub(crate) async fn create_session_from_base(
     // task into it (the dialog renders a `❯` too, which would trigger a premature
     // inject that the dialog swallows, leaving the agent idle at an empty prompt).
     if let Some(mut rx) = injector_rx {
-        let transports = ctx.transport_manager.transports();
+        let transport_manager = ctx.transport_manager.clone();
         let agent_clone = agent.clone();
         let task_desc = task_description.clone();
         tokio::spawn(async move {
@@ -564,12 +582,10 @@ pub(crate) async fn create_session_from_base(
                                 // (1) Auto-accept the workspace trust dialog once.
                                 if !trust_handled && agent::is_trust_dialog(&text) {
                                     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                                    let ts = transports.lock().await;
-                                    if let Some(t) = ts.get(&session_id) {
-                                        // Enter confirms the pre-selected "Yes, I trust".
-                                        let _ = t.write(b"\r").await;
+                                    // Enter confirms the pre-selected "Yes, I trust".
+                                    if let Err(error) = transport_manager.write(session_id, b"\r").await {
+                                        log::warn!("Failed to accept trust dialog for session {session_id}: {error}");
                                     }
-                                    drop(ts);
                                     trust_handled = true;
                                     buffer.clear();
                                     continue;
@@ -578,10 +594,13 @@ pub(crate) async fn create_session_from_base(
                                 // (2) Inject the task at the real input prompt.
                                 if agent::is_agent_ready(&agent_type, &text) {
                                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                    let task_input = agent::inject_task_input(&agent_type, &task_desc);
-                                    let ts = transports.lock().await;
-                                    if let Some(t) = ts.get(&session_id) {
-                                        let _ = t.write(&task_input).await;
+                                    if let Err(error) = inject_and_submit_task(
+                                        &transport_manager,
+                                        session_id,
+                                        &agent_type,
+                                        &task_desc,
+                                    ).await {
+                                        log::warn!("Failed to inject task into session {session_id}: {error}");
                                     }
                                     break;
                                 }
@@ -599,10 +618,13 @@ pub(crate) async fn create_session_from_base(
                     _ = &mut timeout => {
                         // Timeout: send anyway as fallback
                         log::warn!("Timed out waiting for agent prompt, sending task anyway");
-                        let task_input = agent::inject_task_input(&agent_type, &task_desc);
-                        let ts = transports.lock().await;
-                        if let Some(t) = ts.get(&session_id) {
-                            let _ = t.write(&task_input).await;
+                        if let Err(error) = inject_and_submit_task(
+                            &transport_manager,
+                            session_id,
+                            &agent_type,
+                            &task_desc,
+                        ).await {
+                            log::warn!("Failed to inject fallback task into session {session_id}: {error}");
                         }
                         break;
                     }
@@ -1322,6 +1344,65 @@ pub async fn get_session_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    struct RecordingTransport {
+        writes: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    #[async_trait]
+    impl crate::transport::Transport for RecordingTransport {
+        async fn write(
+            &self,
+            data: &[u8],
+        ) -> Result<(), crate::transport::TransportError> {
+            self.writes.lock().await.push(data.to_vec());
+            Ok(())
+        }
+
+        async fn resize(
+            &self,
+            _cols: u16,
+            _rows: u16,
+        ) -> Result<(), crate::transport::TransportError> {
+            Ok(())
+        }
+
+        async fn close(&self) -> Result<(), crate::transport::TransportError> {
+            Ok(())
+        }
+
+        fn is_alive(&self) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn task_prompt_and_submit_are_separate_pty_writes() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let transport_manager = TransportManager::new();
+        transport_manager
+            .insert(
+                42,
+                Box::new(RecordingTransport {
+                    writes: writes.clone(),
+                }),
+            )
+            .await;
+
+        inject_and_submit_task(
+            &transport_manager,
+            42,
+            &agent::AgentType::Codex,
+            "fix the bug",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(*writes.lock().await, vec![b"fix the bug".to_vec(), b"\r".to_vec()]);
+    }
 
     #[test]
     fn merge_worktree_can_be_created_from_an_explicit_base_ref() {

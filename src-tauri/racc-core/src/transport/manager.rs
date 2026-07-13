@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 
 const MAX_BUFFER_SIZE: usize = 1_048_576; // 1MB per session
 
+#[derive(Clone)]
 pub struct TransportManager {
     transports: Arc<Mutex<HashMap<i64, Box<dyn Transport>>>>,
     buffers: Arc<Mutex<HashMap<i64, RingBuffer>>>,
