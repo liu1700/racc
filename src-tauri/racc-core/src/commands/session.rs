@@ -176,6 +176,19 @@ fn build_worktree_add_args(
     args
 }
 
+fn worktree_has_other_sessions(
+    conn: &Connection,
+    session_id: i64,
+    worktree_path: &str,
+) -> Result<bool, CoreError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sessions WHERE id != ?1 AND worktree_path = ?2",
+        rusqlite::params![session_id, worktree_path],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 // --- Commands ---
 
 pub async fn import_repo(
@@ -718,7 +731,12 @@ pub async fn remove_session(
     let _ = ctx.transport_manager.remove(session_id).await;
 
     // Read everything we need, then release the lock before any async/SSH work.
-    let (worktree_path, repo_path, server_id): (Option<String>, Option<String>, Option<String>) = {
+    let (worktree_path, repo_path, server_id, worktree_is_shared): (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
+    ) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
         let (worktree_path, repo_id, server_id): (Option<String>, i64, Option<String>) = conn
             .query_row(
@@ -732,7 +750,12 @@ pub async fn remove_session(
                 row.get(0)
             })
             .ok();
-        (worktree_path, repo_path, server_id)
+        let worktree_is_shared = worktree_path
+            .as_deref()
+            .map(|path| worktree_has_other_sessions(&conn, session_id, path))
+            .transpose()?
+            .unwrap_or(false);
+        (worktree_path, repo_path, server_id, worktree_is_shared)
     };
 
     // For remote sessions, kill the tmux session by name too — the transport may
@@ -749,7 +772,11 @@ pub async fn remove_session(
     // a failure here (e.g. the folder was already deleted manually, or the
     // worktree is locked) must NOT block removing the session from Racc —
     // otherwise the session record survives and reappears in the UI.
-    if delete_worktree {
+    if delete_worktree && worktree_is_shared {
+        log::warn!(
+            "Keeping worktree for session {session_id} because another session still references it"
+        );
+    } else if delete_worktree {
         if let (Some(wt_path), Some(repo_path)) = (&worktree_path, &repo_path) {
             match Command::new("git")
                 .args(["worktree", "remove", wt_path, "--force"])
@@ -1421,5 +1448,26 @@ mod tests {
                 "origin/main",
             ]
         );
+    }
+
+    #[test]
+    fn shared_worktree_detection_excludes_the_session_being_removed() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE sessions (
+                id INTEGER PRIMARY KEY,
+                worktree_path TEXT
+            );
+            INSERT INTO sessions (id, worktree_path) VALUES
+                (1, '/tmp/shared'),
+                (2, '/tmp/shared'),
+                (3, '/tmp/solo');
+            ",
+        )
+        .unwrap();
+
+        assert!(worktree_has_other_sessions(&conn, 1, "/tmp/shared").unwrap());
+        assert!(!worktree_has_other_sessions(&conn, 3, "/tmp/solo").unwrap());
     }
 }

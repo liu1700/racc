@@ -222,6 +222,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       linked?.server_id ?? undefined,
       linked?.agent ?? "claude-code",
     );
+
+    // fireTask has now linked the task to the replacement session. Remove the
+    // completed session record so Resend behaves like a restart in the sidebar
+    // instead of leaving the old and new sessions visible side-by-side. Keep
+    // the worktree: the replacement session is deliberately reusing it.
+    if (task.session_id != null) {
+      await useSessionStore.getState().removeSession(task.session_id, false);
+    }
   },
 
   updateTaskStatus: async (
