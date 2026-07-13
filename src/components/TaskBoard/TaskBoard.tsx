@@ -2,8 +2,10 @@ import { useEffect, useMemo } from "react";
 import { transport } from "../../services/transport";
 import type { TaskStatus } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
+import { useMergeStore } from "../../stores/mergeStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { TaskColumn } from "./TaskColumn";
+import { MergeManagerColumn } from "./MergeManagerColumn";
 
 const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
@@ -27,6 +29,16 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
     removeDraftImage,
   } = useTaskStore();
   const repos = useSessionStore((s) => s.repos);
+  const initializeMergeEvents = useMergeStore((s) => s.initializeEvents);
+  const loadMergeManager = useMergeStore((s) => s.load);
+
+  useEffect(() => {
+    initializeMergeEvents();
+  }, [initializeMergeEvents]);
+
+  useEffect(() => {
+    if (repoId) void loadMergeManager(repoId);
+  }, [repoId, loadMergeManager]);
 
   const repoPath = useMemo(() => {
     if (!repoId) return "";
@@ -122,31 +134,32 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
     ])
   ) as Record<TaskStatus, typeof tasks>;
 
+  const renderTaskColumn = (status: TaskStatus) => (
+    <TaskColumn
+      key={status}
+      status={status}
+      tasks={tasksByStatus[status]}
+      repoPath={repoPath}
+      onSessionSelect={onSessionSelect}
+      onCreateTask={status === "open" ? (desc) => createTask(repoId, desc) : undefined}
+      inputOpen={status === "open" ? draftInputOpen : false}
+      onInputOpenChange={status === "open" ? setDraftInputOpen : undefined}
+      draftValue={status === "open" ? draftValue : ""}
+      onDraftChange={status === "open" ? setDraftValue : undefined}
+      draftImages={status === "open" ? draftImages : []}
+      onAddImage={status === "open" ? addDraftImage : undefined}
+      onRemoveImage={status === "open" ? removeDraftImage : undefined}
+    />
+  );
+
   return (
-    <div className="grid flex-1 grid-cols-3 gap-2 overflow-x-auto p-3">
-      {COLUMNS.map((status) => (
-        <TaskColumn
-          key={status}
-          status={status}
-          tasks={tasksByStatus[status]}
-          repoPath={repoPath}
-          onSessionSelect={onSessionSelect}
-          onCreateTask={
-            status === "open"
-              ? (desc) => createTask(repoId, desc)
-              : undefined
-          }
-          inputOpen={status === "open" ? draftInputOpen : false}
-          onInputOpenChange={
-            status === "open" ? setDraftInputOpen : undefined
-          }
-          draftValue={status === "open" ? draftValue : ""}
-          onDraftChange={status === "open" ? setDraftValue : undefined}
-          draftImages={status === "open" ? draftImages : []}
-          onAddImage={status === "open" ? addDraftImage : undefined}
-          onRemoveImage={status === "open" ? removeDraftImage : undefined}
-        />
-      ))}
+    <div className="flex-1 overflow-x-auto">
+      <div className="grid h-full min-w-[1080px] grid-cols-[minmax(220px,1fr)_minmax(240px,1fr)_minmax(300px,1.15fr)_minmax(220px,1fr)] gap-2 p-3">
+        {renderTaskColumn("open")}
+        {renderTaskColumn("working")}
+        <MergeManagerColumn repoId={repoId} onSessionSelect={onSessionSelect} />
+        {renderTaskColumn("closed")}
+      </div>
     </div>
   );
 }

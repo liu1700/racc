@@ -140,6 +140,24 @@ fn get_current_branch(repo_path: &str) -> Result<String, CoreError> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn build_worktree_add_args(
+    worktree_path: &str,
+    branch: &str,
+    base_ref: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "worktree".to_string(),
+        "add".to_string(),
+        worktree_path.to_string(),
+        "-b".to_string(),
+        branch.to_string(),
+    ];
+    if let Some(base_ref) = base_ref {
+        args.push(base_ref.to_string());
+    }
+    args
+}
+
 // --- Commands ---
 
 pub async fn import_repo(
@@ -226,6 +244,36 @@ pub async fn create_session(
     server_id: Option<String>,
     skip_permissions: Option<bool>,
 ) -> Result<Session, CoreError> {
+    create_session_from_base(
+        ctx,
+        repo_id,
+        use_worktree,
+        branch,
+        agent,
+        task_description,
+        server_id,
+        skip_permissions,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn create_session_from_base(
+    ctx: &AppContext,
+    repo_id: i64,
+    use_worktree: bool,
+    branch: Option<String>,
+    agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,
+    skip_permissions: Option<bool>,
+    base_ref: Option<String>,
+) -> Result<Session, CoreError> {
+    if base_ref.is_some() && server_id.is_some() {
+        return Err(CoreError::Other(
+            "Explicit worktree base refs are only supported for local sessions".to_string(),
+        ));
+    }
     let agent = agent.unwrap_or_else(|| "claude-code".to_string());
     let task_description = task_description.unwrap_or_default();
     let skip_permissions = skip_permissions.unwrap_or(false);
@@ -256,23 +304,41 @@ pub async fn create_session(
         let home = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .ok_or_else(|| CoreError::Other("Could not find home directory".to_string()))?;
+        let worktree_leaf = if base_ref.is_some() {
+            branch.replace('/', "-")
+        } else {
+            branch.clone()
+        };
         let wt_dir = home
             .join("racc-worktrees")
             .join(&repo_name)
-            .join(&branch);
+            .join(worktree_leaf);
 
         let wt_path = wt_dir.to_string_lossy().to_string();
+
+        if base_ref.is_some() && wt_dir.exists() {
+            return Err(CoreError::Git(format!(
+                "Merge worktree already exists at {wt_path}; remove the stale session/worktree before retrying"
+            )));
+        }
 
         if !wt_dir.exists() {
             std::fs::create_dir_all(wt_dir.parent().unwrap())?;
 
+            let add_args = build_worktree_add_args(&wt_path, &branch, base_ref.as_deref());
             let output = Command::new("git")
-                .args(["worktree", "add", &wt_path, "-b", &branch])
+                .args(&add_args)
                 .current_dir(&repo_path)
                 .output()
                 .map_err(|e| CoreError::Git(format!("git worktree add failed: {e}")))?;
 
             if !output.status.success() {
+                if base_ref.is_some() {
+                    return Err(CoreError::Git(format!(
+                        "git worktree add failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )));
+                }
                 let output2 = Command::new("git")
                     .args(["worktree", "add", &wt_path, &branch])
                     .current_dir(&repo_path)
@@ -1251,4 +1317,28 @@ pub async fn get_session_diff(
         .map_err(|e| CoreError::Git(format!("Failed to get diff: {e}")))?;
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_worktree_can_be_created_from_an_explicit_base_ref() {
+        assert_eq!(
+            build_worktree_add_args(
+                "/tmp/racc-worktrees/widgets/racc-ship-9",
+                "racc/ship-9",
+                Some("origin/main"),
+            ),
+            vec![
+                "worktree",
+                "add",
+                "/tmp/racc-worktrees/widgets/racc-ship-9",
+                "-b",
+                "racc/ship-9",
+                "origin/main",
+            ]
+        );
+    }
 }
