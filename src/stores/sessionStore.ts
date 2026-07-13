@@ -236,10 +236,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
 
-  reattachSession: async (sessionId, _skipPermissions = true) => {
+  reattachSession: async (sessionId, skipPermissions = true) => {
     set({ error: null });
     try {
-      const session = await transport.call("reattach_session", { sessionId }) as Session;
+      const session = await transport.call("reattach_session", {
+        sessionId,
+        skipPermissions,
+      }) as Session;
 
       // Start tracking PTY output via transport:data events
       startTracking(session.id);

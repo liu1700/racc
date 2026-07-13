@@ -167,12 +167,42 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, CoreError> {
         )?;
     }
 
+    if version < 5 {
+        conn.execute_batch(
+            "
+            -- NULL identifies legacy sessions whose original launch choice was
+            -- not persisted. New sessions always store 0 or 1.
+            ALTER TABLE sessions ADD COLUMN skip_permissions INTEGER;
+
+            CREATE TABLE task_plan_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id INTEGER NOT NULL,
+                session_id INTEGER,
+                agent TEXT NOT NULL,
+                source_input TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'starting',
+                result_json TEXT,
+                error TEXT,
+                created_task_ids TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_task_plan_runs_repo_status
+                ON task_plan_runs(repo_id, status);
+
+            PRAGMA user_version = 5;
+            ",
+        )?;
+    }
+
     Ok(conn)
 }
 
 pub fn reset_db(conn: &Connection) -> Result<(), CoreError> {
     conn.execute_batch(
         "
+        DROP TABLE IF EXISTS task_plan_runs;
         DROP TABLE IF EXISTS merge_queue_items;
         DROP TABLE IF EXISTS merge_runs;
         DROP TABLE IF EXISTS merge_settings;
@@ -201,7 +231,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("user_version should be readable");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         for table in ["merge_settings", "merge_runs", "merge_queue_items"] {
             let exists: i64 = conn
@@ -213,6 +243,34 @@ mod tests {
                 .expect("table lookup should succeed");
             assert_eq!(exists, 1, "missing table {table}");
         }
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn migration_v5_creates_task_planner_and_session_permission_column() {
+        let path = std::env::temp_dir()
+            .join(format!("racc-planner-migration-{}.db", uuid::Uuid::new_v4()));
+        let conn = init_db(path.clone()).expect("database should initialize");
+
+        let planner_table: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'task_plan_runs'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("planner table query");
+        assert_eq!(planner_table, 1);
+
+        let permission_column: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'skip_permissions'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("session column query");
+        assert_eq!(permission_column, 1);
 
         drop(conn);
         let _ = std::fs::remove_file(path);

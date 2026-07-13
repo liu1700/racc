@@ -394,9 +394,9 @@ pub(crate) async fn create_session_from_base(
     let (session_id, worktree_path_clone, created_at, updated_at) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
         conn.execute(
-            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id, agent_session_id)
-             VALUES (?1, ?2, ?3, ?4, 'Running', ?5, ?6)",
-            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id, agent_session_id],
+            "INSERT INTO sessions (repo_id, agent, worktree_path, branch, status, server_id, agent_session_id, skip_permissions)
+             VALUES (?1, ?2, ?3, ?4, 'Running', ?5, ?6, ?7)",
+            rusqlite::params![repo_id, agent, worktree_path, branch_name, server_id, agent_session_id, skip_permissions],
         )?;
 
         let id = conn.last_insert_rowid();
@@ -814,6 +814,7 @@ pub async fn remove_session(
 pub async fn reattach_session(
     ctx: &AppContext,
     session_id: i64,
+    legacy_skip_permissions: Option<bool>,
 ) -> Result<Session, CoreError> {
     let (status, worktree_path, repo_id): (String, Option<String>, i64) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
@@ -844,7 +845,7 @@ pub async fn reattach_session(
         }
     }
 
-    let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, repo_path) = {
+    let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, skip_permissions, repo_path) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
 
         conn.execute(
@@ -852,18 +853,25 @@ pub async fn reattach_session(
             [session_id],
         )?;
 
-        let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id): (String, Option<String>, String, String, Option<String>, Option<String>, Option<String>) = conn
+        let (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, stored_skip_permissions): (String, Option<String>, String, String, Option<String>, Option<String>, Option<String>, Option<bool>) = conn
             .query_row(
-                "SELECT agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id FROM sessions WHERE id = ?1",
+                "SELECT agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, skip_permissions FROM sessions WHERE id = ?1",
                 [session_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
             )?;
 
         let repo_path: String = conn
             .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
             .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
 
-        (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, repo_path)
+        // Sessions created before migration v5 have NULL here. Preserve the
+        // frontend's historical reattach default for those legacy rows only;
+        // new rows always reuse their persisted launch choice.
+        let skip_permissions = stored_skip_permissions
+            .or(legacy_skip_permissions)
+            .unwrap_or(false);
+
+        (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, skip_permissions, repo_path)
     }; // DB lock released here -- safe for async transport work below
 
     if let Some(ref sid) = server_id {
@@ -917,7 +925,12 @@ pub async fn reattach_session(
         let agent_cmd = format!(
             "cd {} && {}",
             remote_worktree,
-            agent::build_resume_command(&agent, agent_session_id.as_deref(), rtk_remote)
+            agent::build_resume_command(
+                &agent,
+                agent_session_id.as_deref(),
+                skip_permissions,
+                rtk_remote,
+            )
         );
         let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
             session_id,
@@ -974,7 +987,12 @@ pub async fn reattach_session(
         // (`--resume <uuid>`); legacy rows without one fall back to
         // `--continue`. Codex resumes the latest transcript scoped to this cwd.
         // Agents without resume support are simply relaunched.
-        let resume_cmd = agent::build_resume_command(&agent, agent_session_id.as_deref(), false);
+        let resume_cmd = agent::build_resume_command(
+            &agent,
+            agent_session_id.as_deref(),
+            skip_permissions,
+            false,
+        );
 
         // Watch the resume outcome (subscribe BEFORE typing the command so no
         // output is missed): if claude reports "No conversation found" — the
@@ -1119,19 +1137,19 @@ pub async fn reconnect_session(
         return Ok(ReconnectOutcome::AlreadyLive);
     }
 
-    let (server_id, agent, branch, repo_path, agent_session_id) = {
+    let (server_id, agent, branch, repo_path, agent_session_id, skip_permissions) = {
         let conn = ctx.db.lock().map_err(|e| CoreError::Other(e.to_string()))?;
-        let (server_id, repo_id, agent, branch, agent_session_id): (Option<String>, i64, String, Option<String>, Option<String>) =
+        let (server_id, repo_id, agent, branch, agent_session_id, skip_permissions): (Option<String>, i64, String, Option<String>, Option<String>, Option<bool>) =
             conn.query_row(
-                "SELECT server_id, repo_id, agent, branch, agent_session_id FROM sessions WHERE id = ?1",
+                "SELECT server_id, repo_id, agent, branch, agent_session_id, skip_permissions FROM sessions WHERE id = ?1",
                 [session_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
             .map_err(|e| CoreError::NotFound(format!("Session not found: {e}")))?;
         let repo_path: String = conn
             .query_row("SELECT path FROM repos WHERE id = ?1", [repo_id], |row| row.get(0))
             .map_err(|e| CoreError::NotFound(format!("Repo not found: {e}")))?;
-        (server_id, agent, branch, repo_path, agent_session_id)
+        (server_id, agent, branch, repo_path, agent_session_id, skip_permissions.unwrap_or(false))
     };
 
     // Local sessions can't be silently re-attached — the PTY lived in-process and
@@ -1209,7 +1227,12 @@ pub async fn reconnect_session(
     let agent_cmd = format!(
         "cd {} && {}",
         remote_worktree,
-        agent::build_resume_command(&agent, agent_session_id.as_deref(), rtk_remote)
+        agent::build_resume_command(
+            &agent,
+            agent_session_id.as_deref(),
+            skip_permissions,
+            rtk_remote,
+        )
     );
     let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
         session_id,

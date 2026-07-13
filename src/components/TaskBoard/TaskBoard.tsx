@@ -1,11 +1,13 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { transport } from "../../services/transport";
 import type { TaskStatus } from "../../types/task";
 import { useTaskStore } from "../../stores/taskStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useSessionStore } from "../../stores/sessionStore";
+import { usePlannerStore } from "../../stores/plannerStore";
 import { TaskColumn } from "./TaskColumn";
 import { MergeManagerColumn } from "./MergeManagerColumn";
+import { TaskPlannerDialog } from "./TaskPlannerDialog";
 
 const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
@@ -15,6 +17,7 @@ interface Props {
 }
 
 export function TaskBoard({ repoId, onSessionSelect }: Props) {
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const {
     tasks,
     createTask,
@@ -31,10 +34,12 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
   const repos = useSessionStore((s) => s.repos);
   const initializeMergeEvents = useMergeStore((s) => s.initializeEvents);
   const loadMergeManager = useMergeStore((s) => s.load);
+  const initializePlannerEvents = usePlannerStore((s) => s.initializeEvents);
 
   useEffect(() => {
     initializeMergeEvents();
-  }, [initializeMergeEvents]);
+    initializePlannerEvents();
+  }, [initializeMergeEvents, initializePlannerEvents]);
 
   useEffect(() => {
     if (repoId) void loadMergeManager(repoId);
@@ -142,6 +147,7 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
       repoPath={repoPath}
       onSessionSelect={onSessionSelect}
       onCreateTask={status === "open" ? (desc) => createTask(repoId, desc) : undefined}
+      onGenerateTasks={status === "open" ? () => setPlannerOpen(true) : undefined}
       inputOpen={status === "open" ? draftInputOpen : false}
       onInputOpenChange={status === "open" ? setDraftInputOpen : undefined}
       draftValue={status === "open" ? draftValue : ""}
@@ -153,13 +159,21 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
   );
 
   return (
-    <div className="flex-1 overflow-x-auto">
-      <div className="grid h-full min-w-[1080px] grid-cols-[minmax(220px,1fr)_minmax(240px,1fr)_minmax(300px,1.15fr)_minmax(220px,1fr)] gap-2 p-3">
-        {renderTaskColumn("open")}
-        {renderTaskColumn("working")}
-        <MergeManagerColumn repoId={repoId} onSessionSelect={onSessionSelect} />
-        {renderTaskColumn("closed")}
+    <>
+      <div className="flex-1 overflow-x-auto">
+        <div className="grid h-full min-w-[1080px] grid-cols-[minmax(220px,1fr)_minmax(240px,1fr)_minmax(300px,1.15fr)_minmax(220px,1fr)] gap-2 p-3">
+          {renderTaskColumn("open")}
+          {renderTaskColumn("working")}
+          <MergeManagerColumn repoId={repoId} onSessionSelect={onSessionSelect} />
+          {renderTaskColumn("closed")}
+        </div>
       </div>
-    </div>
+      <TaskPlannerDialog
+        repoId={repoId}
+        open={plannerOpen}
+        onClose={() => setPlannerOpen(false)}
+        onSessionSelect={onSessionSelect}
+      />
+    </>
   );
 }
