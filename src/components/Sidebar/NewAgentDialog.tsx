@@ -8,6 +8,7 @@ interface Props {
 }
 
 export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
+  const [agent, setAgent] = useState("claude-code");
   const [useWorktree, setUseWorktree] = useState(false);
   const [branch, setBranch] = useState("");
   const [skipPermissions, setSkipPermissions] = useState(true);
@@ -24,7 +25,15 @@ export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
     setCreating(true);
     setError(null);
     try {
-      await createSession(repoId, useWorktree, useWorktree ? branch.trim() : undefined, skipPermissions);
+      await createSession(
+        repoId,
+        useWorktree,
+        useWorktree ? branch.trim() : undefined,
+        skipPermissions,
+        undefined,
+        undefined,
+        agent,
+      );
       setBranch("");
       setUseWorktree(false);
       onClose();
@@ -55,10 +64,12 @@ export function NewAgentDialog({ repoId, open: isOpen, onClose }: Props) {
         <label className="mb-3 block">
           <span className="mb-1 block text-xs text-zinc-400">Agent</span>
           <select
+            value={agent}
+            onChange={(e) => setAgent(e.target.value)}
             className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent"
-            defaultValue="claude-code"
           >
             <option value="claude-code">Claude Code</option>
+            <option value="codex">Codex</option>
           </select>
         </label>
 

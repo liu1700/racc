@@ -23,6 +23,7 @@ function generateBranchName(description: string): string {
 }
 
 export function FireTaskDialog({ task, open, onClose }: Props) {
+  const [agent, setAgent] = useState("claude-code");
   const [useWorktree, setUseWorktree] = useState(true);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const defaultBranch = useMemo(
@@ -56,7 +57,8 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
         useWorktree,
         useWorktree ? branch.trim() : undefined,
         skipPermissions,
-        serverId || undefined
+        serverId || undefined,
+        agent,
       );
       onClose();
     } catch (err) {
@@ -95,8 +97,13 @@ export function FireTaskDialog({ task, open, onClose }: Props) {
 
         <label className="mb-3 block">
           <span className="mb-1 block text-xs text-zinc-400">Agent</span>
-          <select className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent">
+          <select
+            value={agent}
+            onChange={(e) => setAgent(e.target.value)}
+            className="w-full rounded border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm text-white outline-none focus:border-accent"
+          >
             <option value="claude-code">Claude Code</option>
+            <option value="codex">Codex</option>
           </select>
         </label>
 
