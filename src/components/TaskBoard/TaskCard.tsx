@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { transport } from "../../services/transport";
 import type { Task } from "../../types/task";
+import { openExternalUrl } from "../../utils/openExternalUrl";
 
 function getAssetUrl(path: string): string {
   if (transport.isLocal()) {
@@ -9,13 +10,6 @@ function getAssetUrl(path: string): string {
   return path;
 }
 
-function openUrl(url: string): void {
-  if (transport.isLocal()) {
-    import("@tauri-apps/plugin-shell").then((m) => m.open(url));
-  } else {
-    window.open(url, "_blank");
-  }
-}
 import { useSessionStore } from "../../stores/sessionStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useMergeStore } from "../../stores/mergeStore";
@@ -234,7 +228,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    openUrl(linkedSession!.pr_url!);
+                    openExternalUrl(linkedSession!.pr_url!);
                   }}
                   className="ml-1 shrink-0 text-accent hover:underline"
                 >
@@ -312,7 +306,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  open(linkedSession!.pr_url!);
+                  openExternalUrl(linkedSession!.pr_url!);
                 }}
                 className="ml-1 text-accent hover:underline"
               >

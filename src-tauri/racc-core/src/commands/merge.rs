@@ -3,22 +3,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
+use super::manager_mcp::{ManagerMcpRuntime, MERGE_MCP_SERVER_NAME, MERGE_MCP_TOOL_NAME};
 use crate::error::CoreError;
 use crate::events::{EventBus, RaccEvent};
 use crate::AppContext;
 
 pub const DEFAULT_SHIP_INSTRUCTIONS: &str = "Merge every queued pull request into the integration branch in the listed order, then run the repository's full relevant test suite as one batch.";
 
-const SHIP_RESULT_PREFIX: &str = "RACC_SHIP_RESULT:";
 const RESULT_PROMPT_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct FailedPullRequest {
     pub url: String,
     pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ShipTestResult {
     pub command: String,
     pub status: String,
@@ -27,6 +29,7 @@ pub struct ShipTestResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ShipResult {
     pub run_id: i64,
     pub status: String,
@@ -37,12 +40,6 @@ pub struct ShipResult {
     #[serde(default)]
     pub tests: Vec<ShipTestResult>,
     pub summary: String,
-}
-
-pub struct ShipResultParser {
-    run_id: i64,
-    allowed_urls: HashSet<String>,
-    buffer: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -331,11 +328,7 @@ fn reconcile_orphaned_runs(conn: &mut rusqlite::Connection, repo_id: i64) -> Res
     Ok(())
 }
 
-pub fn apply_ship_result(ctx: &AppContext, result: &ShipResult) -> Result<(), CoreError> {
-    apply_ship_result_db(&ctx.db, result)
-}
-
-fn apply_ship_result_db(
+pub(super) fn apply_ship_result_db(
     db: &Arc<Mutex<rusqlite::Connection>>,
     result: &ShipResult,
 ) -> Result<(), CoreError> {
@@ -637,29 +630,32 @@ fn activate_merge_run(
     Ok(run)
 }
 
-async fn emit_merge_changed(event_bus: &Arc<dyn EventBus>, repo_id: i64, run_id: Option<i64>) {
+pub(super) async fn emit_merge_changed(
+    event_bus: &Arc<dyn EventBus>,
+    repo_id: i64,
+    run_id: Option<i64>,
+) {
     event_bus
         .emit(RaccEvent::MergeManagerChanged { repo_id, run_id })
         .await;
 }
 
-fn spawn_result_watcher(
-    db: Arc<Mutex<rusqlite::Connection>>,
-    event_bus: Arc<dyn EventBus>,
+fn spawn_mcp_watcher(
+    ctx: AppContext,
     mut terminal_rx: tokio::sync::broadcast::Receiver<crate::TerminalData>,
     mut event_rx: tokio::sync::broadcast::Receiver<RaccEvent>,
     run: MergeRun,
     session_id: i64,
-    pr_urls: Vec<String>,
+    mcp_runtime: ManagerMcpRuntime,
 ) {
+    let submission = mcp_runtime.wait_for_submission();
     tokio::spawn(async move {
-        let mut parser = ShipResultParser::new(run.id, pr_urls);
+        tokio::pin!(submission);
         let agent_type = crate::agent::AgentType::from_agent_str(&run.agent);
         let run_token = format!("Merge Master for Racc ship run {}", run.id);
         let mut output_buffer = Vec::new();
         let mut run_seen = false;
-        let mut prompt_tracker =
-            crate::agent::PromptSettleTracker::new(RESULT_PROMPT_SETTLE_DELAY);
+        let mut prompt_tracker = crate::agent::PromptSettleTracker::new(RESULT_PROMPT_SETTLE_DELAY);
         let prompt_settle_timeout = tokio::time::sleep(RESULT_PROMPT_SETTLE_DELAY);
         tokio::pin!(prompt_settle_timeout);
         let mut prompt_pending = false;
@@ -669,20 +665,6 @@ fn spawn_result_watcher(
                 terminal = terminal_rx.recv() => {
                     match terminal {
                         Ok(data) if data.session_id == session_id => {
-                            match parser.push(&data.data) {
-                                Ok(Some(result)) => {
-                                    let _ = apply_ship_result_db(&db, &result);
-                                    emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
-                                    break;
-                                }
-                                Err(error) => {
-                                    let _ = mark_run_needs_review(&db, run.id, &error);
-                                    emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
-                                    break;
-                                }
-                                Ok(None) => {}
-                            }
-
                             output_buffer.extend_from_slice(&data.data);
                             if output_buffer.len() > 65_536 {
                                 output_buffer.drain(..32_768);
@@ -698,10 +680,6 @@ fn spawn_result_watcher(
                                 continue;
                             }
                             if run_seen {
-                                // Codex and Claude repaint their composer during active work.
-                                // Require the prompt to remain the last output and the PTY to
-                                // stay quiet before concluding that the task returned without a
-                                // result marker. Every repaint resets this timer.
                                 if let Some(deadline) = prompt_tracker.observe(
                                     &agent_type,
                                     &output_buffer,
@@ -717,20 +695,31 @@ fn spawn_result_watcher(
                         Ok(_) => {}
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                         Err(_) => {
-                            let _ = mark_run_needs_review(&db, run.id, "Terminal output closed without a result marker");
-                            emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
+                            let _ = mark_run_needs_review(&ctx.db, run.id, "Merge Manager terminal output closed before MCP result submission");
+                            emit_merge_changed(&ctx.event_bus, run.repo_id, Some(run.id)).await;
                             break;
                         }
                     }
+                }
+                submitted = &mut submission => {
+                    if submitted.is_err() {
+                        let _ = mark_run_needs_review(
+                            &ctx.db,
+                            run.id,
+                            "Merge Manager MCP endpoint stopped before receiving a result",
+                        );
+                        emit_merge_changed(&ctx.event_bus, run.repo_id, Some(run.id)).await;
+                    }
+                    break;
                 }
                 event = event_rx.recv() => {
                     match event {
                         Ok(RaccEvent::SessionStatusChanged { session_id: changed_id, status, .. })
                             if changed_id == session_id && status != "Running" =>
                         {
-                            let message = format!("Merge Master session ended with status {status} without a result marker");
-                            let _ = mark_run_needs_review(&db, run.id, &message);
-                            emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
+                            let message = format!("Merge Manager session ended with status {status} before MCP result submission");
+                            let _ = mark_run_needs_review(&ctx.db, run.id, &message);
+                            emit_merge_changed(&ctx.event_bus, run.repo_id, Some(run.id)).await;
                             break;
                         }
                         Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
@@ -739,16 +728,49 @@ fn spawn_result_watcher(
                 }
                 _ = &mut prompt_settle_timeout, if prompt_pending => {
                     let _ = mark_run_needs_review(
-                        &db,
+                        &ctx.db,
                         run.id,
-                        "Merge Master returned to the input prompt without a valid result marker",
+                        "Merge Manager returned without calling submit_merge_result",
                     );
-                    emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
+                    emit_merge_changed(&ctx.event_bus, run.repo_id, Some(run.id)).await;
                     break;
                 }
             }
         }
     });
+}
+
+/// A run-scoped MCP endpoint cannot survive the PTY/app process that created
+/// it. Never silently resume an active merge run with a dead capability URL;
+/// make the interruption explicit so the user can verify or retry it.
+pub async fn interrupt_merge_run_for_session(
+    ctx: &AppContext,
+    session_id: i64,
+) -> Result<bool, CoreError> {
+    let run = {
+        let conn = ctx
+            .db
+            .lock()
+            .map_err(|error| CoreError::Other(error.to_string()))?;
+        conn.query_row(
+            &format!(
+                "{SELECT_MERGE_RUN} WHERE session_id = ?1 AND status IN ('starting', 'shipping') ORDER BY id DESC LIMIT 1"
+            ),
+            [session_id],
+            row_to_merge_run,
+        )
+        .optional()?
+    };
+    let Some(run) = run else {
+        return Ok(false);
+    };
+    mark_run_needs_review(
+        &ctx.db,
+        run.id,
+        "Merge Manager session was restarted; its run-scoped MCP endpoint expired. Verify the remote state, then retry or resolve this run.",
+    )?;
+    emit_merge_changed(&ctx.event_bus, run.repo_id, Some(run.id)).await;
+    Ok(true)
 }
 
 pub async fn start_merge_run(ctx: &AppContext, repo_id: i64) -> Result<MergeRun, CoreError> {
@@ -769,9 +791,32 @@ pub async fn start_merge_run(ctx: &AppContext, repo_id: i64) -> Result<MergeRun,
         }
     };
 
+    let mcp_runtime = match ManagerMcpRuntime::start_merge(
+        ctx.clone(),
+        run_id,
+        repo_id,
+        reservation.pr_urls.clone(),
+    )
+    .await
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = mark_run_start_failed(&ctx.db, run_id, &error.to_string());
+            emit_merge_changed(&ctx.event_bus, repo_id, Some(run_id)).await;
+            return Err(error);
+        }
+    };
+    let launch_options = match mcp_runtime.launch_options(&reservation.run.agent) {
+        Ok(options) => options,
+        Err(error) => {
+            let _ = mark_run_start_failed(&ctx.db, run_id, &error.to_string());
+            emit_merge_changed(&ctx.event_bus, repo_id, Some(run_id)).await;
+            return Err(error);
+        }
+    };
     let terminal_rx = ctx.terminal_tx.subscribe();
     let event_rx = ctx.event_bus.subscribe();
-    let session = match crate::commands::session::create_session_from_base(
+    let session = match crate::commands::session::create_session_from_base_with_launch(
         ctx,
         repo_id,
         true,
@@ -781,6 +826,7 @@ pub async fn start_merge_run(ctx: &AppContext, repo_id: i64) -> Result<MergeRun,
         None,
         Some(true),
         Some(base_ref),
+        Some(launch_options),
     )
     .await
     {
@@ -801,14 +847,13 @@ pub async fn start_merge_run(ctx: &AppContext, repo_id: i64) -> Result<MergeRun,
             return Err(error);
         }
     };
-    spawn_result_watcher(
-        ctx.db.clone(),
-        ctx.event_bus.clone(),
+    spawn_mcp_watcher(
+        ctx.clone(),
         terminal_rx,
         event_rx,
         run.clone(),
         session.id,
-        reservation.pr_urls,
+        mcp_runtime,
     );
     emit_merge_changed(&ctx.event_bus, repo_id, Some(run.id)).await;
     Ok(run)
@@ -1024,81 +1069,66 @@ fn set_task_ready_to_merge_db(
     Ok((Some(item), Some(repo_id), run_id))
 }
 
-impl ShipResultParser {
-    pub fn new(run_id: i64, allowed_urls: Vec<String>) -> Self {
-        Self {
-            run_id,
-            allowed_urls: allowed_urls.into_iter().collect(),
-            buffer: Vec::new(),
+pub(super) fn validate_ship_result(
+    run_id: i64,
+    allowed_urls: &[String],
+    result: &ShipResult,
+) -> Result<(), String> {
+    if result.run_id != run_id {
+        return Err(format!(
+            "Ship result run_id {} does not match {}",
+            result.run_id, run_id
+        ));
+    }
+    if !matches!(result.status.as_str(), "succeeded" | "failed") {
+        return Err(format!("Invalid ship result status: {}", result.status));
+    }
+    if result.summary.trim().is_empty() {
+        return Err("Ship result summary is required".to_string());
+    }
+    let allowed_urls = allowed_urls.iter().collect::<HashSet<_>>();
+    for url in result
+        .merged_prs
+        .iter()
+        .chain(result.failed_prs.iter().map(|failed| &failed.url))
+    {
+        if !allowed_urls.contains(url) {
+            return Err(format!("Ship result contains unknown PR URL: {url}"));
         }
     }
-
-    pub fn push(&mut self, chunk: &[u8]) -> Result<Option<ShipResult>, String> {
-        self.buffer.extend_from_slice(chunk);
-        if self.buffer.len() > 131_072 {
-            let keep_from = self.buffer.len() - 65_536;
-            self.buffer.drain(..keep_from);
-        }
-
-        let text = crate::agent::strip_ansi(&self.buffer);
-        let Some(prefix_at) = text.find(SHIP_RESULT_PREFIX) else {
-            return Ok(None);
-        };
-        let json_start = prefix_at + SHIP_RESULT_PREFIX.len();
-        let suffix = &text[json_start..];
-        let Some(line_end) = suffix.find(['\r', '\n']) else {
-            return Ok(None);
-        };
-        let json = suffix[..line_end].trim();
-        let result: ShipResult = serde_json::from_str(json)
-            .map_err(|error| format!("Invalid ship result JSON: {error}"))?;
-        self.validate(&result)?;
-        Ok(Some(result))
+    let merged = result.merged_prs.iter().collect::<HashSet<_>>();
+    if merged.len() != result.merged_prs.len() {
+        return Err("Ship result contains a duplicate merged PR".to_string());
     }
-
-    fn validate(&self, result: &ShipResult) -> Result<(), String> {
-        if result.run_id != self.run_id {
-            return Err(format!(
-                "Ship result run_id {} does not match {}",
-                result.run_id, self.run_id
-            ));
-        }
-        if !matches!(result.status.as_str(), "succeeded" | "failed") {
-            return Err(format!("Invalid ship result status: {}", result.status));
-        }
-        for url in result
-            .merged_prs
-            .iter()
-            .chain(result.failed_prs.iter().map(|failed| &failed.url))
-        {
-            if !self.allowed_urls.contains(url) {
-                return Err(format!("Ship result contains unknown PR URL: {url}"));
-            }
-        }
-        let merged = result.merged_prs.iter().collect::<HashSet<_>>();
-        if merged.len() != result.merged_prs.len() {
-            return Err("Ship result contains a duplicate merged PR".to_string());
-        }
-        let failed = result
-            .failed_prs
-            .iter()
-            .map(|entry| &entry.url)
-            .collect::<HashSet<_>>();
-        if failed.len() != result.failed_prs.len() {
-            return Err("Ship result contains a duplicate failed PR".to_string());
-        }
-        if let Some(url) = merged.intersection(&failed).next() {
-            return Err(format!(
-                "Ship result reports PR as both merged and failed: {url}"
-            ));
-        }
-        for test in &result.tests {
-            if !matches!(test.status.as_str(), "passed" | "failed") {
-                return Err(format!("Invalid test status: {}", test.status));
-            }
-        }
-        Ok(())
+    let failed = result
+        .failed_prs
+        .iter()
+        .map(|entry| &entry.url)
+        .collect::<HashSet<_>>();
+    if failed.len() != result.failed_prs.len() {
+        return Err("Ship result contains a duplicate failed PR".to_string());
     }
+    if let Some(url) = merged.intersection(&failed).next() {
+        return Err(format!(
+            "Ship result reports PR as both merged and failed: {url}"
+        ));
+    }
+    if result
+        .failed_prs
+        .iter()
+        .any(|failed| failed.reason.trim().is_empty())
+    {
+        return Err("Every failed PR needs a reason".to_string());
+    }
+    for test in &result.tests {
+        if test.command.trim().is_empty() {
+            return Err("Every ship test needs a command".to_string());
+        }
+        if !matches!(test.status.as_str(), "passed" | "failed") {
+            return Err(format!("Invalid test status: {}", test.status));
+        }
+    }
+    Ok(())
 }
 
 pub fn build_merge_prompt(
@@ -1125,9 +1155,7 @@ Required workflow:\n\
 3. If integration conflicts or batch tests fail, stop before starting any new remote merges.\n\
 4. After the combined tree passes the requested tests, inspect the repository's allowed/default GitHub merge method and merge the pull requests into {target_branch} in the same order.\n\
 5. Do not force push. Do not bypass branch protection. Do not weaken or skip required tests.\n\
-6. Always finish by printing exactly one single-line result. Concatenate the token RACC_SHIP_RESULT, one colon character, and a valid compact JSON body with no whitespace between the token and colon. The JSON body must have this shape:\n\
-{{\"run_id\":{run_id},\"status\":\"succeeded|failed\",\"merged_prs\":[\"url\"],\"failed_prs\":[{{\"url\":\"url\",\"reason\":\"reason\"}}],\"tests\":[{{\"command\":\"command\",\"status\":\"passed|failed\",\"summary\":\"optional summary\"}}],\"summary\":\"summary\"}}\n\
-Use only URLs from the supplied list in merged_prs and failed_prs. Report partial remote merges exactly; never claim an atomic rollback."
+6. Finish by successfully calling the MCP tool `{MERGE_MCP_TOOL_NAME}` from server `{MERGE_MCP_SERVER_NAME}` with run_id {run_id}, status, merged_prs, failed_prs, tests, and summary. Use only URLs from the supplied list. Report partial remote merges exactly; never claim an atomic rollback. A text response or printed JSON does not complete this run. If the tool reports a validation error, correct the arguments and call it again. After Racc accepts the result and updates the UI, stop."
     )
 }
 
@@ -1178,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_prompt_preserves_pr_order_and_fixed_contract() {
+    fn merge_prompt_preserves_pr_order_and_requires_mcp_submission() {
         let prompt = build_merge_prompt(
             42,
             "main",
@@ -1194,60 +1222,48 @@ mod tests {
         assert!(first < second, "queue order must be preserved");
         assert!(prompt.contains("Run the full regression suite."));
         assert!(prompt.contains("Target branch: main"));
-        assert!(prompt.contains("RACC_SHIP_RESULT"));
-        assert!(prompt.contains("\"run_id\":42"));
+        assert!(prompt.contains(MERGE_MCP_SERVER_NAME));
+        assert!(prompt.contains(MERGE_MCP_TOOL_NAME));
+        assert!(prompt.contains("run_id 42"));
+        assert!(!prompt.contains("RACC_SHIP_RESULT"));
+        assert!(prompt.contains("printed JSON does not complete"));
         assert!(prompt.contains("Do not bypass branch protection"));
     }
 
     #[test]
-    fn merge_prompt_does_not_echo_the_literal_result_sentinel() {
-        let prompt = build_merge_prompt(
-            42,
-            "main",
-            "Run tests.",
-            &["https://github.com/acme/widgets/pull/12".to_string()],
-        );
-
-        assert!(prompt.contains("RACC_SHIP_RESULT"));
-        assert!(!prompt.contains(SHIP_RESULT_PREFIX));
+    fn structured_result_validation_accepts_a_scoped_result() {
+        let url = "https://github.com/acme/widgets/pull/12".to_string();
+        let result = ShipResult {
+            run_id: 42,
+            status: "succeeded".to_string(),
+            merged_prs: vec![url.clone()],
+            failed_prs: vec![],
+            tests: vec![ShipTestResult {
+                command: "cargo test".to_string(),
+                status: "passed".to_string(),
+                summary: None,
+            }],
+            summary: "all good".to_string(),
+        };
+        validate_ship_result(42, &[url], &result).expect("result should validate");
     }
 
     #[test]
-    fn result_parser_handles_ansi_and_split_terminal_chunks() {
+    fn structured_result_rejects_a_pr_reported_as_both_merged_and_failed() {
         let url = "https://github.com/acme/widgets/pull/12".to_string();
-        let mut parser = ShipResultParser::new(42, vec![url.clone()]);
-
-        assert!(parser
-            .push(b"\x1b[32mRACC_SHIP_RES")
-            .expect("partial chunks should not fail")
-            .is_none());
-
-        let tail = format!(
-            "ULT:{{\"run_id\":42,\"status\":\"succeeded\",\"merged_prs\":[\"{url}\"],\"failed_prs\":[],\"tests\":[{{\"command\":\"cargo test\",\"status\":\"passed\"}}],\"summary\":\"all good\"}}\x1b[0m\r\n"
-        );
-        let result = parser
-            .push(tail.as_bytes())
-            .expect("valid marker should parse")
-            .expect("marker should be complete");
-
-        assert_eq!(result.run_id, 42);
-        assert_eq!(result.status, "succeeded");
-        assert_eq!(result.merged_prs, vec![url]);
-        assert!(result.failed_prs.is_empty());
-        assert_eq!(result.tests[0].status, "passed");
-    }
-
-    #[test]
-    fn result_parser_rejects_a_pr_reported_as_both_merged_and_failed() {
-        let url = "https://github.com/acme/widgets/pull/12".to_string();
-        let mut parser = ShipResultParser::new(42, vec![url.clone()]);
-        let marker = format!(
-            "RACC_SHIP_RESULT:{{\"run_id\":42,\"status\":\"failed\",\"merged_prs\":[\"{url}\"],\"failed_prs\":[{{\"url\":\"{url}\",\"reason\":\"blocked\"}}],\"tests\":[],\"summary\":\"ambiguous\"}}\n"
-        );
-
-        let error = parser
-            .push(marker.as_bytes())
-            .expect_err("overlap should be rejected");
+        let result = ShipResult {
+            run_id: 42,
+            status: "failed".to_string(),
+            merged_prs: vec![url.clone()],
+            failed_prs: vec![FailedPullRequest {
+                url: url.clone(),
+                reason: "blocked".to_string(),
+            }],
+            tests: vec![],
+            summary: "ambiguous".to_string(),
+        };
+        let error =
+            validate_ship_result(42, &[url], &result).expect_err("overlap should be rejected");
         assert!(error.contains("both merged and failed"));
     }
 
@@ -1368,7 +1384,7 @@ mod tests {
             tests: vec![],
             summary: "partial merge".to_string(),
         };
-        apply_ship_result(&ctx, &result).expect("result should apply");
+        apply_ship_result_db(&ctx.db, &result).expect("result should apply");
 
         let conn = ctx.db.lock().expect("database lock");
         let statuses = [1_i64, 2, 3]
@@ -1420,7 +1436,8 @@ mod tests {
         assert_eq!(reservation.run.status, "starting");
         assert_eq!(reservation.integration_branch, "racc/ship-1");
         assert_eq!(reservation.pr_urls.len(), 1);
-        assert!(reservation.run.prompt.contains("\"run_id\":1"));
+        assert!(reservation.run.prompt.contains("run_id 1"));
+        assert!(reservation.run.prompt.contains(MERGE_MCP_TOOL_NAME));
 
         let error = reserve_merge_run(&ctx, repo_id).expect_err("parallel run should fail");
         assert!(error.to_string().contains("already active"));
@@ -1522,6 +1539,57 @@ mod tests {
         assert!(state.active_run.is_none());
         assert_eq!(state.last_run.expect("last run").status, "needs_review");
         assert_eq!(state.items[0].status, "needs_review");
+
+        drop(ctx);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn restarting_a_manager_session_marks_the_mcp_run_for_review() {
+        let (ctx, path) = test_context();
+        {
+            let conn = ctx.db.lock().expect("database lock");
+            conn.execute(
+                "INSERT INTO repos (path, name) VALUES ('/tmp/widgets', 'widgets')",
+                [],
+            )
+            .expect("repo insert");
+            let repo_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO sessions (repo_id, status) VALUES (?1, 'Running')",
+                [repo_id],
+            )
+            .expect("session insert");
+            let session_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO merge_runs
+                 (repo_id, session_id, target_branch, agent, prompt, status, result_json)
+                 VALUES (?1, ?2, 'main', 'codex', 'ship', 'shipping', NULL)",
+                rusqlite::params![repo_id, session_id],
+            )
+            .expect("run insert");
+            let run_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO merge_queue_items
+                 (repo_id, task_id, source_session_id, pr_url, status, run_id, result_message)
+                 VALUES (?1, 1, ?2, 'https://github.com/acme/widgets/pull/1', 'shipping', ?3, NULL)",
+                rusqlite::params![repo_id, session_id, run_id],
+            )
+            .expect("queue insert");
+        }
+
+        assert!(interrupt_merge_run_for_session(&ctx, 1)
+            .await
+            .expect("interruption should be recorded"));
+        let state = get_merge_manager(&ctx, 1).expect("manager state should load");
+        assert!(state.active_run.is_none());
+        assert_eq!(state.last_run.expect("last run").status, "needs_review");
+        assert_eq!(state.items[0].status, "needs_review");
+        assert!(state.items[0]
+            .result_message
+            .as_deref()
+            .unwrap()
+            .contains("MCP endpoint expired"));
 
         drop(ctx);
         let _ = std::fs::remove_file(path);

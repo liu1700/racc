@@ -56,7 +56,7 @@ create_session(agent="claude-code", server_id=sid)
 ### Key Properties
 
 - **Non-blocking**: Session creation never fails because of rtk. All errors log warnings and proceed without optimization.
-- **Claude Code only**: Aider and Codex sessions are unaffected.
+- **Claude Code only**: Codex sessions are unaffected.
 - **Racc-isolated**: Binary at `~/.racc/bin/rtk`, not installed to system paths.
 - **Idempotent**: Each session creation checks actual artifacts (binary, hook, settings) — no stale flag files.
 - **Atomic downloads**: Uses temp file + rename to prevent corruption from concurrent session creation.
@@ -65,9 +65,9 @@ create_session(agent="claude-code", server_id=sid)
 
 | File | Purpose |
 |------|---------|
-| `racc-core/src/rtk.rs` | All rtk logic: download, hook config, ensure_local/remote |
-| `racc-core/src/commands/session.rs` | Integration: calls ensure_rtk in create/reattach |
-| `racc-core/src/transport/local_pty.rs` | `extra_env` parameter for PATH injection |
+| `src-tauri/racc-core/src/rtk.rs` | All rtk logic: download, hook config, ensure_local/remote |
+| `src-tauri/racc-core/src/commands/session.rs` | Integration: calls ensure_rtk in create/reattach |
+| `src-tauri/racc-core/src/transport/local_pty.rs` | `extra_env` parameter for PATH injection |
 | `~/.racc/bin/rtk` | Downloaded rtk binary (pinned version) |
 | `~/.claude/settings.json` | Claude Code hook configuration (managed by rtk init) |
 

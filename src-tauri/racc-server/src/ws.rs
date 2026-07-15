@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use racc_core::commands::{cost, file, git, insights, merge, planner, server, session, setup, task, transport};
+use racc_core::commands::{cost, file, git, insights, merge, planner, server, session, setup, task, test_manager, transport};
 use racc_core::AppContext;
 
 /// HTTP handler that upgrades to WebSocket.
@@ -394,6 +394,51 @@ async fn dispatch(
         "retry_merge_run" => {
             let run_id = param_i64(&params, "run_id")?;
             let result = merge::retry_merge_run(ctx, run_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+
+        // ── Test Manager ────────────────────────────────────────
+        "get_test_manager" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let result = test_manager::get_test_manager(ctx, repo_id).map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "update_test_settings" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let target_branch = param_str(&params, "target_branch")?;
+            let agent = param_str(&params, "agent")?;
+            let instructions = param_str(&params, "instructions")?;
+            let result = test_manager::update_test_settings(
+                ctx,
+                repo_id,
+                &target_branch,
+                &agent,
+                &instructions,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "start_test_run" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            let result = test_manager::start_test_run(ctx, repo_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "resolve_test_run" => {
+            let run_id = param_i64(&params, "run_id")?;
+            let status = param_str(&params, "status")?;
+            let result = test_manager::resolve_test_run(ctx, run_id, &status)
+                .await
+                .map_err(|e| e.to_string())?;
+            to_json(&result)
+        }
+        "retry_test_run" => {
+            let run_id = param_i64(&params, "run_id")?;
+            let result = test_manager::retry_test_run(ctx, run_id)
                 .await
                 .map_err(|e| e.to_string())?;
             to_json(&result)

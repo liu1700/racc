@@ -1,80 +1,63 @@
 # Roadmap
 
-[< Home](Home.md) | [< Competitive Analysis](Competitive-Analysis.md)
+[< Home](Home.md)
 
-## Version Plan
+This roadmap reflects the current codebase rather than the original calendar estimates. Completed implementation plans remain available as design records.
 
-### v0.1 — MVP (4-6 weeks)
+## Implemented Foundation
 
-**Goal:** A working local multi-session manager that solves the top 3 pain points.
+| Area | Current state |
+|------|---------------|
+| Desktop application | Tauri 2.x app with React 19 shared frontend |
+| Shared backend | Three-crate workspace with `racc-core`, `racc-server`, and thin Tauri wrappers |
+| Local sessions | Native PTY, xterm.js terminal, backend buffering, worktree creation, reattach |
+| Remote sessions | SSH server management and persistent tmux transports |
+| Browser access | Axum static server plus full-duplex `/ws` command/event/terminal transport |
+| Supported agents | Claude Code and Codex across tasks, planning, merging, and testing |
+| Task workflow | Open and Working task management with images and archived completion state |
+| Task Planner | Read-only AI plan generation, dependency-aware preview, selective confirmation |
+| Merge Manager | Ordered PR queue, combined validation, structured results, recovery states |
+| Test Manager | Isolated full-project UAT runs with editable defaults and structured evidence |
+| File access | Fuzzy command palette, syntax-highlighted viewer, clickable terminal paths |
+| External links | Direct HTTP(S) opening from terminal and PR surfaces |
+| Usage optimization | Claude Code usage display and best-effort RTK setup |
 
-| Feature | Detail | Status |
-|---------|--------|--------|
-| Project scaffold | Tauri 2.x + React 19 + TypeScript 5.8 + Bun | Done |
-| Native PTY terminal | xterm.js ↔ `tauri-plugin-pty` real-time bidirectional I/O | Done |
-| Multi-session dashboard | Create / stop / switch between sessions with buffer replay | Done |
-| Auto worktree + PTY | One-click session creation with auto-provisioning | Done |
-| PTY lifecycle management | Spawn, kill, resize, output buffering (1MB/session) | Done |
-| Repo-centric session management | SQLite persistence, native folder picker, repo import/remove | Done |
-| Session reconciliation | Detect orphaned sessions on startup, mark Disconnected | Done |
-| Token usage tracking | Parse Claude Code JSONL files, aggregate token counts (10s poll) | Done |
-| Zustand state management | Session store with 11 actions, `useShallow` optimization | Done |
-| File viewer & command palette | Cmd+P fuzzy search, terminal path click, Shiki highlighting overlay | Done |
-| Task Board | Kanban board for cognitive offloading + auto agent orchestration (Open→Working→Closed) | Done |
+## Near-Term Priorities
 
-**Success criteria:** A developer can manage 3+ concurrent Claude Code sessions from one interface and see token usage per session.
+### Reliability and Verification
 
-**Recent stabilization work:**
-- Fixed xterm.js init race condition (always mount terminal div before init)
-- Fixed Zustand infinite re-render loop in CostTracker (`useShallow`)
-- Added PTY data flow diagnostic logging
+- Add repeatable desktop/headless end-to-end coverage for task, planner, merge, test, and restart flows.
+- Replace the remaining fixed shell-launch pause with readiness detection if real-world hosts require it.
+- Design a safe way to recover or reissue expired run-scoped manager MCP endpoints.
+- Improve diagnostics for missing CLIs, build prerequisites, SSH failures, and local service conflicts.
 
----
+### Security and Distribution
 
-### v0.2 — Multi-Agent, Isolation & Headless Server
+- Add authentication, origin controls, and a documented TLS path for `racc-server`.
+- Improve signed release artifacts and platform-specific installation guidance.
+- Add a first-run setup path for local and remote agent prerequisites.
 
-**Goal:** Support additional agents, proper environment isolation, remote sessions, and a headless server mode.
+### Workflow Quality
 
-| Feature | Detail | Status |
-|---------|--------|--------|
-| Headless server (`racc-server`) | Axum-based HTTP/WS server serving the React frontend; same `AppContext` as desktop | **In Progress** |
-| Three-crate workspace | `racc-core` (shared lib), `racc-server` (headless binary), `racc` (Tauri app) | **Done** |
-| `RaccTransport` abstraction | Frontend auto-detects Tauri vs WebSocket transport; all stores are transport-agnostic | **Done** |
-| RTK token optimization | Auto-install rtk for 60-90% token cost reduction on Claude Code sessions | **Done** |
-| Codex support | Add Codex CLI as a supported agent | Planned |
-| Docker Sandbox | Opt-in container-based environment isolation | Planned |
-| Tailscale remote sessions | Connect to and manage agent sessions on remote machines | Planned |
-| Session immortality | Agents survive app crashes via remote PTY persistence | Planned |
+- Add optional scheduling based on task dependencies and priorities.
+- Expand notification controls and optional webhook delivery.
+- Add Codex usage/cost visibility comparable to Claude Code reporting.
+- Improve history and audit views for archived tasks and past manager runs.
 
----
+## Longer-Term Directions
 
-### v0.3 — TBD
+- Opt-in container isolation for high-autonomy sessions.
+- Pluggable adapters for additional terminal agents.
+- Reusable workflow templates beyond planning, merging, and UAT.
+- Better cross-device coordination and multi-user security for headless deployments.
+- Evidence-rich release gates that connect task intent, PR changes, automated tests, and UAT results.
 
-To be determined based on user feedback and ecosystem evolution.
+## Explicitly Not Promised Yet
 
----
+- Public-internet-safe headless hosting without additional network controls
+- Fully autonomous conflict resolution or silent merge recovery
+- Operating-system isolation from git worktrees alone
+- Automatic execution of Task Planner dependency graphs
+- Identical usage accounting across agent vendors
 
-## Design Adjustments from Original Research
-
-The original research document's framework was sound, but this roadmap makes five key adjustments:
-
-1. **Cut over-engineering:** Global memory browser, visual regression engine, and policy conflict bus are deferred to P2 vision. MVP focuses on validated high-frequency pain points only.
-
-2. **Skipped tmux in favor of native PTY:** The original Phase 1 (tmux send-keys) was bypassed. Direct PTY bridging via `tauri-plugin-pty` provides real-time rendering without polling overhead. Tradeoff: sessions don't survive app crashes (addressed in v0.2).
-
-3. **Single-process architecture:** The original daemon + WebSocket design was simplified to a single Tauri process with IPC. Reduces complexity for local-first MVP.
-
-4. **Emphasized agent-agnosticism:** This is the competitive moat — the original doc didn't emphasize it enough.
-
-5. **Defined clear MVP scope:** A deliverable product in 4-6 weeks, not a grand vision document.
-
----
-
-## Milestones Timeline
-
-```
-March 2026                          April 2026
-|--- v0.1 MVP Development ---------|--- v0.2 Multi-Agent & Isolation ----->
-     |                                   |
-     Dashboard + Terminal + Tasks        Codex + Docker + Remote
-```
+[Next: User Guide >](User-Guide.md)

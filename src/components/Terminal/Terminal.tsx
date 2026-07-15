@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { transport } from "../../services/transport";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useFileViewerStore } from "../../stores/fileViewerStore";
 import { useShallow } from "zustand/react/shallow";
 import { usePtyBridge } from "../../hooks/usePtyBridge";
 import { TaskOverlay } from "./TaskOverlay";
+import { openExternalUrl } from "../../utils/openExternalUrl";
 import type { Terminal as XTermType } from "@xterm/xterm";
 
 export function Terminal() {
@@ -43,17 +43,16 @@ export function Terminal() {
           selectionBackground: "#6366f140",
         },
         allowProposedApi: true,
+        // xterm's default OSC 8 handler shows a scary confirm() dialog even
+        // when the application already has a safe external-link handler.
+        linkHandler: {
+          activate: (_event, uri) => openExternalUrl(uri),
+        },
       });
 
       const fitAddon = new FitAddon();
       xterm.loadAddon(fitAddon);
-      xterm.loadAddon(new WebLinksAddon((_e, uri) => {
-        if (transport.isLocal()) {
-          import("@tauri-apps/plugin-shell").then((m) => m.open(uri));
-        } else {
-          window.open(uri, "_blank");
-        }
-      }));
+      xterm.loadAddon(new WebLinksAddon((_event, uri) => openExternalUrl(uri)));
       xterm.open(el);
       fitAddon.fit();
 

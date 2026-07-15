@@ -5,11 +5,11 @@ import { useTaskStore } from "../../stores/taskStore";
 import { useMergeStore } from "../../stores/mergeStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { usePlannerStore } from "../../stores/plannerStore";
+import { useTestManagerStore } from "../../stores/testManagerStore";
 import { TaskColumn } from "./TaskColumn";
 import { MergeManagerColumn } from "./MergeManagerColumn";
+import { TestManagerColumn } from "./TestManagerColumn";
 import { TaskPlannerDialog } from "./TaskPlannerDialog";
-
-const COLUMNS: TaskStatus[] = ["open", "working", "closed"];
 
 interface Props {
   repoId: number | null;
@@ -34,16 +34,22 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
   const repos = useSessionStore((s) => s.repos);
   const initializeMergeEvents = useMergeStore((s) => s.initializeEvents);
   const loadMergeManager = useMergeStore((s) => s.load);
+  const initializeTestManagerEvents = useTestManagerStore((s) => s.initializeEvents);
+  const loadTestManager = useTestManagerStore((s) => s.load);
   const initializePlannerEvents = usePlannerStore((s) => s.initializeEvents);
 
   useEffect(() => {
     initializeMergeEvents();
+    initializeTestManagerEvents();
     initializePlannerEvents();
-  }, [initializeMergeEvents, initializePlannerEvents]);
+  }, [initializeMergeEvents, initializeTestManagerEvents, initializePlannerEvents]);
 
   useEffect(() => {
-    if (repoId) void loadMergeManager(repoId);
-  }, [repoId, loadMergeManager]);
+    if (repoId) {
+      void loadMergeManager(repoId);
+      void loadTestManager(repoId);
+    }
+  }, [repoId, loadMergeManager, loadTestManager]);
 
   const repoPath = useMemo(() => {
     if (!repoId) return "";
@@ -132,18 +138,11 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
     );
   }
 
-  const tasksByStatus = Object.fromEntries(
-    COLUMNS.map((status) => [
-      status,
-      tasks.filter((t) => t.status === status),
-    ])
-  ) as Record<TaskStatus, typeof tasks>;
-
   const renderTaskColumn = (status: TaskStatus) => (
     <TaskColumn
       key={status}
       status={status}
-      tasks={tasksByStatus[status]}
+      tasks={tasks.filter((task) => task.status === status)}
       repoPath={repoPath}
       onSessionSelect={onSessionSelect}
       onCreateTask={status === "open" ? (desc) => createTask(repoId, desc) : undefined}
@@ -165,7 +164,7 @@ export function TaskBoard({ repoId, onSessionSelect }: Props) {
           {renderTaskColumn("open")}
           {renderTaskColumn("working")}
           <MergeManagerColumn repoId={repoId} onSessionSelect={onSessionSelect} />
-          {renderTaskColumn("closed")}
+          <TestManagerColumn repoId={repoId} onSessionSelect={onSessionSelect} />
         </div>
       </div>
       <TaskPlannerDialog

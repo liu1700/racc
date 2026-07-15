@@ -1,42 +1,45 @@
-# Racc
+# Racc Documentation
 
-> A desktop control plane for orchestrating AI coding agents.
-> Not an editor. Not an IDE. A **session orchestrator**.
+> Racc is a desktop and browser control plane for Claude Code and Codex sessions.
 
-## What is Racc?
+Racc combines a task board, isolated git worktrees, native terminals, remote SSH/tmux sessions, and dedicated planning, merge, and test workflows. It is not a code editor; it gives terminal agents a shared operational surface.
 
-Racc is a standalone desktop application (Tauri) for individual developers who use terminal-based AI coding agents. Currently supports **Claude Code**, with **Codex** support planned. It provides visual management for multiple concurrent agent sessions — something the terminal alone cannot offer.
-
-**Three design principles — the "Three Nots":**
-
-1. **Don't rebuild a code editor** — users already have one they love
-2. **Don't lock into a specific agent** — agent-agnostic PTY communication
-3. **Don't replace existing tools** — integrate with git, docker, native OS primitives instead
-
-## Quick Navigation
+## Start Here
 
 | Page | Description |
 |------|-------------|
-| [Product Vision](Product-Vision.md) | Core positioning, target users, design principles |
-| [Feature Specification](Feature-Specification.md) | P0 (MVP), P1, and P2 features in detail |
-| [UI Design](UI-Design.md) | Layout, panels, and interaction patterns |
-| [Cognitive Design Research](Cognitive-Design-Research.md) | Neuroscience and human factors research informing UI decisions |
-| [Technical Architecture](Technical-Architecture.md) | System architecture, tech stack, and tradeoffs |
-| [Session Lifecycle](Session-Lifecycle.md) | State machine, creation flow, reconciliation |
-| [WebSocket Remote API](WebSocket-Remote-API.md) | External client integration via WebSocket |
-| [Headless Server Design](Headless-Server-Design.md) | Three-crate workspace, racc-server, and RaccTransport |
-| [RTK Token Optimization](RTK-Token-Optimization.md) | Automatic 60-90% token cost reduction for Claude Code sessions |
-| [Roadmap](Roadmap.md) | MVP scope and versioned milestones |
+| [User Guide](User-Guide.md) | Current product workflow, managers, terminal links, and recovery behavior |
+| [Feature Specification](Feature-Specification.md) | Implemented capabilities and known boundaries |
+| [UI Design](UI-Design.md) | Current layout, task columns, terminal, and interaction patterns |
+| [Session Lifecycle](Session-Lifecycle.md) | Local and remote creation, reconnect, resume, and cleanup semantics |
+| [Technical Architecture](Technical-Architecture.md) | Three-crate backend, transports, data flow, workflow MCP, and persistence |
+| [WebSocket Remote API](WebSocket-Remote-API.md) | Headless `/ws` protocol, methods, events, and terminal frames |
+| [RTK Token Optimization](RTK-Token-Optimization.md) | Automatic output compression for Claude Code sessions |
+| [Roadmap](Roadmap.md) | Completed foundations, current gaps, and next directions |
 
-## Key Technical Bets
+## Product and Research
 
-- **Tauri 2.x** — Rust backend + React 19 frontend + xterm.js terminals, single-process architecture
-- **Native PTY** — `tauri-plugin-pty` for real-time terminal I/O (replaced tmux)
-- **Agent-agnostic communication** — Agents interact via standard PTY read/write (currently Claude Code, Codex planned)
-- **Git worktrees** — Code isolation per session, zero overhead
-- **Zustand** — Lightweight state management for frontend
-- **SQLite** — Session and repo persistence at `~/.racc/racc.db`
+| Page | Status |
+|------|--------|
+| [Product Vision](Product-Vision.md) | Current positioning and design principles |
+| [Cognitive Design Research](Cognitive-Design-Research.md) | Research background informing the interface |
+| [Agent Supervisor Design](Agent-Supervisor-Design.md) | Design record; not a description of fully implemented autonomous scheduling |
+| [Headless Server Design](Headless-Server-Design.md) | Architecture record for the implemented core/server extraction |
+| [Headless Server Plan](Headless-Server-Plan.md) | Historical implementation plan; retained for provenance |
 
-## One-Line Summary
+## Current Technical Baseline
 
-> Racc is "the next step for terminal agent users" — keep the full power of their favorite agents, add the orchestration and visibility they've always lacked.
+- **Frontend:** React 19, TypeScript, Zustand, Tailwind, and xterm.js.
+- **Desktop:** Tauri 2.x with thin IPC wrappers.
+- **Shared backend:** `racc-core` owns SQLite, git/session commands, local PTY, SSH/tmux, and workflow managers.
+- **Browser mode:** `racc-server` serves the same frontend and exposes `/ws` through Axum.
+- **Agents:** Claude Code and Codex are selectable for normal tasks, planning, merging, and testing.
+- **Structured workflows:** Task Planner, Merge Manager, and Test Manager update Racc through run-scoped MCP tools rather than terminal JSON sentinels.
+- **Persistence:** Metadata lives in SQLite at `~/.racc/racc.db`; source isolation uses git worktrees.
+
+## Design Principles
+
+1. Do not rebuild a code editor.
+2. Keep the terminal-agent layer vendor-flexible.
+3. Integrate with git, SSH, tmux, and native OS behavior.
+4. Make parallel work easy to triage and safe to recover.
