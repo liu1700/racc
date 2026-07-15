@@ -258,7 +258,7 @@ fn task_plan_tool_definition() -> Value {
     json!({
         "name": MCP_TOOL_NAME,
         "title": "Submit a Racc task plan",
-        "description": "Submit a concise, source-faithful extraction of explicit work items for the current Racc planner run. Do not add inferred testing, documentation, refactoring, cleanup, or implementation-phase tasks. Racc validates the plan and stages it for user review; this does not create tasks.",
+        "description": "Submit a concise, source-faithful extraction of explicit unresolved work items for the current Racc planner run. Exclude closed or completed tickets, tickets with merged closing pull requests, and items the parent marks complete. Do not add inferred testing, documentation, refactoring, cleanup, or implementation-phase tasks. Racc validates the plan and stages it for user review; this does not create tasks.",
         "inputSchema": {
             "type": "object",
             "additionalProperties": false,
@@ -269,7 +269,7 @@ fn task_plan_tool_definition() -> Value {
                 "tasks": {
                     "type": "array",
                     "maxItems": 50,
-                    "description": "One task per explicit actionable source item. An issue or sub-issue is at most one task and must not be split into tests, docs, layers, phases, or follow-up work.",
+                    "description": "One task per explicit actionable unresolved source item. Never include completed work. An issue or sub-issue is at most one task and must not be split into tests, docs, layers, phases, or follow-up work.",
                     "items": {
                         "type": "object",
                         "additionalProperties": false,
@@ -389,6 +389,14 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("source-faithful"));
+        assert!(tool["description"]
+            .as_str()
+            .unwrap()
+            .contains("merged closing pull requests"));
+        assert!(tool["inputSchema"]["properties"]["tasks"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("Never include completed work"));
     }
 
     #[tokio::test]
