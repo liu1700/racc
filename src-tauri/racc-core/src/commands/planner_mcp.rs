@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
 use super::planner::{
-    emit_task_plan_changed, store_plan_result_db, validate_task_plan_result, TaskPlanResult,
+    emit_task_plan_changed, store_plan_result_db, validate_task_plan_import_style,
+    validate_task_plan_result, TaskPlanResult, MAX_ACCEPTANCE_CRITERION_CHARS,
+    MAX_EXPLICIT_ACCEPTANCE_CRITERIA, MAX_PLAN_SUMMARY_CHARS, MAX_TASK_DESCRIPTION_CHARS,
 };
 use crate::{AppContext, CoreError};
 
@@ -197,6 +199,9 @@ async fn dispatch_request(state: &Arc<PlannerMcpState>, request: &Value) -> Opti
             if let Err(error) = validate_task_plan_result(state.run_id, &plan) {
                 return Some(tool_error_response(id, error));
             }
+            if let Err(error) = validate_task_plan_import_style(&plan) {
+                return Some(tool_error_response(id, error));
+            }
             if let Err(error) = store_plan_result_db(&state.ctx.db, &plan) {
                 return Some(tool_error_response(id, error.to_string()));
             }
@@ -253,33 +258,36 @@ fn task_plan_tool_definition() -> Value {
     json!({
         "name": MCP_TOOL_NAME,
         "title": "Submit a Racc task plan",
-        "description": "Submit the completed plan for the current Racc planner run. Racc validates it and stages it for user review; this does not create tasks.",
+        "description": "Submit a concise, source-faithful extraction of explicit work items for the current Racc planner run. Do not add inferred testing, documentation, refactoring, cleanup, or implementation-phase tasks. Racc validates the plan and stages it for user review; this does not create tasks.",
         "inputSchema": {
             "type": "object",
             "additionalProperties": false,
             "required": ["run_id", "summary", "tasks"],
             "properties": {
                 "run_id": {"type": "integer", "description": "The exact planner run id from the prompt."},
-                "summary": {"type": "string", "minLength": 1, "maxLength": 20000, "description": "A concise planning summary or access error."},
+                "summary": {"type": "string", "minLength": 1, "maxLength": MAX_PLAN_SUMMARY_CHARS, "description": "One short sentence describing what was explicitly imported or why the source could not be accessed."},
                 "tasks": {
                     "type": "array",
                     "maxItems": 50,
+                    "description": "One task per explicit actionable source item. An issue or sub-issue is at most one task and must not be split into tests, docs, layers, phases, or follow-up work.",
                     "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "required": ["key", "title", "description", "acceptance_criteria", "depends_on"],
                         "properties": {
-                            "key": {"type": "string", "minLength": 1, "maxLength": 64},
-                            "title": {"type": "string", "minLength": 1, "maxLength": 200},
-                            "description": {"type": "string", "minLength": 1, "maxLength": 20000},
+                            "key": {"type": "string", "minLength": 1, "maxLength": 64, "description": "Use GH-<number> for GitHub issue-backed tasks; otherwise use T1, T2, and so on."},
+                            "title": {"type": "string", "minLength": 1, "maxLength": 200, "description": "A concise title. For GitHub issues use #<number> <issue title>."},
+                            "description": {"type": "string", "minLength": 1, "maxLength": MAX_TASK_DESCRIPTION_CHARS, "description": "For an issue-backed task, the canonical issue URL only. For pasted prose, one short sentence without invented scope."},
                             "acceptance_criteria": {
                                 "type": "array",
-                                "maxItems": 30,
-                                "items": {"type": "string", "maxLength": 2000}
+                                "maxItems": MAX_EXPLICIT_ACCEPTANCE_CRITERIA,
+                                "description": "Empty for issue-backed tasks. For pasted prose, include only criteria explicitly present in the source.",
+                                "items": {"type": "string", "maxLength": MAX_ACCEPTANCE_CRITERION_CHARS}
                             },
                             "depends_on": {
                                 "type": "array",
                                 "maxItems": 50,
+                                "description": "Only dependencies explicitly stated by the source.",
                                 "items": {"type": "string", "maxLength": 64}
                             }
                         }
@@ -363,6 +371,24 @@ mod tests {
         assert_eq!(tool["name"], MCP_TOOL_NAME);
         assert_eq!(tool["inputSchema"]["additionalProperties"], false);
         assert_eq!(tool["inputSchema"]["properties"]["tasks"]["maxItems"], 50);
+        assert_eq!(
+            tool["inputSchema"]["properties"]["summary"]["maxLength"],
+            MAX_PLAN_SUMMARY_CHARS
+        );
+        assert_eq!(
+            tool["inputSchema"]["properties"]["tasks"]["items"]["properties"]["description"]
+                ["maxLength"],
+            MAX_TASK_DESCRIPTION_CHARS
+        );
+        assert_eq!(
+            tool["inputSchema"]["properties"]["tasks"]["items"]["properties"]
+                ["acceptance_criteria"]["maxItems"],
+            MAX_EXPLICIT_ACCEPTANCE_CRITERIA
+        );
+        assert!(tool["description"]
+            .as_str()
+            .unwrap()
+            .contains("source-faithful"));
     }
 
     #[tokio::test]
