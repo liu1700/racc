@@ -74,6 +74,8 @@ The manager creates an integration worktree/branch, validates the combined chang
 
 If a conflict, failed validation, changed PR head, or ambiguous final state occurs, the run stops or enters `needs_review`. Inspect the terminal and remote repository, then choose **Mark succeeded**, **Mark failed**, or **Retry** as appropriate.
 
+Choose **Reset** when no merge run is active to clear the queue and previous merge results and return the manager to its initial state. Repository settings and terminal sessions are preserved.
+
 ## 6. Use Test Manager
 
 Test Manager is configured per repository with a target branch, agent, and editable instructions. Its default instructions ask for a comprehensive full-project UAT pass: discover the build, run the broadest automated suite, exercise important user-visible flows end to end, and record reproducible evidence without changing product code or weakening tests.
@@ -81,6 +83,8 @@ Test Manager is configured per repository with a target branch, agent, and edita
 Select **Run** to start. Racc creates an isolated `racc/test-*` worktree and a dedicated manager session. The run is read-only by policy: it must not commit, push, merge, or modify product code.
 
 The agent reports each command or UAT scenario, status, evidence, and summary through `racc_test_manager.submit_test_result`. Racc updates the Test Manager card directly and displays passed/failed counts. Printed terminal JSON is ignored as a completion protocol.
+
+Choose **Reset** when no test run is active to clear previous test results and return the manager to its initial state. Repository settings and terminal sessions are preserved.
 
 ## 7. Restart and Recovery
 

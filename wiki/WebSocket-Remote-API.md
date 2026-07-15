@@ -117,6 +117,7 @@ Accepted agent values used by the UI are `claude-code` and `codex`.
 | Method | Parameters |
 |--------|------------|
 | `get_merge_manager` | `repo_id` |
+| `reset_merge_manager` | `repo_id` |
 | `set_task_ready_to_merge` | `task_id`, `ready` |
 | `update_merge_settings` | `repo_id`, `target_branch`, `agent`, `instructions` |
 | `start_merge_run` | `repo_id` |
@@ -128,6 +129,7 @@ Accepted agent values used by the UI are `claude-code` and `codex`.
 | Method | Parameters |
 |--------|------------|
 | `get_test_manager` | `repo_id` |
+| `reset_test_manager` | `repo_id` |
 | `update_test_settings` | `repo_id`, `target_branch`, `agent`, `instructions` |
 | `start_test_run` | `repo_id` |
 | `resolve_test_run` | `run_id`, `status` (`succeeded` or `failed`) |

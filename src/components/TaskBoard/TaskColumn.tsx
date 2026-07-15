@@ -79,7 +79,7 @@ export function TaskColumn({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden">
       {/* Column header */}
       <div className="mb-1 flex items-center gap-2 px-2 py-1">
         <span className={`h-1.5 w-1.5 rounded-full ${config.dotColor}`} />
@@ -90,7 +90,7 @@ export function TaskColumn({
       </div>
 
       {/* Cards */}
-      <div className="flex flex-col gap-1.5 overflow-y-auto px-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1">
         {tasks.map((task) => (
           <TaskCard
             key={task.id}

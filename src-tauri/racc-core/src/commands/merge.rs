@@ -289,6 +289,43 @@ pub fn get_merge_manager(ctx: &AppContext, repo_id: i64) -> Result<MergeManagerS
     })
 }
 
+pub async fn reset_merge_manager(ctx: &AppContext, repo_id: i64) -> Result<(), CoreError> {
+    {
+        let mut conn = ctx
+            .db
+            .lock()
+            .map_err(|error| CoreError::Other(error.to_string()))?;
+        let tx = conn.transaction()?;
+        let repo_exists: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM repos WHERE id = ?1",
+            [repo_id],
+            |row| row.get(0),
+        )?;
+        if repo_exists == 0 {
+            return Err(CoreError::NotFound(format!("Repo {repo_id} not found")));
+        }
+        let active_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM merge_runs
+             WHERE repo_id = ?1 AND status IN ('starting', 'shipping')",
+            [repo_id],
+            |row| row.get(0),
+        )?;
+        if active_count > 0 {
+            return Err(CoreError::Other(
+                "Cannot reset Merge Manager while a run is active".to_string(),
+            ));
+        }
+        tx.execute(
+            "DELETE FROM merge_queue_items WHERE repo_id = ?1",
+            [repo_id],
+        )?;
+        tx.execute("DELETE FROM merge_runs WHERE repo_id = ?1", [repo_id])?;
+        tx.commit()?;
+    }
+    emit_merge_changed(&ctx.event_bus, repo_id, None).await;
+    Ok(())
+}
+
 fn reconcile_orphaned_runs(conn: &mut rusqlite::Connection, repo_id: i64) -> Result<(), CoreError> {
     let tx = conn.transaction()?;
     tx.execute(
@@ -1590,6 +1627,81 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("MCP endpoint expired"));
+
+        drop(ctx);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reset_clears_queue_and_run_history_but_preserves_settings() {
+        let (ctx, path) = test_context();
+        {
+            let conn = ctx.db.lock().expect("database lock");
+            conn.execute(
+                "INSERT INTO repos (path, name) VALUES ('/tmp/widgets', 'widgets')",
+                [],
+            )
+            .expect("repo insert");
+            let repo_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO merge_settings (repo_id, target_branch, agent, instructions)
+                 VALUES (?1, 'release', 'codex', 'Run release checks.')",
+                [repo_id],
+            )
+            .expect("settings insert");
+            conn.execute(
+                "INSERT INTO merge_runs (repo_id, target_branch, agent, prompt, status)
+                 VALUES (?1, 'release', 'codex', 'ship', 'succeeded')",
+                [repo_id],
+            )
+            .expect("run insert");
+            let run_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO merge_queue_items
+                 (repo_id, task_id, source_session_id, pr_url, status, run_id)
+                 VALUES (?1, 1, 1, 'https://github.com/acme/widgets/pull/1', 'succeeded', ?2)",
+                rusqlite::params![repo_id, run_id],
+            )
+            .expect("queue insert");
+        }
+
+        reset_merge_manager(&ctx, 1)
+            .await
+            .expect("reset should succeed");
+        let state = get_merge_manager(&ctx, 1).expect("manager state should load");
+        assert!(state.items.is_empty());
+        assert!(state.active_run.is_none());
+        assert!(state.last_run.is_none());
+        assert_eq!(state.settings.target_branch, "release");
+        assert_eq!(state.settings.agent, "codex");
+        assert_eq!(state.settings.instructions, "Run release checks.");
+
+        drop(ctx);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reset_rejects_an_active_merge_run() {
+        let (ctx, path) = test_context();
+        {
+            let conn = ctx.db.lock().expect("database lock");
+            conn.execute(
+                "INSERT INTO repos (path, name) VALUES ('/tmp/widgets', 'widgets')",
+                [],
+            )
+            .expect("repo insert");
+            conn.execute(
+                "INSERT INTO merge_runs (repo_id, target_branch, agent, prompt, status)
+                 VALUES (1, 'main', 'codex', 'ship', 'shipping')",
+                [],
+            )
+            .expect("run insert");
+        }
+
+        let error = reset_merge_manager(&ctx, 1)
+            .await
+            .expect_err("active reset should fail");
+        assert!(error.to_string().contains("while a run is active"));
 
         drop(ctx);
         let _ = std::fs::remove_file(path);

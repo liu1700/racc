@@ -12,6 +12,16 @@ pub fn get_test_manager(
 }
 
 #[tauri::command]
+pub async fn reset_test_manager(
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
+    repo_id: i64,
+) -> Result<(), String> {
+    racc_core::commands::test_manager::reset_test_manager(&ctx, repo_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn update_test_settings(
     ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     repo_id: i64,

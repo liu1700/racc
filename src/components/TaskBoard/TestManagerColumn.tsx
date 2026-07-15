@@ -33,11 +33,13 @@ export function TestManagerColumn({ repoId, onSessionSelect }: Props) {
     loading,
     saving,
     starting,
+    resetting,
     error,
     saveSettings,
     startRun,
     resolveRun,
     retryRun,
+    resetManager,
   } = useTestManagerStore();
   const openSession = useSessionStore((state) => state.openSession);
   const [draft, setDraft] = useState<TestSettings | null>(null);
@@ -52,7 +54,7 @@ export function TestManagerColumn({ repoId, onSessionSelect }: Props) {
   );
   const passedCount = result?.tests?.filter((test) => test.status === "passed").length ?? 0;
   const failedCount = result?.tests?.filter((test) => test.status === "failed").length ?? 0;
-  const canStart = activeRun === null && !starting && !saving && draft !== null;
+  const canStart = activeRun === null && !starting && !saving && !resetting && draft !== null;
 
   const persistDraft = async (next = draft) => {
     if (!next) return;
@@ -77,6 +79,14 @@ export function TestManagerColumn({ repoId, onSessionSelect }: Props) {
     await startRun();
   };
 
+  const handleReset = async () => {
+    const confirmed = window.confirm(
+      "Reset Test Manager? This clears all previous test results for this repository. Saved settings and terminal sessions are kept.",
+    );
+    if (!confirmed) return;
+    await resetManager();
+  };
+
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded border border-surface-3 bg-surface-1/40">
       <div className="flex items-center gap-2 border-b border-surface-3 px-3 py-2">
@@ -84,9 +94,21 @@ export function TestManagerColumn({ repoId, onSessionSelect }: Props) {
         <span className="text-[10px] uppercase tracking-wider text-zinc-400">
           Test Manager
         </span>
-        {(activeRun || starting) && (
-          <span className="ml-auto text-[9px] text-status-running">Testing</span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {(activeRun || starting) && (
+            <span className="text-[9px] text-status-running">Testing</span>
+          )}
+          {lastRun && (
+            <button
+              onClick={() => void handleReset()}
+              disabled={activeRun !== null || starting || resetting}
+              className="text-[9px] text-zinc-500 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Clear previous test results"
+            >
+              {resetting ? "Resetting…" : "Reset"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2.5">
