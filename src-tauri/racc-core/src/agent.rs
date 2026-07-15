@@ -112,17 +112,25 @@ pub fn analyze_output(output: &[u8], agent_type: &AgentType, window_size: usize)
     let text = strip_ansi(window);
     let patterns = HealthPatterns::for_agent(agent_type);
 
-    // Check completion first — prompt at END of buffer takes priority
-    if patterns.completion.is_match(&text) {
-        let tail_start = if text.len() > 200 {
-            let mut i = text.len() - 200;
-            while i < text.len() && !text.is_char_boundary(i) { i += 1; }
-            i
-        } else { 0 };
-        let tail = &text[tail_start..];
-        if patterns.completion.is_match(tail) {
-            return AgentSignal::Completion;
+    // Check completion first — only a prompt with no later non-whitespace
+    // output counts. The patterns use multiline mode, so `is_match` alone
+    // would also accept a stale prompt on an earlier line.
+    let tail_start = if text.len() > 200 {
+        let mut i = text.len() - 200;
+        while i < text.len() && !text.is_char_boundary(i) {
+            i += 1;
         }
+        i
+    } else {
+        0
+    };
+    let tail = &text[tail_start..];
+    if patterns
+        .completion
+        .find_iter(tail)
+        .any(|prompt| tail[prompt.end()..].trim().is_empty())
+    {
+        return AgentSignal::Completion;
     }
 
     // Check error — specific patterns to avoid false positives
@@ -131,6 +139,57 @@ pub fn analyze_output(output: &[u8], agent_type: &AgentType, window_size: usize)
     }
 
     AgentSignal::Idle
+}
+
+/// Detect an agent input prompt only when it is at the end of the latest
+/// terminal output window. Unlike [`is_agent_ready`], this deliberately ignores
+/// prompts that merely appeared earlier in an accumulated PTY transcript.
+///
+/// Result watchers use this after a task has started. Agent TUIs repaint their
+/// composer while work is still in progress, so callers must also require a
+/// short period of terminal silence before treating this as a completed task.
+pub fn is_agent_prompt_at_end(agent_type: &AgentType, output: &[u8]) -> bool {
+    matches!(
+        analyze_output(output, agent_type, 4096),
+        AgentSignal::Completion
+    )
+}
+
+/// Tracks a prompt candidate until the terminal has stayed quiet for the
+/// configured delay. Observing any newer output either moves the deadline
+/// forward or cancels the candidate when the prompt is no longer at the end.
+#[derive(Debug, Clone)]
+pub struct PromptSettleTracker {
+    settle_delay: std::time::Duration,
+    deadline: Option<tokio::time::Instant>,
+}
+
+impl PromptSettleTracker {
+    pub fn new(settle_delay: std::time::Duration) -> Self {
+        Self {
+            settle_delay,
+            deadline: None,
+        }
+    }
+
+    pub fn observe(
+        &mut self,
+        agent_type: &AgentType,
+        output: &[u8],
+        now: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        self.deadline = is_agent_prompt_at_end(agent_type, output)
+            .then_some(now + self.settle_delay);
+        self.deadline
+    }
+
+    pub fn clear(&mut self) {
+        self.deadline = None;
+    }
+
+    pub fn has_settled(&self, now: tokio::time::Instant) -> bool {
+        self.deadline.is_some_and(|deadline| now >= deadline)
+    }
 }
 
 /// PATH prefix that makes `claude` resolvable: ~/.local/bin is where the
@@ -377,6 +436,51 @@ mod tests {
         let signal = analyze_output(&output, &AgentType::ClaudeCode, 4096);
         // Error is outside the 4KB window
         assert_eq!(signal, AgentSignal::Idle);
+    }
+
+    #[test]
+    fn prompt_at_end_ignores_an_old_codex_prompt_while_work_continues() {
+        let output = b"\xe2\x80\xba Ask Codex to do anything\r\nRunning cargo test...";
+
+        assert!(is_agent_ready(
+            &AgentType::Codex,
+            &strip_ansi(output)
+        ));
+        assert!(!is_agent_prompt_at_end(&AgentType::Codex, output));
+    }
+
+    #[test]
+    fn prompt_at_end_accepts_a_settled_codex_prompt() {
+        let output = b"Finished the requested work.\r\n\xe2\x80\xba Ask Codex to do anything";
+
+        assert!(is_agent_prompt_at_end(&AgentType::Codex, output));
+    }
+
+    #[test]
+    fn prompt_settle_tracker_resets_while_codex_keeps_repainting() {
+        let start = tokio::time::Instant::now();
+        let delay = std::time::Duration::from_secs(15);
+        let mut tracker = PromptSettleTracker::new(delay);
+        let prompt = b"\xe2\x80\xba Ask Codex to do anything";
+
+        assert_eq!(
+            tracker.observe(&AgentType::Codex, prompt, start),
+            Some(start + delay)
+        );
+        let repaint_at = start + std::time::Duration::from_secs(10);
+        assert_eq!(
+            tracker.observe(&AgentType::Codex, prompt, repaint_at),
+            Some(repaint_at + delay)
+        );
+        assert!(!tracker.has_settled(start + std::time::Duration::from_secs(16)));
+        assert!(tracker.has_settled(start + std::time::Duration::from_secs(25)));
+
+        tracker.observe(
+            &AgentType::Codex,
+            b"Running the repository test suite...",
+            start + std::time::Duration::from_secs(26),
+        );
+        assert!(!tracker.has_settled(start + std::time::Duration::from_secs(60)));
     }
 
     #[test]

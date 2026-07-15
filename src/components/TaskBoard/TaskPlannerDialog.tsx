@@ -59,7 +59,8 @@ export function TaskPlannerDialog({
       setSelectedKeys(new Set());
       return;
     }
-    setSelectedKeys(new Set(result.tasks.map((task) => task.key)));
+    // Preview is opt-in: a task is created only after the user checks it.
+    setSelectedKeys(new Set());
   }, [run?.id, result]);
 
   if (!open) return null;
@@ -193,6 +194,11 @@ export function TaskPlannerDialog({
                     <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">
                       {result.summary}
                     </p>
+                    {result.tasks.length > 0 && (
+                      <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-600">
+                        Check the tasks you want to add. Required dependencies are selected automatically.
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => setComposeNew(true)}
@@ -221,16 +227,16 @@ export function TaskPlannerDialog({
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="overflow-hidden rounded border border-surface-3 bg-surface-0/40">
                 {result.tasks.map((task) => {
                   const checked = selectedKeys.has(task.key);
                   return (
                     <label
                       key={task.key}
-                      className={`block cursor-pointer rounded border p-3 transition-colors ${
+                      className={`block cursor-pointer border-b border-surface-3 px-4 py-3 transition-colors last:border-b-0 ${
                         checked
-                          ? "border-accent/45 bg-accent/5"
-                          : "border-surface-3 bg-surface-2/30 opacity-60"
+                          ? "bg-accent/5"
+                          : "hover:bg-surface-2/40"
                       }`}
                     >
                       <div className="flex items-start gap-3">
@@ -251,10 +257,10 @@ export function TaskPlannerDialog({
                             {task.description}
                           </p>
                           {task.acceptance_criteria.length > 0 && (
-                            <ul className="mt-2 space-y-0.5 text-[10px] text-zinc-400">
+                            <ul className="mt-2 space-y-0.5 font-mono text-[10px] text-zinc-400">
                               {task.acceptance_criteria.map((criterion, index) => (
                                 <li key={`${task.key}-${index}`} className="flex gap-1.5">
-                                  <span className="text-status-completed">✓</span>
+                                  <span className="text-zinc-600">-</span>
                                   <span>{criterion}</span>
                                 </li>
                               ))}
@@ -271,7 +277,7 @@ export function TaskPlannerDialog({
                   );
                 })}
                 {result.tasks.length === 0 && (
-                  <div className="rounded border border-dashed border-surface-3 px-4 py-6 text-center text-xs text-zinc-500">
+                  <div className="px-4 py-6 text-center text-xs text-zinc-500">
                     No tasks were generated. The link may require authentication; paste the Epic text and try again.
                   </div>
                 )}

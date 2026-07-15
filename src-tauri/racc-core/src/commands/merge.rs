@@ -10,6 +10,7 @@ use crate::AppContext;
 pub const DEFAULT_SHIP_INSTRUCTIONS: &str = "Merge every queued pull request into the integration branch in the listed order, then run the repository's full relevant test suite as one batch.";
 
 const SHIP_RESULT_PREFIX: &str = "RACC_SHIP_RESULT:";
+const RESULT_PROMPT_SETTLE_DELAY: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FailedPullRequest {
@@ -656,7 +657,12 @@ fn spawn_result_watcher(
         let agent_type = crate::agent::AgentType::from_agent_str(&run.agent);
         let run_token = format!("Merge Master for Racc ship run {}", run.id);
         let mut output_buffer = Vec::new();
-        let mut run_seen_at: Option<tokio::time::Instant> = None;
+        let mut run_seen = false;
+        let mut prompt_tracker =
+            crate::agent::PromptSettleTracker::new(RESULT_PROMPT_SETTLE_DELAY);
+        let prompt_settle_timeout = tokio::time::sleep(RESULT_PROMPT_SETTLE_DELAY);
+        tokio::pin!(prompt_settle_timeout);
+        let mut prompt_pending = false;
 
         loop {
             tokio::select! {
@@ -682,24 +688,29 @@ fn spawn_result_watcher(
                                 output_buffer.drain(..32_768);
                             }
                             let text = crate::agent::strip_ansi(&output_buffer);
-                            if run_seen_at.is_none() && text.contains(&run_token) {
-                                run_seen_at = Some(tokio::time::Instant::now());
+                            if !run_seen && text.contains(&run_token) {
+                                run_seen = true;
                                 // Discard startup output so the initial ready prompt cannot be
                                 // mistaken for the prompt shown after the ship task completes.
                                 output_buffer.clear();
+                                prompt_tracker.clear();
+                                prompt_pending = false;
                                 continue;
                             }
-                            if let Some(started) = run_seen_at {
-                                if started.elapsed() >= std::time::Duration::from_secs(2)
-                                    && crate::agent::is_agent_ready(&agent_type, &text)
-                                {
-                                    let _ = mark_run_needs_review(
-                                        &db,
-                                        run.id,
-                                        "Merge Master returned to the input prompt without a valid result marker",
-                                    );
-                                    emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
-                                    break;
+                            if run_seen {
+                                // Codex and Claude repaint their composer during active work.
+                                // Require the prompt to remain the last output and the PTY to
+                                // stay quiet before concluding that the task returned without a
+                                // result marker. Every repaint resets this timer.
+                                if let Some(deadline) = prompt_tracker.observe(
+                                    &agent_type,
+                                    &output_buffer,
+                                    tokio::time::Instant::now(),
+                                ) {
+                                    prompt_settle_timeout.as_mut().reset(deadline);
+                                    prompt_pending = true;
+                                } else {
+                                    prompt_pending = false;
                                 }
                             }
                         }
@@ -725,6 +736,15 @@ fn spawn_result_watcher(
                         Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                         Err(_) => break,
                     }
+                }
+                _ = &mut prompt_settle_timeout, if prompt_pending => {
+                    let _ = mark_run_needs_review(
+                        &db,
+                        run.id,
+                        "Merge Master returned to the input prompt without a valid result marker",
+                    );
+                    emit_merge_changed(&event_bus, run.repo_id, Some(run.id)).await;
+                    break;
                 }
             }
         }
