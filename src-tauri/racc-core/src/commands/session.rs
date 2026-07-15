@@ -1,6 +1,8 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::agent;
 use crate::AppContext;
@@ -25,6 +27,132 @@ async fn inject_and_submit_task(
     tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     // Agent TUIs in PTY raw mode expect carriage return for Enter.
     transport_manager.write(session_id, b"\r").await
+}
+
+/// Select the non-destructive "Skip" row in Codex's startup update chooser.
+/// The chooser defaults to "Update now", so the Down key and Enter must remain
+/// separate PTY writes just like task submission.
+async fn skip_codex_update_prompt(
+    transport_manager: &TransportManager,
+    session_id: i64,
+    key_delay: std::time::Duration,
+) -> Result<(), crate::transport::TransportError> {
+    transport_manager.write(session_id, b"\x1b[B").await?;
+    tokio::time::sleep(key_delay).await;
+    transport_manager.write(session_id, b"\r").await
+}
+
+/// Recover after Codex's self-updater exits to the underlying shell. Waiting
+/// briefly lets outstanding terminal-query replies reach zsh; Ctrl-C then
+/// discards those replies from the shell input line and Ctrl-L clears their
+/// visible `^[[...` echo before Codex is launched again.
+async fn restart_codex_after_update(
+    transport_manager: &TransportManager,
+    session_id: i64,
+    skip_permissions: bool,
+    resume_existing: bool,
+    exit_settle_delay: std::time::Duration,
+    key_delay: std::time::Duration,
+) -> Result<(), crate::transport::TransportError> {
+    tokio::time::sleep(exit_settle_delay).await;
+    transport_manager.write(session_id, b"\x03").await?;
+    tokio::time::sleep(key_delay).await;
+    transport_manager.write(session_id, b"\x0c").await?;
+    tokio::time::sleep(key_delay).await;
+
+    let command = if resume_existing {
+        agent::build_resume_command("codex", None, skip_permissions, false)
+    } else {
+        agent::build_command("codex", "", skip_permissions, false, None)
+    };
+    transport_manager
+        .write(session_id, command.as_bytes())
+        .await
+}
+
+async fn mark_session_error(ctx: &AppContext, session_id: i64) {
+    let updated = ctx.db.lock().is_ok_and(|conn| {
+        conn.execute(
+            "UPDATE sessions SET status = 'Error', updated_at = datetime('now') WHERE id = ?1",
+            [session_id],
+        )
+        .is_ok()
+    });
+    if updated {
+        ctx.event_bus
+            .emit(RaccEvent::SessionStatusChanged {
+                session_id,
+                status: "Error".to_string(),
+                pr_url: None,
+                source: "local".to_string(),
+            })
+            .await;
+    }
+}
+
+/// Watch an attached Codex session for its updater's terminal message. The
+/// underlying zsh remains alive after Codex exits, so transport liveness alone
+/// cannot distinguish this state from a running agent.
+fn spawn_codex_update_watcher(
+    ctx: &AppContext,
+    session_id: i64,
+    skip_permissions: bool,
+    task_submitted: Arc<AtomicBool>,
+) {
+    let mut rx = ctx.terminal_tx.subscribe();
+    let ctx = ctx.clone();
+    tokio::spawn(async move {
+        let mut liveness = tokio::time::interval(std::time::Duration::from_secs(30));
+        liveness.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Consume interval's immediate first tick so session setup has time to
+        // install the transport before the first liveness probe.
+        liveness.tick().await;
+        let mut buffer = Vec::new();
+
+        loop {
+            tokio::select! {
+                result = rx.recv() => {
+                    match result {
+                        Ok(data) if data.session_id == session_id => {
+                            buffer.extend_from_slice(&data.data);
+                            let text = agent::strip_ansi(&buffer);
+                            if agent::is_codex_update_complete(&text) {
+                                let resume_existing = task_submitted.load(Ordering::Acquire);
+                                if let Err(error) = restart_codex_after_update(
+                                    &ctx.transport_manager,
+                                    session_id,
+                                    skip_permissions,
+                                    resume_existing,
+                                    std::time::Duration::from_secs(1),
+                                    std::time::Duration::from_millis(200),
+                                ).await {
+                                    log::warn!(
+                                        "Session {session_id}: failed to restart Codex after update: {error}"
+                                    );
+                                    mark_session_error(&ctx, session_id).await;
+                                }
+                                // One automatic recovery only. If an install did
+                                // not really update Codex, this prevents a loop.
+                                break;
+                            }
+
+                            if buffer.len() > 65_536 {
+                                buffer.drain(..32_768);
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(_) => break,
+                    }
+                }
+                _ = liveness.tick() => {
+                    if !ctx.transport_manager.is_alive(session_id).await {
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 // --- Types ---
@@ -450,6 +578,19 @@ pub(crate) async fn create_session_from_base_with_launch(
     // when there's no trust dialog). Set inside each branch right before launch;
     // the shared injector below consumes it. Applies to BOTH local and remote.
     let mut injector_rx: Option<tokio::sync::broadcast::Receiver<crate::TerminalData>> = None;
+    let task_submitted = Arc::new(AtomicBool::new(false));
+
+    // Custom planner sessions have a run-scoped MCP launch command and their
+    // own lifecycle watcher. Normal Codex sessions can safely recover with a
+    // fresh launch (before task injection) or resume (after injection).
+    if agent == "codex" && launch_options.is_none() {
+        spawn_codex_update_watcher(
+            ctx,
+            session_id,
+            skip_permissions,
+            task_submitted.clone(),
+        );
+    }
 
     if let Some(ref sid) = server_id {
         // Remote session: clone repo if needed, create worktree, spawn SshTmuxTransport.
@@ -624,12 +765,14 @@ pub(crate) async fn create_session_from_base_with_launch(
         let transport_manager = ctx.transport_manager.clone();
         let agent_clone = agent.clone();
         let task_desc = task_description.clone();
+        let task_submitted = task_submitted.clone();
         tokio::spawn(async move {
             let agent_type = agent::AgentType::from_agent_str(&agent_clone);
             let timeout = tokio::time::sleep(std::time::Duration::from_secs(120));
             tokio::pin!(timeout);
             let mut buffer = Vec::new();
             let mut trust_handled = false;
+            let mut codex_update_handled = false;
             loop {
                 tokio::select! {
                     result = rx.recv() => {
@@ -637,6 +780,46 @@ pub(crate) async fn create_session_from_base_with_launch(
                             Ok(data) if data.session_id == session_id => {
                                 buffer.extend_from_slice(&data.data);
                                 let text = agent::strip_ansi(&buffer);
+
+                                // The updater has dropped back to zsh. Never
+                                // treat that shell prompt as the Codex composer;
+                                // the update watcher will relaunch Codex, after
+                                // which this injector can submit the original
+                                // task normally.
+                                if matches!(agent_type, agent::AgentType::Codex)
+                                    && agent::is_codex_update_complete(&text)
+                                {
+                                    buffer.clear();
+                                    continue;
+                                }
+
+                                // Codex's update chooser also renders a `›`, but
+                                // it is a menu, not the task composer. Select
+                                // "Skip" for automated task sessions and keep
+                                // waiting for the real composer.
+                                if !codex_update_handled
+                                    && matches!(agent_type, agent::AgentType::Codex)
+                                    && agent::is_codex_update_prompt(&text)
+                                {
+                                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                                    match skip_codex_update_prompt(
+                                        &transport_manager,
+                                        session_id,
+                                        std::time::Duration::from_millis(150),
+                                    ).await {
+                                        Ok(()) => {
+                                            codex_update_handled = true;
+                                            buffer.clear();
+                                            continue;
+                                        }
+                                        Err(error) => {
+                                            log::warn!(
+                                                "Failed to skip Codex update prompt for session {session_id}: {error}"
+                                            );
+                                            break;
+                                        }
+                                    }
+                                }
 
                                 // (1) Auto-accept the workspace trust dialog once.
                                 if !trust_handled && agent::is_trust_dialog(&text) {
@@ -660,6 +843,8 @@ pub(crate) async fn create_session_from_base_with_launch(
                                         &task_desc,
                                     ).await {
                                         log::warn!("Failed to inject task into session {session_id}: {error}");
+                                    } else {
+                                        task_submitted.store(true, Ordering::Release);
                                     }
                                     break;
                                 }
@@ -684,6 +869,8 @@ pub(crate) async fn create_session_from_base_with_launch(
                             &task_desc,
                         ).await {
                             log::warn!("Failed to inject fallback task into session {session_id}: {error}");
+                        } else {
+                            task_submitted.store(true, Ordering::Release);
                         }
                         break;
                     }
@@ -919,6 +1106,15 @@ pub async fn reattach_session(
 
         (agent, branch, created_at, updated_at, pr_url, server_id, agent_session_id, skip_permissions, repo_path)
     }; // DB lock released here -- safe for async transport work below
+
+    if agent == "codex" {
+        spawn_codex_update_watcher(
+            ctx,
+            session_id,
+            skip_permissions,
+            Arc::new(AtomicBool::new(true)),
+        );
+    }
 
     if let Some(ref sid) = server_id {
         // Remote session: reattach to existing tmux session via SSH.
@@ -1280,6 +1476,14 @@ pub async fn reconnect_session(
             rtk_remote,
         )
     );
+    if agent == "codex" {
+        spawn_codex_update_watcher(
+            ctx,
+            session_id,
+            skip_permissions,
+            Arc::new(AtomicBool::new(true)),
+        );
+    }
     let transport = crate::transport::ssh_tmux::SshTmuxTransport::spawn(
         session_id,
         &sid,
@@ -1500,6 +1704,75 @@ mod tests {
         .unwrap();
 
         assert_eq!(*writes.lock().await, vec![b"fix the bug".to_vec(), b"\r".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn codex_update_prompt_selects_skip_instead_of_swallowing_the_task() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let transport_manager = TransportManager::new();
+        transport_manager
+            .insert(
+                43,
+                Box::new(RecordingTransport {
+                    writes: writes.clone(),
+                }),
+            )
+            .await;
+
+        skip_codex_update_prompt(&transport_manager, 43, std::time::Duration::ZERO)
+            .await
+            .unwrap();
+
+        assert_eq!(*writes.lock().await, vec![b"\x1b[B".to_vec(), b"\r".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn codex_update_recovery_clears_shell_and_uses_the_right_launch_mode() {
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let transport_manager = TransportManager::new();
+        transport_manager
+            .insert(
+                44,
+                Box::new(RecordingTransport {
+                    writes: writes.clone(),
+                }),
+            )
+            .await;
+
+        restart_codex_after_update(
+            &transport_manager,
+            44,
+            true,
+            true,
+            std::time::Duration::ZERO,
+            std::time::Duration::ZERO,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *writes.lock().await,
+            vec![
+                b"\x03".to_vec(),
+                b"\x0c".to_vec(),
+                b"codex resume --last --dangerously-bypass-approvals-and-sandbox\n".to_vec(),
+            ]
+        );
+
+        writes.lock().await.clear();
+        restart_codex_after_update(
+            &transport_manager,
+            44,
+            false,
+            false,
+            std::time::Duration::ZERO,
+            std::time::Duration::ZERO,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *writes.lock().await,
+            vec![b"\x03".to_vec(), b"\x0c".to_vec(), b"codex\n".to_vec()]
+        );
     }
 
     #[test]

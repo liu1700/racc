@@ -305,6 +305,29 @@ pub fn is_resume_failure(text: &str) -> bool {
         || t.contains("Noconversationfoundtocontinue")
 }
 
+/// Detect Codex's startup update chooser. Its selected row also uses the `›`
+/// glyph, so without this guard Racc mistakes the chooser for Codex's composer,
+/// types the task into the menu, and presses Enter on the default "Update now"
+/// action. The task is then lost when the updater exits Codex.
+pub fn is_codex_update_prompt(text: &str) -> bool {
+    let t = squash_whitespace(text).to_ascii_lowercase();
+    t.contains("updateavailable!")
+        && t.contains("updatenow")
+        && t.contains("skipuntilnextversion")
+        && t.contains("pressentertocontinue")
+}
+
+/// Detect the terminal message emitted after Codex's in-product updater exits
+/// the TUI and asks the caller to start it again. Requiring both the installer
+/// preamble and success message avoids reacting when a conversation merely
+/// quotes "Please restart Codex".
+pub fn is_codex_update_complete(text: &str) -> bool {
+    let t = squash_whitespace(text).to_ascii_lowercase();
+    t.contains("updatingcodexvia")
+        && t.contains("pleaserestartcodex")
+        && (t.contains("updateransuccessfully!") || t.contains("updatesuccessfully!"))
+}
+
 /// Collapse all whitespace out of TUI output before matching marker phrases.
 /// Claude Code's TUI positions text with cursor-motion escape sequences, and
 /// [`strip_ansi`] removes those sequences entirely — so the spaces between
@@ -338,15 +361,10 @@ pub fn is_agent_ready(agent_type: &AgentType, text: &str) -> bool {
                 || t.contains("bypasspermissions")
                 || t.contains("auto-acceptedits")
         }
-        // Codex uses `›` for its composer prompt. Keep the generic markers as
-        // fallbacks for CLI versions/themes that render a different glyph.
-        AgentType::Codex => {
-            text.contains('›')
-                || text.contains("❯")
-                || text.contains("╭")
-                || text.ends_with("$ ")
-                || text.ends_with("> ")
-        }
+        // Codex uses `›` for its composer prompt. Do not accept generic shell
+        // prompts here: when Codex exits after an update, zsh is still alive
+        // and a `$`/`>` fallback would send the task into the shell.
+        AgentType::Codex => !is_codex_update_prompt(text) && text.contains('›'),
         AgentType::Aider | AgentType::Generic => {
             text.contains("❯")
                 || text.contains("╭")
@@ -626,6 +644,29 @@ mod tests {
     fn test_codex_ready_uses_composer_prompt() {
         assert!(is_agent_ready(&AgentType::Codex, "›  Ask Codex to do anything"));
         assert!(!is_agent_ready(&AgentType::Codex, "Loading model..."));
+        assert!(!is_agent_ready(&AgentType::Codex, "repo git:(task/fix) $ "));
+    }
+
+    #[test]
+    fn codex_update_prompt_is_not_an_agent_composer() {
+        let prompt = "✨ Update available! 0.143.0 -> 0.144.0\n\
+                      › 1. Update now (runs `bun install -g @openai/codex`)\n\
+                        2. Skip\n\
+                        3. Skip until next version\n\
+                      Press enter to continue";
+        assert!(is_codex_update_prompt(prompt));
+        assert!(!is_agent_ready(&AgentType::Codex, prompt));
+    }
+
+    #[test]
+    fn codex_update_completion_requires_the_real_updater_transcript() {
+        let output = "Updating Codex via `bun install -g @openai/codex`...\n\
+                      installed @openai/codex@0.144.0\n\
+                      🎉 Update ran successfully! Please restart Codex.";
+        assert!(is_codex_update_complete(output));
+        assert!(!is_codex_update_complete(
+            "The documentation says: Please restart Codex."
+        ));
     }
 
     #[test]
