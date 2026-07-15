@@ -4,71 +4,76 @@
 
 ## Core Positioning
 
-Racc is a **control plane for AI coding agents** — a desktop app that manages multiple agentic coding sessions with visibility, usage tracking, and change review.
+Racc is a **control plane for terminal-based AI coding agents**. It helps one developer turn a set of repository tasks into isolated agent sessions, understand what is happening across those sessions, and move completed work through testing and merging.
 
-It is explicitly **not**:
-- A code editor (VS Code, Neovim already exist)
-- A new AI agent (Claude Code already exists)
-- A replacement for git or docker (it orchestrates them)
+It is explicitly not:
+
+- a code editor;
+- a new foundation model or coding agent;
+- a replacement for git, SSH, tmux, or a project's own test system;
+- a promise that high-autonomy agents are safe without review.
 
 ## Target User
 
-**Primary persona:** An individual developer who:
+The primary user already works with Claude Code or Codex in terminals and wants to run several pieces of work at once. They may work locally, on a remote development machine, or from a browser over a trusted private network.
 
-- Uses Claude Code daily as their main coding workflow
-- Maintains multiple projects or feature branches simultaneously
-- Currently runs agents in multiple terminals or tmux panes to work in parallel
-- Struggles with lack of visual overview, usage tracking, and change review
-- May work across local machines and remote VPS instances
+Their main problem is no longer starting an agent. It is maintaining a reliable mental model of parallel work: which task is open, which session needs attention, which PRs are ready, what was actually tested, and whether an interrupted automation really finished.
 
-**Key insight:** These users love the power of terminal agents but need a management layer on top. They don't want to give up terminal agents for Cursor/Windsurf — they want to augment them.
+## Product Loop
+
+```text
+Describe work
+    -> review tasks
+    -> fire isolated sessions
+    -> monitor terminals
+    -> queue PRs
+    -> validate and merge
+    -> run full-project UAT
+```
+
+Task Planner, Merge Manager, and Test Manager turn the beginning and end of this loop into explicit, inspectable workflows. The terminal remains available throughout; automation never removes the ability to see what the agent did.
 
 ## Design Principles
 
-### 1. Agent-Agnostic
+### 1. Agent-Agnostic Transport
 
-The IDE must work with **any** terminal-based coding agent. This is the core differentiator. When AI models evolve rapidly, not being locked to a single vendor is the highest user value.
+Agent communication uses normal terminal input and output. Claude Code and Codex are supported today, while the transport boundary remains suitable for other terminal agents.
 
-Implementation: A unified **Agent Adapter** interface that abstracts communication. MVP uses tmux send-keys (works with everything), later adds PTY bridging and SDK integration for specific agents.
+Agent-specific behavior is kept narrow: launch/resume arguments, usage data, and optional setup such as RTK for Claude Code.
 
-### 2. Session Resilience
+### 2. Isolation by Default
 
-Agent sessions are managed with graceful handling of disruptions:
-- On app close, all PTY processes are cleaned up
-- On app restart, `reconcile_sessions()` marks orphaned sessions as `Disconnected`
-- SQLite persistence ensures session metadata survives across restarts
+Normal parallel tasks use git worktrees so source changes do not collide. Merge Manager and Test Manager create their own integration/test worktrees. A worktree isolates git state, not machine permissions; stronger container isolation remains future work.
 
-Implementation: Each session runs in a native PTY process managed by `tauri-plugin-pty`. Session metadata is persisted in SQLite. On restart, reconciliation detects orphaned sessions and updates their status. Full session immortality (surviving app crashes) is planned for v0.2 via remote execution support.
+### 3. Resilient, Honest State
 
-### 3. Transparency Over Magic
+SQLite preserves repositories, tasks, sessions, manager settings, runs, and results. Local PTYs are process-bound and become Disconnected after restart; remote tmux sessions can be probed and reconnected.
 
-Users must be able to see exactly what their agents are doing:
-- Which files were read
-- Which commands were executed
-- How many tokens were consumed
-- What changes were made
+Racc must not guess that a critical workflow succeeded. Manager agents submit typed results through run-scoped MCP tools. If the endpoint or session disappears before submission, Racc surfaces `needs_review` and gives the user explicit resolution and retry actions.
 
-No black boxes. Every agent action is logged, searchable, and filterable.
+### 4. Transparency Over Magic
 
-### 4. Design for Human Cognition
+Every workflow retains an inspectable terminal. Structured summaries supplement the underlying commands and evidence; they do not conceal them. External links, source files, branches, worktrees, PRs, and test results remain directly reachable from the UI.
 
-The multi-agent supervision problem is fundamentally a human factors challenge. Working memory holds only 4±1 items, vigilance degrades after 15 minutes, and creative flow requires the opposite brain network from monitoring. Racc's UI is designed around these biological constraints:
+### 5. Design for Human Attention
 
-- **Categorical chunking** — group sessions by status so developers track 3 categories, not N individual agents
-- **Mode separation** — distinct monitoring mode (periodic check-ins) and deep work mode (uninterrupted focus)
-- **Preattentive encoding** — status communicated via color hue alone for sub-200ms detection
-- **Batched review** — completed work queues for evaluation windows rather than interrupting flow
-- **Tiered alerts** — five levels from ambient (color dots) to critical (modal), preventing alarm fatigue
+The board separates intent (Open), execution (Working), release integration (Merge Manager), and verification (Test Manager). The sidebar compresses each live session into status, elapsed time, branch, and recent output. Completed tasks are archived rather than kept as a permanently visible column.
 
-See [Cognitive Design Research](Cognitive-Design-Research.md) for the full scientific foundation.
+See [Cognitive Design Research](Cognitive-Design-Research.md) for the research background.
 
-### 5. Integration Over Reinvention
+### 6. Shared Core, Multiple Surfaces
 
-Build on battle-tested tools:
-- **git worktrees** for code isolation (not custom sandboxing)
-- **native PTY** for agent communication (standard terminal I/O)
-- **SQLite** for session persistence (lightweight, embedded)
-- **docker** for environment isolation (not Nix or Firecracker) — planned
-- **Tailscale** for networking (not custom VPN) — planned
+Desktop and browser modes use the same `racc-core` behavior. Tauri IPC and WebSocket are transport choices, not separate products. This keeps task, session, merge, and test semantics consistent across devices.
+
+### 7. Integrate Instead of Rebuild
+
+Racc deliberately relies on:
+
+- git worktrees for source isolation;
+- native PTY for local sessions;
+- SSH/tmux for persistent remote sessions;
+- SQLite for local metadata;
+- Tailscale or an equivalent trusted network for private headless access;
+- each repository's own build and test commands.
 
 [Next: Feature Specification >](Feature-Specification.md)

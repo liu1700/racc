@@ -4,233 +4,189 @@
 
 ## System Overview
 
-Racc uses a **three-crate Rust workspace** (`src-tauri/`) that supports both a desktop Tauri app and a headless server:
+Racc has one React frontend and one shared Rust business-logic core, exposed through two primary runtime surfaces.
 
-| Crate | Type | Purpose |
-|-------|------|---------|
-| **racc-core** | Library | Shared business logic — `AppContext`, `EventBus`, `TransportManager`, commands, DB, SSH |
-| **racc-server** | Binary | Headless HTTP/WebSocket server (Axum) — serves the React frontend as static files and exposes the same command set over JSON-RPC WebSocket |
-| **racc** (root) | Tauri app | Desktop app — wraps `racc-core` with Tauri IPC and `tauri-plugin-pty` |
+```text
+                     React 19 frontend
+                  (components + Zustand)
+                           |
+                      RaccTransport
+                    /               \
+             Tauri IPC          WebSocket /ws
+                |                    |
+        thin Tauri wrappers      racc-server (Axum)
+                    \               /
+                         racc-core
+          commands | SQLite | events | transports | MCP
+                         /       \
+                  local PTY     SSH/tmux
+```
 
-Both `racc` (Tauri) and `racc-server` construct the same `AppContext` struct from `racc-core`, ensuring identical behavior regardless of runtime.
+## Rust Workspace
 
-### AppContext
+The Cargo workspace under `src-tauri/` contains:
 
-`AppContext` (`racc-core/src/lib.rs`) is the shared application state:
+| Crate | Purpose |
+|-------|---------|
+| `racc-core` | Runtime-independent commands, SQLite migrations, event bus, git/file access, local/remote transports, Task Planner, Merge Manager, Test Manager, and MCP endpoints |
+| `racc-server` | Axum binary serving the production frontend and `/ws` for browser mode |
+| `racc` | Tauri desktop application with native menus/plugins and thin command wrappers over `racc-core` |
+
+Shared behavior belongs in `racc-core`. Tauri-only code is limited to IPC annotations, desktop plugins, native menu behavior, the assistant sidecar, and event forwarding.
+
+## Shared Application State
+
+Both primary runtimes construct `AppContext`:
 
 ```rust
 pub struct AppContext {
-    pub db: Arc<Mutex<Connection>>,         // SQLite
-    pub transport_manager: TransportManager, // PTY + SSH session transports
-    pub ssh_manager: Arc<SshManager>,        // SSH connection pool
-    pub event_bus: Arc<dyn EventBus>,        // Abstracted event dispatch
-    pub terminal_tx: broadcast::Sender<TerminalData>, // Terminal output broadcast
+    pub db: Arc<Mutex<Connection>>,
+    pub transport_manager: TransportManager,
+    pub ssh_manager: Arc<SshManager>,
+    pub event_bus: Arc<dyn EventBus>,
+    pub terminal_tx: broadcast::Sender<TerminalData>,
 }
 ```
 
-### EventBus Abstraction
+- `db` is the SQLite connection shared by command handlers.
+- `TransportManager` owns live transports and bounded per-session buffers.
+- `SshManager` manages remote connections.
+- `EventBus` carries domain state changes.
+- `terminal_tx` carries raw terminal bytes separately from low-volume domain events.
 
-`EventBus` (`racc-core/src/events.rs`) is a trait that decouples event emission from the runtime:
+## Frontend Transport Boundary
 
-- **`BroadcastEventBus`** — default implementation using `tokio::sync::broadcast`, used by both Tauri and headless server.
-- The Tauri app additionally bridges events to the WebView via `AppHandle.emit()`.
-- The headless server fans events out to connected WebSocket clients.
+`src/services/transport.ts` exposes:
 
-### Frontend RaccTransport Layer
-
-The React frontend uses a `RaccTransport` interface (`src/services/transport.ts`) to abstract over the communication channel:
-
-- **`TauriTransport`** — wraps `invoke()` and `listen()` from `@tauri-apps/api`. Used when running inside the Tauri desktop app.
-- **`WebSocketTransport`** — connects via `ws://<host>/ws` using JSON-RPC for commands and binary frames for terminal data. Used when served by `racc-server`.
-- **Auto-detection** — `createTransport()` checks for `__TAURI_INTERNALS__` at startup and picks the appropriate transport. The rest of the frontend is transport-agnostic.
-
----
-
-### Desktop Architecture (Tauri)
-
-The desktop app uses the **single-process Tauri 2.x** architecture. The Rust backend and React frontend run in one process — the frontend calls Rust via `invoke()` IPC, and Rust handles all system interactions (PTY, git, SQLite, filesystem).
-
-```
-+----------------------------------------------------------------------+
-|                        Tauri 2.x Application                         |
-|                                                                      |
-|  +---------------------------+     +-------------------------------+ |
-|  |    React 19 Frontend      |     |     Rust Backend              | |
-|  |  +---------------------+  | IPC |  +-------------------------+ | |
-|  |  | Zustand Store       |  |<--->|  | Session Commands        | | |
-|  |  | (sessionStore.ts)   |  |     |  | (session.rs)            | | |
-|  |  +---------------------+  |     |  +-------------------------+ | |
-|  |  | xterm.js Terminal   |  |     |  | Git Commands            | | |
-|  |  | (Terminal.tsx)       |  |     |  | (git.rs)                | | |
-|  |  +---------------------+  |     |  +-------------------------+ | |
-|  |  | PTY Manager         |  |     |  | Cost Tracker            | | |
-|  |  | (ptyManager.ts)     |  |     |  | (cost.rs)               | | |
-|  |  +---------------------+  |     |  +-------------------------+ | |
-|  |  | PTY Output Parser   |  |     |  | SQLite DB               | | |
-|  |  | (ptyOutputParser.ts)|  |     |  | (db.rs)                 | | |
-|  |  +---------------------+  |     |  +-------------------------+ | |
-|  |  | UI Components       |  |     |                               | |
-|  |  | Sidebar             |  |     |                               | |
-|  |  +---------------------+  |     |  +-------------------------+ | |
-|  +---------------------------+     +-------------------------------+ |
-|                                                                      |
-|  +------------------------------------------------------------------+|
-|  |  tauri-plugin-pty: Native PTY processes (one per session)        ||
-|  |  Agent runs inside PTY → xterm.js renders output in real-time   ||
-|  +------------------------------------------------------------------+|
-|                                                                      |
-+----------------------------------------------------------------------+
+```typescript
+interface RaccTransport {
+  call(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  on(event: string, handler: (data: unknown) => void): () => void;
+  onTerminalData(sessionId: number, handler: (data: Uint8Array) => void): () => void;
+  isLocal(): boolean;
+}
 ```
 
-## Layer Breakdown
+`createTransport()` checks for the Tauri runtime:
 
-| Layer | Component | Responsibility |
-|-------|-----------|----------------|
-| **Frontend** | React 19 + xterm.js + Zustand | Render UI, terminal display, state management |
-| **IPC** | Tauri `invoke()` | Frontend ↔ Rust communication via `#[tauri::command]` |
-| **Backend** | Rust (Tauri commands) | Session CRUD, git worktrees, token usage tracking |
-| **Terminal I/O** | `tauri-plugin-pty` | Spawn/kill PTY processes, stream data to xterm.js |
-| **Persistence** | SQLite | Repos and sessions stored in `~/.racc/racc.db` |
-| **Insights Engine** | Frontend real-time rules + Rust batch analysis | Cross-session pattern detection — **hidden for MVP**, code preserved |
-| **Communication** | Native PTY read/write | Agent-agnostic bidirectional terminal I/O |
-| **Isolation** | Git Worktree (+ Docker planned) | Code isolation per session |
-| **Agent Runtime** | Claude Code (Codex planned) | Pluggable — app does not bind to a specific agent |
+- **TauriTransport** dynamically loads `invoke` and `listen`. Core events arrive through `racc://event`; terminal bytes arrive through `transport:data`.
+- **WebSocketTransport** connects to the current host's `/ws`. It converts top-level camelCase frontend arguments to snake_case, correlates JSON request IDs, dispatches events, and demultiplexes binary terminal frames.
 
-## Tech Stack
+Stores and shared components must use this boundary so browser and desktop behavior remain aligned.
 
-### Client: Tauri 2.x
+## Session Transports
 
-**Why Tauri over Electron:**
-- Memory efficiency matters: users may have 5-10 terminal renderers + diff views open simultaneously
-- Tauri's Rust backend handles all system interactions (PTY, git, SQLite) natively
-- Single-process model simplifies deployment and state management
+### LocalPtyTransport
 
-**Risk:** WebView cross-platform inconsistency (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux). Requires extra cross-platform testing investment.
+Local sessions use `portable-pty`, not a frontend PTY plugin. `racc-core` starts the user's shell, launches Claude Code or Codex, reads/writes bytes, resizes the terminal, and reports exit/liveness state.
 
-**macOS menu:** A custom minimal menu (Racc + Edit) replaces the default Tauri menu to prevent the macOS Help menu from intercepting keyboard events in the WebView terminal.
+### SshTmuxTransport
 
-**Frontend stack:**
-- React 19 + TypeScript 5.8
-- xterm.js 5.5 with FitAddon for responsive terminal sizing
-- Zustand 5 for state management
-- Shiki for syntax highlighting (VS Code-compatible TextMate grammars, `github-dark-default` theme)
-- Tailwind CSS 3.4 with custom design tokens
-- Vite 6.3 for dev server and builds
+Remote sessions connect through `russh` and execute inside named tmux sessions. Tmux provides persistence beyond a browser or desktop restart. Reconciliation and reconnect probe the remote session before deciding whether it is Running, Completed, or Disconnected.
 
-### Session Persistence: SQLite + PTY
+### Buffering and Delivery
 
-Repos and sessions are persisted in SQLite (`~/.racc/racc.db`). PTY processes provide runtime agent execution.
+`TransportManager` maintains a bounded ring buffer per session. Transport readers publish `TerminalData { session_id, data }`:
 
-**Design:**
-- Repos are first-class objects — imported via native folder picker (`tauri-plugin-dialog`), validated as git repos
-- Each agent session = one native PTY process + one SQLite record
-- Sessions can run directly in the repo or in an isolated git worktree
-- On app startup, `reconcile_sessions()` marks all previously `Running` sessions as `Disconnected` (since PTY state is in-memory and lost on restart)
-- On app close, `killAll()` cleans up all active PTY processes
-- Token usage tracking reads Claude Code JSONL files from `~/.claude/projects/{encoded_path}/*.jsonl`
+- Tauri forwards it as `transport:data` to the WebView.
+- `racc-server` sends `i64 session_id` in 8-byte little-endian form followed by raw bytes in a WebSocket binary frame.
 
-**Schema (v1):**
-- `repos` table: id, path, name, added_at
-- `sessions` table: id, repo_id, agent, worktree_path, branch, status, pr_url, server_id, created_at, updated_at
-- `tasks` table: id, repo_id, description, images (JSON array), status, session_id, created_at, updated_at
-- `session_events` table: id, session_id, event_type, payload (JSON), created_at (Unix ms)
-- `insights` table: id, insight_type, severity, title, summary, detail_json, fingerprint (unique partial index on active), status, created_at, resolved_at
-- `servers` table: id, name, host, port, username, auth_method, key_path, ssh_config_host, setup_status, setup_details, ai_provider, ai_api_key, created_at, updated_at
+Browser terminal input uses the same binary layout in the opposite direction. Resize, liveness, and buffer retrieval use command calls.
 
-### Agent Communication: Native PTY
+## Commands and Domain Modules
 
-**Current implementation (Phase 2 — Direct PTY Bridging):**
+Current `racc-core/src/commands/` modules are grouped by responsibility:
 
-```
-Frontend (ptyManager.ts)  --[spawn]--> tauri-plugin-pty --> Shell + Agent
-         xterm.js         <--[data]--- tauri-plugin-pty <-- Agent output
-         xterm.js         --[input]--> tauri-plugin-pty --> Agent stdin
-```
+| Module | Responsibility |
+|--------|----------------|
+| `session.rs` | Repository import, normal/specialized session creation, stop/remove, reconnect/reattach, reconciliation, PR metadata |
+| `task.rs` | Task CRUD and task image file operations |
+| `planner.rs`, `planner_mcp.rs` | Read-only task planning runs, preview validation, selective task creation, planner MCP submission |
+| `merge.rs` | Per-repository merge settings, ordered queue, integration runs, resolution/retry |
+| `test_manager.rs` | Per-repository test settings, isolated UAT runs, resolution/retry |
+| `manager_mcp.rs` | Capability-scoped Merge/Test MCP runtime and validated result persistence |
+| `transport.rs` | Terminal write, resize, liveness, and buffer commands |
+| `server.rs`, `setup.rs` | SSH server CRUD, connection management, remote setup and commands |
+| `git.rs` | Worktree create/delete and diff operations |
+| `file.rs` | Safe repository file reading and fuzzy search |
+| `cost.rs`, `insights.rs` | Claude usage aggregation and preserved insight/event facilities |
 
-- `tauri-plugin-pty` spawns native PTY processes with configurable cols/rows
-- Agent commands (e.g., `claude`) are sent to the shell after a brief startup delay
-- Real-time bidirectional streaming: PTY output → xterm.js rendering, keyboard input → PTY stdin
-- Terminal resize events are synced from xterm.js FitAddon to PTY
-- Output buffer (up to 1MB per session) enables replay when switching between sessions
-- `usePtyBridge.ts` React hook manages three effects: output subscription, input forwarding, resize sync
+The Tauri crate mirrors public modules with small `#[tauri::command]` wrappers. `racc-server/src/ws.rs` dispatches WebSocket method names directly to the same core functions.
 
-**Architectural note:** The original Phase 1 (tmux send-keys) was skipped in favor of direct PTY bridging, which provides real-time rendering and eliminates the need for output polling. Phase 3 (Agent SDK integration) remains planned for v0.3.
+## Structured Workflow MCP
 
-### Environment Isolation
+Task Planner, Merge Manager, and Test Manager need typed results that can update the board even when terminal output contains arbitrary prose.
 
-| Strategy | When to Use | Status |
-|----------|-------------|--------|
-| **Bare Git Worktree** (default) | Lightweight projects, no env isolation needed | **Implemented** |
-| **Docker Sandbox** (opt-in) | Need isolation, want `--dangerously-skip-permissions` | Planned v0.2 |
+At run start, `racc-core` creates a loopback listener on an ephemeral port and a random bearer capability. The endpoint and capability are injected only into that run's agent environment. The agent connects using MCP and must call one tool:
 
-Worktrees are created at `~/racc-worktrees/{repo}/{branch}` via `git worktree add`.
+| Workflow | Server/tool |
+|----------|-------------|
+| Task Planner | `racc_task_plan.submit_task_plan` |
+| Merge Manager | `racc_merge_manager.submit_merge_result` |
+| Test Manager | `racc_test_manager.submit_test_result` |
 
-**Not recommended for MVP:**
-- Nix Flakes — learning curve too steep, narrows target audience
-- Firecracker — overkill for individual developers
+The handler verifies authorization, tool name, run ID, repository ID, status, and payload structure before writing SQLite. It then emits `task_plan_changed`, `merge_manager_changed`, or `test_manager_changed`.
 
-### WebSocket Remote API
+These endpoints are intentionally short-lived and run-scoped. They are not general Racc administration APIs. Terminal sentinel strings such as `RACC_SHIP_RESULT:{...}` or printed result JSON are not parsed.
 
-Racc embeds a WebSocket server (`tokio-tungstenite`) on `ws://127.0.0.1:9399` that allows external clients to create tasks, start/stop sessions, and receive real-time status events. The server shares the same SQLite database and event bus as the UI — remote commands trigger PTY spawning in the frontend automatically.
+## Event Model
 
-See [WebSocket Remote API](WebSocket-Remote-API.md) for protocol details, available methods, and client examples.
+`RaccEvent` is serialized as `{ "event": "...", "data": {...} }` and currently includes:
 
-| Module | File | Purpose |
-|--------|------|---------|
-| `events.rs` | `src-tauri/src/events.rs` | `RaccEvent` enum, `EventSender` broadcast channel |
-| `ws_server.rs` | `src-tauri/src/ws_server.rs` | WebSocket server: TCP listener, connection pool, heartbeat, 10 method handlers, event fan-out |
+- `session_status_changed`
+- `task_status_changed`
+- `task_deleted`
+- `task_plan_changed`
+- `merge_manager_changed`
+- `test_manager_changed`
 
-### Networking: Tailscale + Portless *(planned v0.2)*
+The broadcast bus feeds both Tauri's WebView bridge and WebSocket clients. Events tell clients to update or refetch state; SQLite remains the durable source of truth.
 
-- Tailscale provides the mesh network between local and remote machines
-- Portless assigns named URLs to worktree services
-- **Cross-machine preview:** Use `Tailscale Serve` to expose Portless local addresses to the tailnet
-- Result: `feature-auth.vps.tailnet` reaches the correct worktree's service from any machine
+## Persistence
 
-### Rust Command Modules
+The default database is `~/.racc/racc.db`. Schema version 6 includes:
 
-All Tauri commands are registered in `lib.rs` and organized into modules:
+- repositories and sessions, including agent conversation ID and permission choice;
+- tasks, task images metadata, supervisor fields, session events, and insights;
+- SSH server configurations;
+- task-plan runs;
+- merge settings, merge runs, and merge queue items;
+- test settings and test runs.
 
-| Module | Commands | Purpose |
-|--------|----------|---------|
-| `session.rs` | `import_repo`, `list_repos`, `remove_repo`, `create_session`, `stop_session`, `remove_session`, `reattach_session`, `reconcile_sessions` | Session and repo lifecycle management |
-| `git.rs` | `create_worktree`, `delete_worktree`, `get_diff` | Git worktree operations and diff |
-| `cost.rs` | `get_project_costs` | Parse Claude Code JSONL usage files, aggregate token counts (total + weekly) |
-| `task.rs` | `create_task`, `list_tasks`, `update_task_status`, `update_task_images`, `delete_task`, `save_task_image`, `copy_file_to_task_images`, `delete_task_image`, `rename_task_image` | Task CRUD for Task Board — create (with optional images), list by repo, update status/images, delete. Image file I/O: save from clipboard bytes, copy from file picker, delete, rename (draft→final) |
-| `file.rs` | `read_file`, `search_files` | Read file content with language detection and truncation; fuzzy file search using `nucleo-matcher` with `.gitignore` support via `ignore` crate |
-| `insights.rs` | `record_session_events`, `get_session_events`, `get_insights`, `save_insight`, `update_insight_status`, `run_batch_analysis`, `append_to_file` | Event recording, insight CRUD, batch analysis (repeated prompts via `strsim`, startup patterns, similar sessions), file append for CLAUDE.md |
-| `rtk.rs` | *(not a command module)* | RTK binary management, Claude Code hook configuration (local + remote SSH), auto-download with atomic rename |
-| `db.rs` | `reset_db` | SQLite initialization, schema migrations (v1→v4), database reset (deletes and reinitializes `~/.racc/racc.db`) |
-| `events.rs` | *(not a command module)* | `RaccEvent` enum, `EventSender` type alias, `create_event_bus()` factory |
-| `ws_server.rs` | *(not a command module)* | WebSocket server on `127.0.0.1:9399` — 10 method handlers, event broadcast, heartbeat, graceful shutdown |
+Task attachment files live at `{repo}/.racc/images/`. Worktrees normally live under `~/racc-worktrees/` and manager branches use `racc/ship-*` or `racc/test-*` naming.
 
-### Frontend Component Architecture
+## Desktop Runtime
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| `App.tsx` | Root layout | Two-panel layout orchestrator (sidebar + center) with Tasks/Terminal/Servers tab switching, calls `initialize()` on mount |
-| `Terminal.tsx` | Center panel | xterm.js renderer with FitAddon, async dynamic import |
-| `Sidebar.tsx` | Left panel | Repo list with nested sessions, status indicators, quick actions |
-| `NewAgentDialog.tsx` | Modal | Agent selector, skip-permissions toggle, worktree toggle, branch input |
-| `RemoveSessionDialog.tsx` | Modal | Removal confirmation with optional worktree cleanup checkbox |
-| `ResetDbDialog.tsx` | Modal | Database reset confirmation — wipes all repos, sessions, and assistant history |
-| `ImportRepoDialog.tsx` | Modal | Native folder picker integration |
-| `CostTracker.tsx` | *(not rendered)* | Polls `get_project_costs` every 10s — component exists but not in layout |
-| `InsightsPanel.tsx` | *(not rendered)* | Insights timeline feed — code preserved for future use |
-| `FileViewer.tsx` | Center panel (overlay) | Full file viewer with Shiki syntax highlighting, Cmd+F search, Ctrl+G jump-to-line |
-| `CommandPalette.tsx` | Global overlay | Fuzzy file search (Cmd+P), keyboard navigation, debounced search |
-| `fileViewerStore.ts` | Store | File viewer and command palette state — overlay, palette, search results, `openFile()` action |
-| `insightsStore.ts` | Store | Insights state, real-time detection rules — **disabled for MVP** |
-| `eventCapture.ts` | Service | Event normalization, buffering — **disabled for MVP** |
-| `TaskBoard.tsx` | Center panel | 3-column kanban (Open/Working/Closed) with session sync |
-| `TaskColumn.tsx` | Center panel | Single kanban column with header, cards, and new-task input |
-| `TaskCard.tsx` | Center panel | Status-dependent card with live activity, fire button, and image thumbnails |
-| `TaskInput.tsx` | Center panel | Inline task creation with image paste (Cmd+V), file picker, and thumbnail preview |
-| `FireTaskDialog.tsx` | Modal | Task fire configuration — agent, worktree, auto-generated branch |
-| `ServerPanel.tsx` | Center panel | Server management tab — add/connect/remove remote servers via SSH |
-| `ServerList.tsx` | Center panel | Server list with expand/collapse actions (connect, disconnect, setup, edit, remove) |
-| `taskStore.ts` | Store | Task CRUD, fireTask orchestration, session status sync |
-| `DiffViewer.tsx` | *(not rendered)* | Placeholder — not currently planned |
-| `StatusBar.tsx` | Bottom bar | Session counts, total/weekly token usage, connection status |
+The Tauri app builds an `AppContext`, starts its buffer task, forwards domain/terminal events to the WebView, registers native shell/dialog/notification plugins, and exposes command wrappers.
+
+It also retains a localhost-only compatibility WebSocket server on `127.0.0.1:9399` for external automation clients. That endpoint is a smaller text-only API and is not the transport used by the desktop React UI. See [WebSocket Remote API](WebSocket-Remote-API.md).
+
+## Headless Runtime
+
+`racc-server`:
+
+1. opens the configured SQLite database;
+2. creates transports, SSH manager, event bus, and terminal channel;
+3. reconciles stale sessions;
+4. serves static frontend assets;
+5. upgrades `/ws` connections for commands, events, and terminal bytes.
+
+Configuration:
+
+| Variable | Default |
+|----------|---------|
+| `RACC_PORT` | `9399` |
+| `RACC_DB_PATH` | `~/.racc/racc.db` |
+| `RACC_DIST_PATH` | `dist` |
+
+The listener binds to `0.0.0.0`. There is currently no application authentication or TLS, so the deployment boundary must be a trusted private network.
+
+## Isolation and Security Boundaries
+
+- Git worktrees isolate branches and working-tree changes; they do not restrict filesystem or network access.
+- Permission-bypass options are passed to the selected agent and should be used only in an environment the user trusts.
+- Manager MCP binds to loopback and uses a per-run secret capability.
+- Headless access should not be exposed directly to the public internet.
+- External URL opening accepts only HTTP(S).
 
 [Next: Session Lifecycle >](Session-Lifecycle.md)

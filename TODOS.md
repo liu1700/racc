@@ -1,35 +1,45 @@
-# TODOS
+# TODOs and Known Gaps
 
-Items deferred from the Agent Supervisor Pattern eng review (2026-03-21).
+This list tracks current deferred work. Historical implementation checklists live in the labelled design-record pages under `wiki/`.
 
-## Deferred
+## Reliability
 
-### Shell prompt detection for spawn reliability
-- **What:** Replace the 100ms `sleep()` in `create_session()` with PTY output watching for a shell prompt before sending the agent command.
-- **Why:** The sleep is arbitrary — a slow machine may not have the shell ready in 100ms. Currently acceptable because the supervisor spawns one session per 5s tick.
-- **Context:** Eng review issue #5. Accepted as-is for now. Revisit if spawn failures occur under load.
-- **Depends on:** Health monitor's PTY output subscription (same infrastructure).
+### Remove the initial shell-launch delay
 
-### Webhook / desktop notification integration
-- **What:** Add optional webhook delivery and native desktop notifications (Tauri notification API) for supervisor events.
-- **Why:** Users who walk away need to know when tasks complete or fail without checking the dashboard.
-- **Context:** Design doc lists as "optional." In-app notifications (toast/badge) should be validated first.
-- **Depends on:** Supervisor notification system (Phase 3).
+Task text is already sent only after Racc detects that the agent is ready for input. The remaining fixed delay is the short pause before Racc writes the initial agent command into a newly created shell PTY. Replace that delay with explicit shell-readiness detection if slow-host launch failures appear.
 
-### Task dependency graphs
-- **What:** Allow tasks to declare dependencies on other tasks. Supervisor respects ordering.
-- **Why:** Some workflows have natural sequencing (e.g., "fix the API, then update the tests").
-- **Context:** Design doc open question #1. Simple priority queue sufficient for initial implementation.
-- **Depends on:** Task scheduler in supervisor.rs.
+### Durable manager result endpoints
 
-### Cost / token tracking per agent session
-- **What:** Track API token usage and estimated cost per session and per task.
-- **Why:** Running 10 agents in parallel can get expensive. Users need visibility into spend.
-- **Context:** Not in scope for supervisor MVP. Requires agent-specific API integrations.
-- **Depends on:** Agent adapters in agent.rs (need to parse cost output from each agent type).
+Task Planner, Merge Manager, and Test Manager use capability-scoped loopback MCP endpoints tied to one run. If the manager session is restarted after that endpoint expires, Racc correctly marks the run `needs_review`, but cannot resume structured submission in the restarted terminal. A future design could safely reissue a scoped endpoint without widening its authority.
 
-### Setup simplification
-- **What:** One-command install script, auto-configuration, first-run wizard for remote servers.
-- **Why:** Setup friction is a barrier to adoption (design doc gap #1).
-- **Context:** Extracted from supervisor design as a separate concern. Should be its own design doc.
-- **Depends on:** Nothing — independent workstream.
+### Broader automated UI coverage
+
+Core workflows have Rust tests and selected frontend unit tests, but the complete Tauri UI does not yet have a cross-platform end-to-end harness. Add repeatable coverage for task firing, terminal links, planner confirmation, merge queues, test runs, and restart recovery.
+
+## Product
+
+### Notification policy
+
+Racc can emit native notifications for selected events, but the broader supervisor notification model remains incomplete. Add configurable thresholds, aggregation, and optional webhooks without creating alert fatigue.
+
+### Task dependency execution
+
+The Task Planner can generate dependency metadata and enforces prerequisites while selecting a preview. The normal task board does not yet schedule or automatically execute a dependency graph.
+
+### Multi-agent cost coverage
+
+The status bar reads Claude Code usage data. Equivalent per-session and per-task usage reporting for Codex is not yet available.
+
+### Setup and distribution
+
+Improve signed installers, one-command setup, and first-run guidance across macOS, Linux, Windows, and remote hosts.
+
+### Optional sandboxing
+
+Git worktrees isolate source changes, not operating-system permissions. A future opt-in container sandbox should make high-autonomy sessions safer without becoming mandatory for lightweight workflows.
+
+## Security
+
+### Headless authentication and TLS
+
+`racc-server` binds to `0.0.0.0` and currently relies on a trusted private network such as Tailscale. Add application-level authentication, origin controls, and a supported TLS deployment path before recommending public exposure.

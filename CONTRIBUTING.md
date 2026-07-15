@@ -1,52 +1,14 @@
 # Contributing to Racc
 
-Thanks for your interest in contributing! This guide covers everything you need to get started.
+Thanks for helping improve Racc. This guide describes the current desktop, headless, frontend, and core-library setup.
 
 ## Prerequisites
 
-- [Rust](https://www.rust-lang.org/tools/install) (stable toolchain)
-- [Bun](https://bun.sh/) (v1.0+)
-- [Git](https://git-scm.com/)
-- System dependencies for Tauri 2.x (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
-
-### Linux (Debian/Ubuntu)
-
-```bash
-# Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-
-# Bun
-curl -fsSL https://bun.sh/install | bash
-
-# Tauri system dependencies
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
-### macOS
-
-```bash
-# Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-
-# Bun
-curl -fsSL https://bun.sh/install | bash
-
-# Xcode Command Line Tools (required by Tauri)
-xcode-select --install
-```
-
-### Windows
-
-```powershell
-# Rust — download installer from https://www.rust-lang.org/tools/install
-# Bun
-powershell -c "irm bun.sh/install.ps1 | iex"
-# WebView2 and Visual Studio C++ Build Tools required — see Tauri docs
-```
+- [Rust](https://www.rust-lang.org/tools/install), stable toolchain
+- [Bun](https://bun.sh/), v1.0 or newer
+- Git
+- The [Tauri 2.x system prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
+- Claude Code and/or Codex CLI for exercising agent workflows
 
 ## Development Setup
 
@@ -55,68 +17,91 @@ git clone https://github.com/liu1700/racc.git
 cd racc
 bun install
 
-# Launch full app (frontend + Rust backend with hot reload)
+# Full desktop application with hot reload
 bun tauri dev
 ```
 
-### Other Commands
+Useful commands:
 
 ```bash
-bun run dev            # Vite dev server only (no Rust backend)
-bun run build          # TypeScript check + Vite production build
+bun run dev          # Vite frontend only, port 1420
+bun run build        # TypeScript check and production frontend build
+bun test             # Frontend/unit tests
+bun tauri build      # Desktop production bundle
 
-# Rust only (from src-tauri/)
-cargo check            # Type-check Rust backend
-cargo build            # Build Rust backend
+cd src-tauri
+cargo check --workspace
+cargo test -p racc-core
+cargo build --bin racc-server
 
-# Production build
-bun tauri build        # Outputs installer in src-tauri/target/release/bundle/
+# Run browser build from the repository root's dist directory
+RACC_DIST_PATH=../dist cargo run --bin racc-server
 ```
+
+There is no single end-to-end test harness for the complete Tauri UI yet. For user-visible changes, combine the automated checks above with a focused desktop or headless-browser smoke test.
 
 ## Project Structure
 
-```
+```text
 racc/
-├── src/                    # React 19 + TypeScript frontend
-│   ├── components/         # UI components (Sidebar, Terminal, Assistant, etc.)
-│   ├── stores/             # Zustand state management
-│   └── types/              # TypeScript type definitions
-├── src-tauri/              # Rust backend (Tauri 2.x)
-│   ├── src/commands/       # Tauri command modules
-│   │   ├── session.rs      # Session and repo lifecycle
-│   │   ├── git.rs          # Git worktree operations
-│   │   ├── cost.rs         # Claude Code cost tracking
-│   │   └── db.rs           # SQLite initialization and migrations
-├── wiki/                   # Design docs (synced to GitHub Wiki)
+├── src/                         # React 19 + TypeScript shared frontend
+│   ├── components/              # Task board, terminal, sidebar, servers, viewers
+│   ├── services/                # RaccTransport and terminal integrations
+│   ├── stores/                  # Zustand state
+│   └── types/                   # Frontend domain types
+├── src-tauri/
+│   ├── racc-core/               # Shared business logic and transports
+│   │   └── src/
+│   │       ├── commands/        # Sessions, tasks, planner, merge, test, files, SSH
+│   │       ├── transport/       # LocalPtyTransport and SshTmuxTransport
+│   │       ├── db.rs            # SQLite schema and migrations
+│   │       └── events.rs        # Cross-frontend event bus
+│   ├── racc-server/             # Axum static server + /ws transport
+│   └── src/                     # Thin Tauri command wrappers and native integrations
+├── wiki/                        # Current guides plus clearly labelled design records
 └── package.json
 ```
 
+## Architecture Rules
+
+- Put behavior shared by desktop and browser modes in `racc-core`, not in a Tauri wrapper.
+- Frontend stores and components call `transport.call()` / `transport.on()`; do not introduce direct `invoke()` calls for shared behavior.
+- Terminal processes are backend transports. Local sessions use native PTY; remote sessions use SSH/tmux.
+- Planner, Merge Manager, and Test Manager use run-scoped loopback MCP endpoints for structured completion. Do not restore terminal-output JSON parsing as a state protocol.
+- Keep manager MCP endpoints loopback-only and capability-scoped. Never persist or log bearer capabilities.
+- Preserve user worktrees and unrelated local changes. Avoid destructive git cleanup in normal command paths.
+
 ## Making Changes
 
-1. Fork the repo and create a branch from `main`
-2. Make your changes
-3. Ensure `bun run build` passes (TypeScript check + Vite build)
-4. Ensure `cargo check` passes in `src-tauri/`
-5. Open a pull request
+1. Create a focused branch from `main`.
+2. Keep Tauri wrappers thin and add core tests for backend behavior where practical.
+3. Update user-visible documentation when commands, UI labels, recovery semantics, or public WebSocket methods change.
+4. Run checks proportional to the change.
+5. Open a pull request with the behavior change, verification results, and any known limitations.
 
-### Commit Messages
+Recommended baseline before a pull request:
 
-Use semantic prefixes:
+```bash
+bun test
+bun run build
+cd src-tauri
+cargo check --workspace
+cargo test -p racc-core
+```
 
-- `feat:` — new feature
-- `fix:` — bug fix
-- `docs:` — documentation changes
-- `refactor:` — code restructuring without behavior change
-- `chore:` — build, tooling, or dependency updates
+## Commit Messages
+
+Use conventional semantic prefixes:
+
+- `feat:` new behavior
+- `fix:` bug fix
+- `docs:` documentation only
+- `refactor:` behavior-preserving restructuring
+- `test:` test-only changes
+- `chore:` build, tooling, or dependency maintenance
 
 ## Code Style
 
-**Frontend (src/):**
-- TypeScript + React 19
-- Zustand for state management
-- Tailwind CSS with custom tokens: `surface-{0,1,2,3}` for backgrounds, `accent` for interactive elements, `status-{running,waiting,paused,error,disconnected,completed}` for session states
+Frontend code uses React 19, TypeScript, Zustand, and Tailwind. Reuse the custom `surface-*`, `accent`, and `status-*` tokens instead of adding isolated colors for established concepts.
 
-**Backend (src-tauri/):**
-- Rust with Tauri 2.x
-- Commands use `#[tauri::command]` macro, return `Result<T, String>`
-- All commands registered in `src-tauri/src/lib.rs`
+Rust business logic belongs in `racc-core` and returns typed `CoreError` values. Tauri wrappers translate those results for IPC. Format only files you intentionally changed when the worktree already contains unrelated edits.

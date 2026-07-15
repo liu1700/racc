@@ -2,157 +2,127 @@
 
 [< Home](Home.md) | [< Technical Architecture](Technical-Architecture.md)
 
-## Repo Import Flow
+Racc stores session metadata in SQLite and owns session transports in `racc-core`. The frontend requests lifecycle operations; it does not spawn or kill PTYs itself.
 
-Repos are first-class objects. Before creating sessions, the user imports a local git repo:
+## Repository Import
 
-```
-User clicks "Import Repo"
-        |
-        v
-[1] Native folder picker opens (tauri-plugin-dialog)
-        |
-        v
-[2] Backend validates .git directory exists
-    - Rejects if already imported (duplicate check)
-        |
-        v
-[3] Repo inserted into SQLite (~/.racc/racc.db)
-    - Stores: id, path, name (derived from path), added_at
-        |
-        v
-[4] Repo appears in sidebar, ready for agent sessions
+```text
+Choose repository
+    -> validate git repository and duplicate path
+    -> insert repo metadata in ~/.racc/racc.db
+    -> show repository in sidebar
 ```
 
-## Session Creation Flow
+In desktop mode the path normally comes from a native picker. Browser mode sends the server-side filesystem path through the WebSocket command.
 
-Within an imported repo, users create tasks and launch agent sessions through the Task Board. Clicking [+] on a repo in the sidebar switches to the Task Board with the new-task input ready. Sessions are created when a task is "fired":
+## Normal Session Creation
 
-```
-User clicks [+] on a repo → Task Board opens with input focused
-        |
-        v
-[1] Create task (type description, press Enter)
-        |
-        v
-[2] Fire task → Configure session
-    - Select agent (currently Claude Code)
-    - Skip permissions checkbox (default: on) — appends --dangerously-skip-permissions
-    - Choose: "Run in repo" or "Create worktree"
-    - If worktree: provide branch name
-        |
-        v
-[2] Environment Preparation
-    - (If worktree) git worktree add at ~/racc-worktrees/{repo}/{branch}
-        |
-        v
-[3] Session Persistence
-    - Insert session record into SQLite with status "Running"
-    - Store: repo_id, agent type, worktree_path, branch, timestamps
-        |
-        v
-[4] RTK Setup (Claude Code only)
-    - ensure_rtk_local() downloads rtk to ~/.racc/bin/ if missing
-    - Configures Claude Code PreToolUse hook (rtk init or fallback)
-    - Prepends ~/.racc/bin to PATH for token-optimized command output
-        |
-        v
-[5] PTY Spawn
-    - ptyManager.spawnPty() creates native PTY process
-    - Working directory set to worktree or repo path
-    - Shell inherits user environment + rtk PATH (Claude Code sessions)
-        |
-        v
-[6] Agent Startup
-    - After 100ms delay, agent command (e.g., "claude") sent to PTY stdin
-        |
-        v
-[7] Communication Channel
-    - usePtyBridge hook wires up:
-      • PTY output → xterm.js rendering (with buffer for session switching)
-      • xterm.js keyboard input → PTY stdin
-      • Terminal resize → PTY resize
-        |
-        v
-[8] State Registration
-    - Session appears nested under repo in sidebar with green "Running" dot
-    - Token usage monitoring begins via JSONL file polling (10s interval)
+Sessions can be created directly or by firing an Open task.
+
+```text
+Choose agent/location/options
+    -> optionally create git worktree
+    -> persist session row as Running
+    -> best-effort agent setup (for example RTK for Claude Code)
+    -> create LocalPtyTransport or SshTmuxTransport
+    -> launch the selected agent
+    -> wait for the agent's ready prompt
+    -> send task description and image paths
+    -> stream output through the shared terminal channel
 ```
 
-## State Machine
+Current selectable agents are Claude Code and Codex. The permission-bypass choice is persisted so reattach can preserve the original intent.
 
+### Working Directory
+
+- Without a worktree, the session runs in the imported repository.
+- With a worktree, Racc creates a branch under `~/racc-worktrees/{repo}/...` and starts there.
+- Remote sessions use the corresponding path on the SSH host and run inside tmux.
+
+## State Model
+
+```text
+                 create / reattach
+                        |
+                        v
+                    Running
+                  /    |     \
+          user stop  failure  transport lost
+              |        |           |
+              v        v           v
+          Completed   Error    Disconnected
+              \        |           /
+               \-------+----------/
+                       |
+                 reopen / retry
 ```
-               +---v---+      +---v---+
-               |Running|      | Error |
-               +---+---+      +-------+
-                   |
-          +--------+--------+
-          |                  |
-     user stops          app closes /
-     session             PTY dies
-          |                  |
-     +----v-----+    +------v------+
-     |Completed |    |Disconnected |
-     +----+-----+    +------+------+
-          |                  |
-          +--------+---------+
-                   |
-            user clicks ▶
-            (reattach)
-                   |
-              +----v----+
-              | Running |  (new PTY, claude --continue)
-              +---------+
-```
 
-### State Definitions
+| State | Meaning | Typical actions |
+|-------|---------|-----------------|
+| **Running** | Backend transport is active or a remote tmux session was confirmed live | Open terminal, send input, stop, remove |
+| **Completed** | User stopped the session or the remote tmux process no longer exists | Reattach, inspect metadata, remove |
+| **Disconnected** | Metadata survives but the transport or host is unavailable | Reconnect/reattach, remove |
+| **Error** | Creation or an operation failed | Inspect error, retry, remove |
 
-| State | Meaning | Entry Trigger | User Can... |
-|-------|---------|---------------|-------------|
-| **Running** | Agent is actively executing in PTY | Session created or reattached, PTY spawned successfully | View terminal, send input, stop, remove |
-| **Completed** | Session stopped by user | User clicks stop → PTY killed, DB updated | Reattach, remove session |
-| **Disconnected** | PTY process no longer exists | App restart — reconciliation marks all previously Running sessions | Reattach, remove session |
-| **Error** | Session creation or operation failed | PTY spawn failure / unexpected error | Remove, retry |
+Waiting/Paused may be surfaced by agent-output interpretation, but transport liveness remains the core lifecycle distinction.
 
-### Key Design: Reconciliation on Startup
+## Opening and Reconnecting
 
-On app startup, `reconcile_sessions()` handles the fact that PTY state is in-memory and lost on restart:
+Selecting a session calls `reconnect_session` before the terminal is shown.
 
-1. Query SQLite for sessions with status `Running`
-2. Update ALL of them to `Disconnected` (PTY processes cannot survive app restart)
-3. Return full repo + session list to frontend
+- If its transport is already registered and alive, Racc returns without duplicating it.
+- A live remote tmux session is reconnected through SSH and its buffered output resumes.
+- A session needing a fresh process follows full reattach.
 
-**Tradeoff:** Unlike tmux-based sessions, PTY processes do not survive app crashes. However, `reattach_session` mitigates this by re-spawning the PTY with `claude --continue` to resume the conversation. Session immortality via remote execution is planned for v0.2.
+### Agent Resume
 
-### Session Reattach
+- New Claude Code sessions record their conversation UUID. Reattach uses that exact UUID; legacy rows fall back to Claude Code's directory-based continuation.
+- Codex reattach uses the Codex resume flow for the latest conversation in that working directory.
+- Terminal scrollback from a dead local PTY is not a durable transcript. The resumed agent's conversation context and Racc's session metadata are the durable pieces.
 
-Disconnected and Completed sessions can be reattached via the ▶ button in the sidebar:
+## Startup Reconciliation
 
-1. Backend `reattach_session` validates the session is not already Running
-2. If the session has a worktree, verifies the worktree directory still exists on disk
-3. Updates session status to `Running` in SQLite
-4. Frontend spawns a new PTY in the session's working directory (worktree path or repo path)
-5. Sends `claude --continue` (with optional `--dangerously-skip-permissions`) to resume the last conversation in that directory
+At application/server startup, `reconcile_sessions()` audits rows previously marked Running.
 
-**Limitation:** Terminal output from the previous PTY is lost — only the Claude Code conversation context is resumed via `--continue`.
+### Local sessions
 
-### Session Cleanup
+Local PTYs belong to the old Racc process and cannot survive it. They become Disconnected.
 
-- **Stop session:** kills PTY process via `ptyManager.killPty()`, updates SQLite status to `Completed`
-- **Remove session:** confirmation dialog required; any session can be removed regardless of status
-  - If the session is `Running`, the backend marks it as `Completed` first, then the frontend kills the PTY and stops tracking
-  - If the session has a worktree, dialog shows an optional checkbox to also delete the worktree via `git worktree remove --force`
-  - Deletes the SQLite session record and triggers batch analysis cleanup
-- **Remove repo:** only allowed if no `Running` sessions; cascades to delete all session records
-- **App close:** `killAll()` terminates all active PTY processes via window `beforeunload` event
+### Remote sessions
 
-### PTY Buffer Management
+Racc reconnects to the configured SSH host and probes the session's tmux name:
 
-When switching between sessions, the terminal needs to display previous output:
+- tmux exists: keep Running and restore the transport;
+- tmux is gone: mark Completed;
+- host is unreachable or the probe cannot be completed: mark Disconnected.
 
-- Each PTY accumulates output in a `Uint8Array[]` buffer managed by `ptyManager.ts`
-- Maximum buffer size: **1MB per session** (oldest chunks dropped when exceeded)
-- On session switch, `usePtyBridge` replays the buffer into xterm.js
-- Live output continues streaming after replay completes
+This is why remote sessions can survive a UI/app restart while local sessions require reattach.
 
-[Next: Competitive Analysis >](Competitive-Analysis.md)
+## Stop, Remove, and Repository Cleanup
+
+- **Stop** terminates the registered local PTY or remote tmux transport and marks the row Completed.
+- **Remove session** removes its database record. If it owns a worktree, the confirmation UI can also request `git worktree remove`.
+- **Remove repository** is blocked while it has Running sessions and cascades associated persisted records when permitted.
+- Browser disconnect alone does not stop server-owned transports; reconnecting the browser receives current metadata and terminal data from the server.
+
+## Planner and Manager Sessions
+
+Task Planner, Merge Manager, and Test Manager create specialized sessions with generated prompts. Each run also starts a loopback-only MCP endpoint carrying a random bearer capability in the agent environment.
+
+The endpoint accepts only the tool and run/repository identity for that run. On valid submission, `racc-core` stores the structured result and emits the corresponding UI event.
+
+If a manager transport ends or its endpoint stops before a result is accepted:
+
+- Merge Manager and Test Manager move to `needs_review` so external merge/test state is not guessed.
+- Restarting the old manager session cannot restore the expired capability; the user must verify and resolve the run or start Retry.
+- Task Planner reports failure rather than creating tasks from terminal text.
+
+## Terminal Data and Buffering
+
+Both transports publish bytes to `AppContext.terminal_tx`. A bounded ring buffer is maintained per session by `TransportManager`.
+
+- Tauri mode forwards terminal data as native events.
+- Headless mode sends binary WebSocket frames: 8-byte little-endian session ID followed by terminal bytes.
+- Client input uses the same binary frame shape in browser mode, while resize and buffer requests are JSON calls.
+
+[Next: WebSocket Remote API >](WebSocket-Remote-API.md)

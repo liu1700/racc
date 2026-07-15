@@ -1,5 +1,7 @@
 # Headless Racc Server — Design Spec
 
+> **Status: implemented architecture record.** The three-crate extraction and browser transport described here are complete, while several original MVP constraints and file lists below reflect the proposal at the time it was written. The current runtime also includes Task Planner, Merge Manager, Test Manager, file access, SSH server management, and binary terminal streaming. Use [Technical Architecture](Technical-Architecture.md) and [WebSocket Remote API](WebSocket-Remote-API.md) as the current reference.
+
 ## Goal
 
 Extract Racc's backend into a standalone headless binary (`racc-server`) that serves the React UI over HTTP and exposes a WebSocket API, enabling multi-device access to persistent agent sessions over Tailscale.

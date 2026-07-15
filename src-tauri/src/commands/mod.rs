@@ -10,4 +10,5 @@ pub mod server;
 pub mod session;
 pub mod shell;
 pub mod task;
+pub mod test_manager;
 pub mod transport;

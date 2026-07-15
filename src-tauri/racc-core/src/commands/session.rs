@@ -1265,6 +1265,12 @@ pub async fn reattach_session(
         server_id,
     };
 
+    // Manager results are submitted to a run-scoped MCP endpoint injected at
+    // process launch. That capability expires with the original process, so a
+    // generic conversation reattach must surface the manager run for review.
+    let _ = crate::commands::merge::interrupt_merge_run_for_session(ctx, session.id).await;
+    let _ = crate::commands::test_manager::interrupt_test_run_for_session(ctx, session.id).await;
+
     ctx.event_bus
         .emit(RaccEvent::SessionStatusChanged {
             session_id: session.id,
@@ -1508,6 +1514,8 @@ pub async fn reconnect_session(
             [session_id],
         )?;
     }
+    let _ = crate::commands::merge::interrupt_merge_run_for_session(ctx, session_id).await;
+    let _ = crate::commands::test_manager::interrupt_test_run_for_session(ctx, session_id).await;
     ctx.event_bus
         .emit(RaccEvent::SessionStatusChanged {
             session_id,

@@ -1,5 +1,6 @@
 pub mod session;
 pub mod task;
+pub mod test_manager;
 pub mod server;
 pub mod setup;
 pub mod git;
@@ -8,5 +9,6 @@ pub mod transport;
 pub mod insights;
 pub mod file;
 pub mod merge;
+mod manager_mcp;
 pub mod planner;
 mod planner_mcp;

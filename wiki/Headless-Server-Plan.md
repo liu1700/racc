@@ -1,5 +1,7 @@
 # Headless Racc Server Implementation Plan
 
+> **Status: historical implementation plan.** This checklist is retained for provenance and should not be used as a current setup guide or source-tree reference. The extraction has been implemented; see [Technical Architecture](Technical-Architecture.md), [WebSocket Remote API](WebSocket-Remote-API.md), and [User Guide](User-Guide.md) for the current system.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extract Racc's Rust backend into a `racc-core` lib crate and build a standalone `racc-server` binary that serves the React UI + WebSocket API, enabling browser-based multi-device access over Tailscale.

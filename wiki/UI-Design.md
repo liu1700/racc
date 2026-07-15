@@ -2,285 +2,142 @@
 
 [< Home](Home.md) | [< Feature Specification](Feature-Specification.md) | [Cognitive Design Research](Cognitive-Design-Research.md)
 
-> UI decisions in this document are grounded in the cognitive science research documented in [Cognitive Design Research](Cognitive-Design-Research.md). Key constraints: working memory holds 4±1 chunks, attention switching costs 100–500ms per switch, and vigilance degrades after 15 minutes of passive monitoring.
+This page documents the current interface. The research rationale behind attention, chunking, and progressive disclosure remains in [Cognitive Design Research](Cognitive-Design-Research.md).
 
-## Layout Overview
+## Layout
 
-Two-panel layout, left to right:
-
-```
-+----------------+-----------------------------------------------------------+
-|                |                                                           |
-|  Left Sidebar  |              Center Main Area                             |
-|  (~15%)        |              (~85%)                                        |
-|                |                                                           |
-|  Session List  |  Tasks / Terminal (tab switching)                          |
-|  + Inline      |  ── or ──                                                  |
-|    Activity    |  Diff Review View                                          |
-|  + Quick       |  (switchable)                                              |
-|    Actions     |                                                            |
-|                |                                                           |
-+----------------+-----------------------------------------------------------+
-|                        Global Status Bar                                   |
-|  Sessions: 2 running | Total Tokens: XX.Xk | This Week: XX.Xk             |
+```text
++----------------------+-----------------------------------------------------+
+| Repository/session   | Tasks | Terminal | Servers                          |
+| sidebar              |                                                     |
+|                      | Four-column task board, terminal, or server panel   |
++----------------------+-----------------------------------------------------+
+| Session status counts | token usage | connection status                  |
 +----------------------------------------------------------------------------+
 ```
 
-**F-pattern scanning alignment:** The left sidebar (session list) occupies the highest-priority upper-left position, matching natural eye-scanning patterns. The center area is the primary interaction surface.
+The terminal is a primary workspace, not a narrow chat sidebar. It remains mounted when another tab is selected so xterm state and selection are not recreated on every switch.
 
-## Critical Design Decision
+## Repository and Session Sidebar
 
-**The agent terminal occupies the center main area** — not a sidebar.
+The left sidebar is repository-first. Each imported repository expands to show its sessions.
 
-This is a deliberate departure from Cursor/Windsurf, which squeeze agents into side panels. Racc's users are migrating from full-screen terminal agent workflows. The terminal must remain the primary interaction surface.
+Each session row can show:
 
-## Cognitive Design Principles
+- status dot and running pulse;
+- branch name;
+- elapsed time;
+- latest non-empty terminal output while running;
+- a detected GitHub pull-request link;
+- reattach/reconnect, stop, and remove actions appropriate to its state.
 
-These principles are derived from the [Cognitive Design Research](Cognitive-Design-Research.md) and inform every UI decision below.
+Clicking a session calls the backend reconnect path before selecting it. This is intentionally idempotent: an already connected session stays attached, a live remote tmux transport is restored, and a disconnected local session follows the full reattach flow.
 
-### 1. Categorical Chunking Over Individual Tracking
+Repositories expose actions for starting work, importing/removing repositories, and creating normal sessions. Sessions remain visible after completion until explicitly removed.
 
-Managing 10 agents should feel like managing 3 status categories, not 10 individual items. The sidebar groups sessions by status category (needs attention → running normally → completed) so working memory holds categorical chunks within Cowan's 4±1 limit.
+### Session Status Colors
 
-Each session card compresses into **one cognitive chunk**: status color + task description + progress indicator + time elapsed — readable without opening a detail view.
+| Status | Color role | Meaning |
+|--------|------------|---------|
+| Running | Green | Transport is active |
+| Completed | Blue | Session ended normally or remote tmux is gone |
+| Waiting/Paused | Amber | Agent needs attention |
+| Disconnected | Orange | Metadata exists but transport is unavailable |
+| Error | Red | Creation or operation failed |
 
-### 2. Information Scent for Rapid Triage
+Color is reinforced by text and available actions; users do not need to infer critical state from color alone.
 
-Every session card provides enough "information scent" (Pirolli & Card) for the developer to decide whether to investigate without opening a detail view:
+## Tasks Tab
 
-- Status color (preattentive pop-out)
-- Micro-summary (e.g., "Refactoring auth.py — 2/3 tests passing — 73%")
-- Time elapsed since last meaningful progress
-- Error count badge (if any)
+The board is a four-column CSS grid. Equal columns and constrained text prevent live output from resizing the layout.
 
-### 3. Mode Separation: Monitoring vs. Deep Work
+### Open
 
-The IDE supports two cognitive modes to resolve the flow-monitoring paradox:
+- Inline multiline task creation and editing.
+- Clipboard-pasted or file-selected images with thumbnail preview.
+- **Generate tasks with AI** opens Task Planner.
+- **Fire** opens agent, permission, location, server, worktree, and branch options.
 
-- **Deep work mode (default):** Developer focuses on one agent's terminal or their own code. Other agents run in the background. Completed work queues for batched review.
-- **Monitoring mode:** Overview of all sessions via the sidebar's categorical status grouping. Designed for periodic check-ins, not continuous surveillance.
+Task Planner accepts an Epic link or description, runs Claude Code or Codex read-only, and shows a dependency-aware preview. No task is selected by default. Selecting a dependent item automatically selects its prerequisites; removing a prerequisite removes selected dependents. Only confirmed items enter Open.
 
-The developer should spend most time in deep work and periodically surface into monitoring mode for evaluation.
+### Working
 
-### 4. Active Engagement Over Passive Surveillance
+Cards show the associated session, branch, elapsed time, latest activity, attachments, and PR state. A task with a valid GitHub pull-request URL can be marked **Ready to merge** and added to Merge Manager.
 
-Research shows passive monitoring degrades vigilance within 15 minutes, but active micro-engagement preserves it. The IDE should never ask developers to passively watch progress bars. Instead:
+When the associated session completes or is removed, the task is assigned the archived `closed` status and disappears from the active board. The Tasks badge counts non-archived tasks.
 
-- Agents pause at meaningful decision points for human input
-- Review queues accumulate completed work for active evaluation sessions
-- The batched review cycle transforms monitoring from passive surveillance into active assessment
+### Merge Manager
 
-### 5. Preattentive Visual Encoding
+Merge Manager contains:
 
-Status uses a **single preattentive channel** (color hue) so problems pop out automatically across all sessions in under 200ms. No status requires conjunction search (checking two attributes together).
+- ordered, removable queued PR cards;
+- per-repository target branch, agent, and ship instructions;
+- an active-run card linking to the manager terminal;
+- last-run status and summary;
+- `needs_review` actions: **Mark succeeded**, **Mark failed**, and **Retry**;
+- the **Ship All** action with queued count.
 
-## Left Sidebar — Session List (implemented)
+Succeeded items leave the visible queue. Failed or ambiguous items remain available for review/retry.
 
-- Expandable repo list with nested sessions underneath each repo
-- Each repo shows: name, path, expand/collapse toggle
-- Each session shows: agent type, branch name, status color dot, elapsed time (e.g., "12m", "2h 15m"), and a second line with truncated latest terminal output
-- **Status sorting (implemented):** Within each repo, sessions are sorted by status priority: error (0) → disconnected (1) → running (2) → completed (3) — so "needs attention" items always appear at the top
-- **Running status pulse (implemented):** Running session dots use a subtle opacity animation (2s cycle) for ambient activity indication without distraction
-- **Hover transitions (implemented):** All interactive elements use `transition-colors duration-150` for smooth visual feedback
-- Quick actions per repo: [+] New task (switches to Task Board with input ready), [×] Remove repo
-- Quick actions per session:
-  - Running: [■] Stop session
-  - Not running: [▶] Reattach session (re-spawn PTY with `claude --continue`), [×] Remove session (with confirmation dialog; worktree sessions offer optional `git worktree remove`)
-- Import Repo button opens native folder picker
+### Test Manager
 
-### Status Colors
+Test Manager mirrors the manager interaction pattern without a PR queue:
 
-Designed to align with color psychology research — reserving high-arousal red for true errors only, using calming tones for normal states:
+- per-repository target branch, agent, and test instructions;
+- default comprehensive full-project UAT instructions that the user can overwrite;
+- active-run terminal link;
+- last-run status, passed/failed counts, evidence summary, and recovery actions;
+- a bottom action labelled **Run**.
 
-| Status | Color | Hex | Rationale |
-|--------|-------|-----|-----------|
-| Running | Green | `#22c55e` | Active and healthy — green reduces stress (cortisol -53%) |
-| Completed | Blue | `#3b82f6` | Calm completion signal — blue reduces autonomic arousal |
-| Waiting/Paused | Amber | `#f59e0b` | Needs attention but not urgent — moderate arousal |
-| Disconnected | Orange | `#f97316` | Anomalous state requiring investigation |
-| Error | Red | `#ef4444` | True error only — reserved for high-urgency preattentive pop-out |
+The column describes the run as isolated and read-only. Test Manager does not present commit, push, or merge controls.
 
-**Constraint:** Status is communicated via color hue alone (single preattentive channel). Shape, size, and position encode other dimensions — never combined with color to indicate status.
+## Terminal Tab
 
-## Center Main Area — Tasks / Terminal / Servers (implemented)
+- xterm.js 5.5 with responsive `FitAddon` sizing.
+- Input flows to the selected backend transport; output is streamed and retained in a bounded backend buffer.
+- Buffer replay restores recent output when switching sessions or reconnecting a client.
+- IME-sensitive shifted punctuation is handled at the keyboard boundary.
+- A placeholder is shown when no session is selected.
 
-The center panel has a tab bar switching between **Tasks** (default), **Terminal**, and **Servers** views. Terminal stays mounted via CSS `hidden` to preserve xterm.js state across tab switches.
+### Links
 
-### Task Board Mode (default — Planning & Monitoring)
+Racc registers separate terminal link behaviors:
 
-A kanban-style board for cognitive offloading and agent orchestration. Three columns: Open, Working, Closed.
+- HTTP(S) links open directly in the system browser through Tauri's shell plugin or `window.open` in browser mode. Racc only accepts the `http:` and `https:` schemes.
+- Detected repository paths open the built-in file viewer, including an optional line number.
 
-- **Open column:** Tasks awaiting execution. Inline "+ New Task" input at bottom — type description, press Enter. Image attachment via Cmd+V paste or file picker button; thumbnails (48×48) display below textarea with per-image delete (X button on hover). Each card has a "Fire" button and shows attached image thumbnails (32×32)
-- **Working column:** Tasks with active agent sessions. Cards show real-time agent activity via PTY Output Parser — green pulsing dot + branch name + current action (information scent). Elapsed time display. Branch name and live output are rendered as separate truncatable spans to prevent layout shifts from rapid PTY updates. Image thumbnails remain visible
-- **Closed column:** Session completed or removed — archived tasks at reduced opacity
+This avoids xterm's generic dangerous-link confirmation for ordinary browser links while keeping scheme validation in Racc.
 
-**Fire flow:** Click Fire → modal dialog (reuses NewAgentDialog pattern) with agent selection, skip-permissions, worktree ON by default, auto-generated branch name (`task/keywords`). Firing stays on Task Board; new session appears in sidebar. If images are attached, their absolute file paths (`{repo}/.racc/images/{filename}`) are appended to the prompt sent to the terminal agent.
+## File Viewer and Command Palette
 
-**Tab badge:** Tasks tab shows count of non-closed tasks in a rounded badge.
-
-**Layout stability:** Task board uses CSS Grid (`grid-cols-3`) instead of flexbox for column layout, ensuring columns maintain fixed equal widths regardless of content changes. Each card uses `overflow-hidden` and `min-w-0` to prevent live output text from pushing column boundaries. This eliminates width glitching caused by rapid `sessionLastOutput` updates in working cards.
-
-**Cognitive design:** Writing a task IS cognitive offloading (Risko & Gilbert). Preattentive color coding per column (accent=open, green=working, muted=closed).
-
-### Terminal Mode (Deep Work)
-- Full xterm.js 5.5 terminal rendering the active agent session
-- Dark theme: background `#1a1a1f`, foreground `#d4d4d8`, cursor `#6366f1` (indigo accent)
-- FitAddon for responsive sizing with ResizeObserver
-- Input goes directly to the agent via PTY write
-- Buffer replay on session switch (up to 1MB per session)
-- Async dynamic import of xterm to avoid blocking initial render
-- Placeholder message when no active session selected
-- **IME compatibility:** `usePtyBridge` intercepts Shift+punctuation at the `keydown` level, bypassing IME mode-switching to ensure characters like `?`, `!`, `@` are correctly sent to the PTY
-
-### File Viewer Mode (implemented)
-
-A zero-footprint overlay for viewing source code and documentation — appears on demand, disappears completely when closed. Designed around progressive disclosure (Information Foraging Theory) so developers see only what they need before deciding what instructions to give agents.
-
-**Triggers:**
-- **Cmd+P** — Opens the command palette for fuzzy file search (global shortcut)
-- **Cmd+Click on terminal paths** — xterm.js link provider detects file path patterns and opens the file with optional line scroll
-
-**Overlay design:**
-- Positioned as `absolute inset-0 z-30` within the center `<main>` panel (sidebar remains visible for preattentive status monitoring)
-- 95% opacity (`bg-surface-0/95`) to avoid figure-ground interference
-- 150ms fade transition for smooth appearance/disappearance
-- Shiki syntax highlighting with `github-dark-default` theme and CSS counter-based line numbers
-- Top bar: file path, line count, language, encoding, truncation indicator
-- Bottom status strip: branch, session status, elapsed time
-
-**Keyboard shortcuts:**
+The file viewer is an overlay, so it does not consume permanent layout space.
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+P` | Open command palette (fuzzy file search) |
-| `Cmd+F` | Open in-file search (when overlay is open) |
-| `Ctrl+G` | Jump to line number |
-| `Enter` / `Shift+Enter` | Navigate to next/previous search match |
-| `Esc` | Layered dismiss: search bar → viewer → close |
+| `Cmd+P` | Open fuzzy repository file search |
+| `Cmd+F` | Search within the open file |
+| `Ctrl+G` | Jump to a line |
+| `Enter` / `Shift+Enter` | Next/previous search match |
+| `Esc` | Close the innermost active layer |
 
-**Command palette:**
-- Fixed overlay (`fixed inset-0 z-40`) covering the entire viewport
-- Fuzzy matching via `nucleo-matcher` with 100ms debounced search
-- Keyboard navigation: Arrow keys to select, Enter to open, Esc to close
-- Respects `.gitignore` via the `ignore` crate
+Search respects `.gitignore`; the viewer uses Shiki syntax highlighting and reports truncation when a backend line limit is applied.
 
-## Right Panel — Insights Panel (hidden for MVP)
+## Servers Tab
 
-> **Status:** UI hidden and all event capture/analysis disabled for MVP. Code is preserved in the codebase (`InsightsPanel.tsx`, `InsightCard.tsx`, `InsightActions.tsx`, `insightsStore.ts`, `eventCapture.ts`, `insights.rs`) for future re-enablement. The center panel now takes the full remaining width after the sidebar.
+The Servers panel manages SSH targets. Users can import SSH config entries or add a host manually, test the connection, connect/disconnect, edit/remove it, and run remote setup. A server can then be selected when launching a task or normal agent session.
 
-An actionable insights feed that automatically detects patterns across sessions and surfaces one-click suggestions. Designed to replace the previous AI assistant chat panel — instead of requiring users to manually ask questions, the panel proactively identifies workflow optimizations.
+## Status Bar
 
-<details>
-<summary>Full design (collapsed — not active in MVP)</summary>
+The bottom bar summarizes non-zero session counts by state, total/weekly Claude Code token usage, and frontend connection state. This is ambient context, not a substitute for manager result evidence.
 
-### Timeline Feed
-- Chronological list of detected insights, newest first
-- Each insight rendered as a card with severity-colored left border and timeline dot
-- Severity colors: red (alert — file conflicts, cost spikes), amber (warning — repeated prompts, permissions), green (suggestion — similar sessions)
-- Cards expand inline on click to reveal evidence and action buttons
-- Empty state: "No insights yet. Patterns will appear as you work across sessions."
-- Active count badge in header
+## Desktop and Browser Differences
 
-### Real-Time Detection (frontend)
-Three rules run on every incoming event with zero delay:
-- **File Conflict:** Tracks `Map<filePath, Set<sessionId>>` — alerts when >1 session edits the same file
-- **Cost Anomaly:** Rolling window of 10 cost deltas per session — alerts when latest > 3× average and > $0.50
-- **Repeated Permission:** Per-session permission counter — warns at ≥3 of the same type
+The same React components run in both modes. Native file pickers, shell opening, and desktop notifications use dynamically loaded Tauri plugins on desktop. Browser mode uses WebSocket for commands/events/terminal data and standard browser APIs where safe.
 
-### Batch Detection (Rust backend, every 5 minutes)
-Three detectors run on persisted event history:
-- **Repeated Prompt:** Clusters user inputs from last 7 days using normalized Levenshtein similarity (threshold ≥0.7, `strsim` crate). Triggers when ≥3 distinct sessions share a cluster.
-- **Startup Pattern:** Compares first 5 user inputs per session. Triggers when ≥3 sessions share the same command prefix.
-- **Similar Sessions:** Compares file operation sets across running sessions using Jaccard index (threshold ≥0.4).
+The headless browser surface is operationally equivalent for core workflows, but its deployment currently relies on a trusted network because `racc-server` has no application-level auth.
 
-Results pushed to frontend via Tauri event (`insight-detected`).
+## Inactive or Future UI
 
-### Insight Actions
-Each card expands to show evidence (matched prompts, conflicting files, session details) and type-specific action buttons:
-
-| Type | Primary Action | Secondary |
-|------|---------------|-----------|
-| Repeated Prompt | Add to CLAUDE.md | Dismiss |
-| Startup Pattern | Add to CLAUDE.md | Dismiss |
-| Repeated Permission | Copy allowlist rule | Dismiss |
-| Cost Anomaly | Switch to session | Dismiss |
-| File Conflict | View File | Switch to session, Dismiss |
-| Similar Sessions | Switch to session | Dismiss |
-
-### Settings
-Settings gear (⚙) in the panel header opens `AssistantSetup.tsx` for configuring API keys — needed for LLM-generated suggestion text (e.g., summarizing repeated prompts into CLAUDE.md entries). Insights still detect and display without an API key; suggestion text shows raw evidence instead.
-
-### Event Capture Pipeline
-`ptyOutputParser.ts` detects user prompts (❯ marker) and agent activities. `eventCapture.ts` normalizes events and routes them to: (1) `insightsStore` for real-time rules, (2) SQLite via batched flush every 30 seconds. Events include: `user_input`, `file_operation`, `permission_request`, `cost_update`, `session_meta`.
-
-### Deduplication
-Each insight has a fingerprint (e.g., sorted session IDs + matched text hash). A unique partial index (`WHERE status = 'active'`) prevents duplicate insights at the database level.
-
-</details>
-
-## Inline Session Activity (implemented)
-
-Each session item in the sidebar shows a second line with the latest terminal output, providing at-a-glance awareness of what each agent is doing without a separate panel.
-
-**Design:**
-- Status color dot + branch name + elapsed time (first row)
-- Truncated latest terminal output in muted text (second row, `text-[10px] text-zinc-600`)
-- Running sessions always reserve a fixed-height line (`h-3.5`) for output to prevent height jumps when output starts/stops
-
-**PTY output capture:** A frontend service (`ptyOutputParser.ts`) subscribes to each running session's PTY output via `ptyManager.subscribe()`, strips ANSI escape sequences, and captures the last non-empty line (truncated to 120 chars). Stored as `sessionLastOutput: Record<number, string>` in the Zustand store.
-
-**Implementation:** `ptyOutputParser.ts` service, `sessionLastOutput` state in `sessionStore.ts`, inline display in `Sidebar.tsx`. Lifecycle hooks wire `startTracking` after `spawnPty` and `stopTracking` before `killPty`.
-
-## Global Status Bar (implemented)
-
-Fixed bottom bar showing:
-- **Categorical session summary (implemented):** Color-coded counts by status category (e.g., "2 running · 1 error · 1 completed") with status-colored numbers — only non-zero categories shown. Enables the developer to hold system state as categorical chunks rather than N individual items.
-- **Token usage (implemented):** Total Tokens and This Week counts, polled from `get_project_costs` every 10s
-- Connection status indicator (green dot)
-
-## Notification Architecture
-
-A five-tier alert system designed to prevent alarm fatigue (healthcare data shows 72–99% false alarm rates cause dangerous desensitization):
-
-| Tier | Type | Implementation | Interruption |
-|------|------|----------------|--------------|
-| **1 — Ambient** | Status indicators | Color dot per session in sidebar | None — preattentive |
-| **2 — Informational** | Progress updates | Inline terminal output in sidebar (truncated last line) | None — peripheral |
-| **3 — Advisory** | Task complete | Non-blocking toast with soft chime | Low |
-| **4 — Warning** | Error/blocked | Persistent amber banner + distinctive tone | Medium |
-| **5 — Critical** | Security/data loss | Modal overlay + urgent sound | High |
-
-**Anti-fatigue rules:**
-- Signal-to-noise target above 50% — aggregate similar issues across agents
-- Notification budget per time window prevents alert storms
-- User-configurable thresholds per tier
-- Auditory channel for Tier 3+ (Wickens' Multiple Resource Theory: audio doesn't compete with visual code reading)
-
-## Typography
-
-- **JetBrains Mono** for all code display — designed with increased x-height for readability at small sizes, critical when displaying code across multiple simultaneous panels
-- Minimum **13px** for code in small panels, **14px** in the main terminal
-- Line-height **1.4–1.5** for code blocks
-- Font size matters more than font choice for readability (Rello & Pielot, 2016)
-
-## Dark Mode Design
-
-- **Default: dark mode** — matches 70% developer preference, produces lower perceived workload in eye-tracking studies
-- **Background (implemented):** Dark gray palette — `surface-0: #121215`, `surface-1: #1a1a1f`, `surface-2: #232329`, `surface-3: #2e2e35` (never pure `#000000` — causes halation/eye strain)
-- **Text (implemented):** Muted white `#d4d4d8` (not pure `#FFFFFF` — reduces glare in extended sessions)
-- **Light mode toggle required** — approximately 50% of the population has astigmatism, where light-on-dark text causes visual artifacts. Also needed for bright ambient conditions and users with dyslexia.
-- Light mode uses positive polarity (dark text on light background) for better visual acuity and proofreading accuracy
-
-## Automation Level Indicators *(planned)*
-
-Different task types warrant different levels of human oversight (Parasuraman-Sheridan-Wickens framework). The UI should communicate the expected automation level per session:
-
-| Level | Label | Behavior | Visual Indicator |
-|-------|-------|----------|-----------------|
-| High autonomy | "Auto" | Agent executes, informs afterward | Muted status, minimal attention needed |
-| Approval gate | "Review" | Agent pauses at decisions for human approval | Amber pulse when waiting |
-| Collaborative | "Paired" | Agent suggests, human selects | Active attention indicator |
-
-This helps developers calibrate trust appropriately — knowing which sessions to scrutinize closely vs. which to let run.
+The repository contains preserved insight/supervisor experiments that are not part of the current visible product. Future designs should not be described as current UI until they are reachable and their backend behavior is enabled.
 
 [Next: Technical Architecture >](Technical-Architecture.md)

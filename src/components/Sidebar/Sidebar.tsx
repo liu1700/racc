@@ -4,6 +4,7 @@ import { useSessionStore } from "../../stores/sessionStore";
 import { RemoveSessionDialog } from "./RemoveSessionDialog";
 import type { Session, SessionStatus } from "../../types/session";
 import { parsePrDisplay } from "../../utils/prUrl";
+import { openExternalUrl } from "../../utils/openExternalUrl";
 
 const statusColor: Record<SessionStatus, string> = {
   Running: "bg-status-running",
@@ -242,11 +243,7 @@ const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (transport.isLocal()) {
-                            import("@tauri-apps/plugin-shell").then((m) => m.open(session.pr_url!));
-                          } else {
-                            window.open(session.pr_url!, "_blank");
-                          }
+                          openExternalUrl(session.pr_url!);
                         }}
                         className="mt-0.5 flex items-center gap-1 pl-3.5 text-[10px] text-accent hover:underline"
                         title={session.pr_url}

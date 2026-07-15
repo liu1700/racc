@@ -196,12 +196,46 @@ pub fn init_db(db_path: PathBuf) -> Result<Connection, CoreError> {
         )?;
     }
 
+    if version < 6 {
+        conn.execute_batch(
+            "
+            CREATE TABLE test_settings (
+                repo_id INTEGER PRIMARY KEY,
+                target_branch TEXT NOT NULL,
+                agent TEXT NOT NULL DEFAULT 'claude-code',
+                instructions TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE test_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id INTEGER NOT NULL,
+                session_id INTEGER,
+                target_branch TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                worktree_branch TEXT,
+                prompt TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'starting',
+                result_json TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_test_runs_repo_status
+                ON test_runs(repo_id, status);
+
+            PRAGMA user_version = 6;
+            ",
+        )?;
+    }
+
     Ok(conn)
 }
 
 pub fn reset_db(conn: &Connection) -> Result<(), CoreError> {
     conn.execute_batch(
         "
+        DROP TABLE IF EXISTS test_runs;
+        DROP TABLE IF EXISTS test_settings;
         DROP TABLE IF EXISTS task_plan_runs;
         DROP TABLE IF EXISTS merge_queue_items;
         DROP TABLE IF EXISTS merge_runs;
@@ -231,7 +265,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("user_version should be readable");
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         for table in ["merge_settings", "merge_runs", "merge_queue_items"] {
             let exists: i64 = conn
@@ -271,6 +305,27 @@ mod tests {
             )
             .expect("session column query");
         assert_eq!(permission_column, 1);
+
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn migration_v6_creates_test_manager_tables() {
+        let path =
+            std::env::temp_dir().join(format!("racc-test-migration-{}.db", uuid::Uuid::new_v4()));
+        let conn = init_db(path.clone()).expect("database should initialize");
+
+        for table in ["test_settings", "test_runs"] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup should succeed");
+            assert_eq!(exists, 1, "missing table {table}");
+        }
 
         drop(conn);
         let _ = std::fs::remove_file(path);
