@@ -289,6 +289,11 @@ pub async fn create_session(
     .await
 }
 
+pub(crate) struct SessionLaunchOptions {
+    pub command: String,
+    pub env: std::collections::HashMap<String, String>,
+}
+
 pub(crate) async fn create_session_from_base(
     ctx: &AppContext,
     repo_id: i64,
@@ -300,9 +305,41 @@ pub(crate) async fn create_session_from_base(
     skip_permissions: Option<bool>,
     base_ref: Option<String>,
 ) -> Result<Session, CoreError> {
+    create_session_from_base_with_launch(
+        ctx,
+        repo_id,
+        use_worktree,
+        branch,
+        agent,
+        task_description,
+        server_id,
+        skip_permissions,
+        base_ref,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn create_session_from_base_with_launch(
+    ctx: &AppContext,
+    repo_id: i64,
+    use_worktree: bool,
+    branch: Option<String>,
+    agent: Option<String>,
+    task_description: Option<String>,
+    server_id: Option<String>,
+    skip_permissions: Option<bool>,
+    base_ref: Option<String>,
+    launch_options: Option<SessionLaunchOptions>,
+) -> Result<Session, CoreError> {
     if base_ref.is_some() && server_id.is_some() {
         return Err(CoreError::Other(
             "Explicit worktree base refs are only supported for local sessions".to_string(),
+        ));
+    }
+    if launch_options.is_some() && server_id.is_some() {
+        return Err(CoreError::Other(
+            "Custom agent launch options are only supported for local sessions".to_string(),
         ));
     }
     let agent = agent.unwrap_or_else(|| "claude-code".to_string());
@@ -519,24 +556,33 @@ pub(crate) async fn create_session_from_base(
     } else {
         // Local session: spawn LocalPtyTransport
         let cwd = worktree_path_clone.as_deref().unwrap_or(&repo_path);
-        let agent_cmd =
-            agent::build_command(&agent, cwd, skip_permissions, false, agent_session_id.as_deref());
+        let agent_cmd = launch_options
+            .as_ref()
+            .map(|options| options.command.clone())
+            .unwrap_or_else(|| {
+                agent::build_command(
+                    &agent,
+                    cwd,
+                    skip_permissions,
+                    false,
+                    agent_session_id.as_deref(),
+                )
+            });
 
         // RTK setup for Claude Code sessions
-        let extra_env = if agent == "claude-code" {
+        let mut extra_env = launch_options
+            .as_ref()
+            .map(|options| options.env.clone())
+            .unwrap_or_default();
+        if agent == "claude-code" {
             let rtk_available = rtk::ensure_rtk_local().await;
             if rtk_available {
-                rtk::rtk_path_env().map(|p| {
-                    let mut env = std::collections::HashMap::new();
-                    env.insert("PATH".to_string(), p);
-                    env
-                })
-            } else {
-                None
+                if let Some(path) = rtk::rtk_path_env() {
+                    extra_env.insert("PATH".to_string(), path);
+                }
             }
-        } else {
-            None
-        };
+        }
+        let extra_env = (!extra_env.is_empty()).then_some(extra_env);
 
         let transport = LocalPtyTransport::spawn(
             session_id,
