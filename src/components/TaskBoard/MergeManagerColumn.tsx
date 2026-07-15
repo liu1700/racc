@@ -38,12 +38,14 @@ export function MergeManagerColumn({ repoId, onSessionSelect }: Props) {
     loading,
     saving,
     shipping,
+    resetting,
     error,
     saveSettings,
     setReady,
     startRun,
     resolveRun,
     retryRun,
+    resetManager,
   } = useMergeStore();
   const tasks = useTaskStore((state) => state.tasks);
   const openSession = useSessionStore((state) => state.openSession);
@@ -58,7 +60,8 @@ export function MergeManagerColumn({ repoId, onSessionSelect }: Props) {
     [items],
   );
   const queuedCount = items.filter((item) => item.status === "queued").length;
-  const canShip = shipRunCanStart(items, activeRun) && !shipping && !saving;
+  const canShip = shipRunCanStart(items, activeRun) && !shipping && !saving && !resetting;
+  const showReset = lastRun !== null || items.length > 0;
 
   const persistDraft = async (next = draft) => {
     if (!next) return;
@@ -83,6 +86,14 @@ export function MergeManagerColumn({ repoId, onSessionSelect }: Props) {
     await startRun();
   };
 
+  const handleReset = async () => {
+    const confirmed = window.confirm(
+      "Reset Merge Manager? This clears the PR queue and all previous merge results for this repository. Saved settings and terminal sessions are kept.",
+    );
+    if (!confirmed) return;
+    await resetManager();
+  };
+
   return (
     <section className="flex min-w-0 flex-col overflow-hidden rounded border border-surface-3 bg-surface-1/40">
       <div className="flex items-center gap-2 border-b border-surface-3 px-3 py-2">
@@ -91,9 +102,21 @@ export function MergeManagerColumn({ repoId, onSessionSelect }: Props) {
           Merge Manager
         </span>
         <span className="text-[10px] text-zinc-600">{queuedCount}</span>
-        {(activeRun || shipping) && (
-          <span className="ml-auto text-[9px] text-status-running">Shipping</span>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {(activeRun || shipping) && (
+            <span className="text-[9px] text-status-running">Shipping</span>
+          )}
+          {showReset && (
+            <button
+              onClick={() => void handleReset()}
+              disabled={activeRun !== null || shipping || resetting}
+              className="text-[9px] text-zinc-500 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Clear the merge queue and previous results"
+            >
+              {resetting ? "Resetting…" : "Reset"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2.5">

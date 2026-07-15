@@ -75,6 +75,7 @@ Merge Manager contains:
 - an active-run card linking to the manager terminal;
 - last-run status and summary;
 - `needs_review` actions: **Mark succeeded**, **Mark failed**, and **Retry**;
+- a **Reset** action that clears the queue and run history while preserving settings;
 - the **Ship All** action with queued count.
 
 Succeeded items leave the visible queue. Failed or ambiguous items remain available for review/retry.
@@ -87,6 +88,7 @@ Test Manager mirrors the manager interaction pattern without a PR queue:
 - default comprehensive full-project UAT instructions that the user can overwrite;
 - active-run terminal link;
 - last-run status, passed/failed counts, evidence summary, and recovery actions;
+- a **Reset** action that clears run history while preserving settings;
 - a bottom action labelled **Run**.
 
 The column describes the run as isolated and read-only. Test Manager does not present commit, push, or merge controls.

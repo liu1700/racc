@@ -17,6 +17,7 @@ interface MergeState {
   loading: boolean;
   saving: boolean;
   shipping: boolean;
+  resetting: boolean;
   error: string | null;
   eventsInitialized: boolean;
 
@@ -27,6 +28,7 @@ interface MergeState {
   startRun: () => Promise<MergeRun>;
   resolveRun: (status: "succeeded" | "failed") => Promise<void>;
   retryRun: () => Promise<MergeRun>;
+  resetManager: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -43,6 +45,7 @@ export const useMergeStore = create<MergeState>((set, get) => ({
   loading: false,
   saving: false,
   shipping: false,
+  resetting: false,
   error: null,
   eventsInitialized: false,
 
@@ -169,6 +172,30 @@ export const useMergeStore = create<MergeState>((set, get) => ({
       return next;
     } catch (error) {
       set({ shipping: false, error: String(error) });
+      throw error;
+    }
+  },
+
+  resetManager: async () => {
+    const repoId = get().repoId;
+    if (repoId == null) throw new Error("No repository selected");
+    set({ resetting: true, error: null });
+    try {
+      await transport.call("reset_merge_manager", { repoId });
+      const state = await fetchManager(repoId);
+      if (get().repoId === repoId) {
+        set({
+          settings: state.settings,
+          items: state.items,
+          activeRun: state.active_run,
+          lastRun: state.last_run,
+          resetting: false,
+        });
+      } else {
+        set({ resetting: false });
+      }
+    } catch (error) {
+      set({ resetting: false, error: String(error) });
       throw error;
     }
   },

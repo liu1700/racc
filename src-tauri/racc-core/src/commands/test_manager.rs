@@ -273,6 +273,39 @@ pub fn get_test_manager(ctx: &AppContext, repo_id: i64) -> Result<TestManagerSta
     })
 }
 
+pub async fn reset_test_manager(ctx: &AppContext, repo_id: i64) -> Result<(), CoreError> {
+    {
+        let mut conn = ctx
+            .db
+            .lock()
+            .map_err(|error| CoreError::Other(error.to_string()))?;
+        let tx = conn.transaction()?;
+        let repo_exists: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM repos WHERE id = ?1",
+            [repo_id],
+            |row| row.get(0),
+        )?;
+        if repo_exists == 0 {
+            return Err(CoreError::NotFound(format!("Repo {repo_id} not found")));
+        }
+        let active_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM test_runs
+             WHERE repo_id = ?1 AND status IN ('starting', 'testing')",
+            [repo_id],
+            |row| row.get(0),
+        )?;
+        if active_count > 0 {
+            return Err(CoreError::Other(
+                "Cannot reset Test Manager while a run is active".to_string(),
+            ));
+        }
+        tx.execute("DELETE FROM test_runs WHERE repo_id = ?1", [repo_id])?;
+        tx.commit()?;
+    }
+    emit_test_changed(&ctx.event_bus, repo_id, None).await;
+    Ok(())
+}
+
 fn reserve_test_run(ctx: &AppContext, repo_id: i64) -> Result<TestRunReservation, CoreError> {
     let mut conn = ctx
         .db
@@ -880,6 +913,63 @@ mod tests {
         let state = get_test_manager(&ctx, repo_id).expect("manager state");
         assert!(state.active_run.is_none());
         assert_eq!(state.last_run.expect("last run").status, "succeeded");
+
+        drop(ctx);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reset_clears_run_history_but_preserves_settings() {
+        let (ctx, path) = test_context();
+        let repo_id = seed_repo(&ctx);
+        {
+            let conn = ctx.db.lock().expect("database lock");
+            conn.execute(
+                "INSERT INTO test_settings (repo_id, target_branch, agent, instructions)
+                 VALUES (?1, 'release', 'codex', 'Run release UAT.')",
+                [repo_id],
+            )
+            .expect("settings insert");
+            conn.execute(
+                "INSERT INTO test_runs (repo_id, target_branch, agent, prompt, status)
+                 VALUES (?1, 'release', 'codex', 'test', 'failed')",
+                [repo_id],
+            )
+            .expect("run insert");
+        }
+
+        reset_test_manager(&ctx, repo_id)
+            .await
+            .expect("reset should succeed");
+        let state = get_test_manager(&ctx, repo_id).expect("manager state should load");
+        assert!(state.active_run.is_none());
+        assert!(state.last_run.is_none());
+        assert_eq!(state.settings.target_branch, "release");
+        assert_eq!(state.settings.agent, "codex");
+        assert_eq!(state.settings.instructions, "Run release UAT.");
+
+        drop(ctx);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reset_rejects_an_active_test_run() {
+        let (ctx, path) = test_context();
+        let repo_id = seed_repo(&ctx);
+        {
+            let conn = ctx.db.lock().expect("database lock");
+            conn.execute(
+                "INSERT INTO test_runs (repo_id, target_branch, agent, prompt, status)
+                 VALUES (?1, 'main', 'codex', 'test', 'testing')",
+                [repo_id],
+            )
+            .expect("run insert");
+        }
+
+        let error = reset_test_manager(&ctx, repo_id)
+            .await
+            .expect_err("active reset should fail");
+        assert!(error.to_string().contains("while a run is active"));
 
         drop(ctx);
         let _ = std::fs::remove_file(path);

@@ -15,6 +15,7 @@ interface TestManagerStoreState {
   loading: boolean;
   saving: boolean;
   starting: boolean;
+  resetting: boolean;
   error: string | null;
   eventsInitialized: boolean;
 
@@ -26,6 +27,7 @@ interface TestManagerStoreState {
   startRun: () => Promise<TestRun>;
   resolveRun: (status: "succeeded" | "failed") => Promise<void>;
   retryRun: () => Promise<TestRun>;
+  resetManager: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -41,6 +43,7 @@ export const useTestManagerStore = create<TestManagerStoreState>((set, get) => (
   loading: false,
   saving: false,
   starting: false,
+  resetting: false,
   error: null,
   eventsInitialized: false,
 
@@ -146,6 +149,29 @@ export const useTestManagerStore = create<TestManagerStoreState>((set, get) => (
       return next;
     } catch (error) {
       set({ starting: false, error: String(error) });
+      throw error;
+    }
+  },
+
+  resetManager: async () => {
+    const repoId = get().repoId;
+    if (repoId == null) throw new Error("No repository selected");
+    set({ resetting: true, error: null });
+    try {
+      await transport.call("reset_test_manager", { repoId });
+      const state = await fetchManager(repoId);
+      if (get().repoId === repoId) {
+        set({
+          settings: state.settings,
+          activeRun: state.active_run,
+          lastRun: state.last_run,
+          resetting: false,
+        });
+      } else {
+        set({ resetting: false });
+      }
+    } catch (error) {
+      set({ resetting: false, error: String(error) });
       throw error;
     }
   },

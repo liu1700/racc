@@ -349,6 +349,13 @@ async fn dispatch(
             let result = merge::get_merge_manager(ctx, repo_id).map_err(|e| e.to_string())?;
             to_json(&result)
         }
+        "reset_merge_manager" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            merge::reset_merge_manager(ctx, repo_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!(null))
+        }
         "set_task_ready_to_merge" => {
             let task_id = param_i64(&params, "task_id")?;
             let ready = params
@@ -404,6 +411,13 @@ async fn dispatch(
             let repo_id = param_i64(&params, "repo_id")?;
             let result = test_manager::get_test_manager(ctx, repo_id).map_err(|e| e.to_string())?;
             to_json(&result)
+        }
+        "reset_test_manager" => {
+            let repo_id = param_i64(&params, "repo_id")?;
+            test_manager::reset_test_manager(ctx, repo_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(json!(null))
         }
         "update_test_settings" => {
             let repo_id = param_i64(&params, "repo_id")?;

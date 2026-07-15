@@ -152,7 +152,7 @@ export function TaskCard({ task, onSessionSelect }: Props) {
   return (
     <>
       <div
-        className={`group/card relative min-w-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
+        className={`group/card relative min-w-0 shrink-0 overflow-hidden rounded border border-surface-3 border-l-2 ${statusBorder} bg-surface-1 p-2.5 transition-colors hover:bg-surface-2 ${
           task.status === "closed" ? "opacity-50" : ""
         } ${task.status === "working" ? "cursor-pointer" : ""}`}
         onClick={

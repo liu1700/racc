@@ -11,6 +11,16 @@ pub fn get_merge_manager(
 }
 
 #[tauri::command]
+pub async fn reset_merge_manager(
+    ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
+    repo_id: i64,
+) -> Result<(), String> {
+    racc_core::commands::merge::reset_merge_manager(&ctx, repo_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn set_task_ready_to_merge(
     ctx: State<'_, std::sync::Arc<racc_core::AppContext>>,
     task_id: i64,
