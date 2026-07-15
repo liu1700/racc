@@ -278,9 +278,13 @@ fn spawn_mcp_watcher(
     mut event_rx: tokio::sync::broadcast::Receiver<RaccEvent>,
     run: TaskPlanRun,
     session_id: i64,
-    mut mcp_runtime: PlannerMcpRuntime,
+    mcp_runtime: PlannerMcpRuntime,
 ) {
+    // Build the wait future before entering the spawned closure. It owns the
+    // complete runtime, including the MCP server shutdown guard.
+    let submission = mcp_runtime.wait_for_submission();
     tokio::spawn(async move {
+        tokio::pin!(submission);
         let agent_type = agent::AgentType::from_agent_str(&run.agent);
         let run_token = format!("Task Planner for Racc plan run {}", run.id);
         let mut output_buffer = Vec::new();
@@ -327,7 +331,7 @@ fn spawn_mcp_watcher(
                         Err(_) => break,
                     }
                 }
-                submitted = &mut mcp_runtime.submitted_rx => {
+                submitted = &mut submission => {
                     if submitted.is_err() {
                         let _ = mark_plan_failed_db(
                             &ctx.db,

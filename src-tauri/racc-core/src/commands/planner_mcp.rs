@@ -35,7 +35,7 @@ struct PlannerMcpState {
 pub(super) struct PlannerMcpRuntime {
     pub url: String,
     pub bearer_token: String,
-    pub submitted_rx: oneshot::Receiver<()>,
+    submitted_rx: oneshot::Receiver<()>,
     _shutdown_tx: oneshot::Sender<()>,
 }
 
@@ -79,6 +79,20 @@ impl PlannerMcpRuntime {
             submitted_rx,
             _shutdown_tx: shutdown_tx,
         })
+    }
+
+    /// Consume the runtime and wait for the agent's one successful submission.
+    /// Destructuring here and explicitly dropping the shutdown sender after the
+    /// await guarantees the loopback server stays alive for the entire wait.
+    pub(super) async fn wait_for_submission(self) -> Result<(), oneshot::error::RecvError> {
+        let Self {
+            mut submitted_rx,
+            _shutdown_tx,
+            ..
+        } = self;
+        let result = (&mut submitted_rx).await;
+        drop(_shutdown_tx);
+        result
     }
 }
 
@@ -327,13 +341,13 @@ mod tests {
     }
 
     async fn post_rpc(
-        runtime: &PlannerMcpRuntime,
+        url: &str,
         authorization: Option<String>,
         payload: Value,
     ) -> reqwest::Response {
         let client = reqwest::Client::new();
         let mut request = client
-            .post(&runtime.url)
+            .post(url)
             .header("content-type", "application/json")
             .header("accept", "application/json, text/event-stream")
             .body(payload.to_string());
@@ -354,21 +368,26 @@ mod tests {
     #[tokio::test]
     async fn mcp_submission_requires_the_capability_and_stores_the_preview() {
         let (ctx, path, repo_id, run_id) = test_context();
-        let mut runtime = PlannerMcpRuntime::start(ctx.clone(), run_id, repo_id)
+        let runtime = PlannerMcpRuntime::start(ctx.clone(), run_id, repo_id)
             .await
             .expect("MCP server should start");
+        let url = runtime.url.clone();
+        let authorization = format!("Bearer {}", runtime.bearer_token);
+
+        // This mirrors the production watcher: only the wait future remains.
+        // The endpoint must stay alive until the tool submission arrives.
+        let submission = tokio::spawn(runtime.wait_for_submission());
 
         let unauthorized = post_rpc(
-            &runtime,
+            &url,
             None,
             json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         )
         .await;
         assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-        let authorization = format!("Bearer {}", runtime.bearer_token);
         let initialized = post_rpc(
-            &runtime,
+            &url,
             Some(authorization.clone()),
             json!({
                 "jsonrpc": "2.0",
@@ -386,7 +405,7 @@ mod tests {
         );
 
         let rejected = post_rpc(
-            &runtime,
+            &url,
             Some(authorization.clone()),
             json!({
                 "jsonrpc": "2.0",
@@ -403,7 +422,7 @@ mod tests {
         assert_eq!(rejected["result"]["isError"], true);
 
         let accepted = post_rpc(
-            &runtime,
+            &url,
             Some(authorization),
             json!({
                 "jsonrpc": "2.0",
@@ -428,9 +447,10 @@ mod tests {
         .await;
         let accepted: Value = serde_json::from_str(&accepted.text().await.unwrap()).unwrap();
         assert_eq!(accepted["result"]["structuredContent"]["accepted"], true);
-        tokio::time::timeout(std::time::Duration::from_secs(2), &mut runtime.submitted_rx)
+        tokio::time::timeout(std::time::Duration::from_secs(2), submission)
             .await
             .expect("submission signal should arrive")
+            .expect("submission wait task should not panic")
             .expect("submission sender should remain alive");
 
         let (status, result_json): (String, Option<String>) = ctx
@@ -446,7 +466,6 @@ mod tests {
         assert_eq!(status, "ready");
         assert!(result_json.unwrap().contains("Implement the feature"));
 
-        drop(runtime);
         drop(ctx);
         let _ = std::fs::remove_file(path);
     }
